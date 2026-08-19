@@ -23,7 +23,8 @@ export default function Sidebar({ isOpen, onClose }) {
     { label: '🔒 Políticas de Privacidad', path: '/privacy' },
   ];
 
-  const isAdminOrAdvisor = role === 'Admin' || role === 'Asesor';
+  const normalizedRole = role ? String(role).trim().toLowerCase() : '';
+  const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
 
   return (
     <>
