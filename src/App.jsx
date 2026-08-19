@@ -5,6 +5,7 @@ import { AppProvider } from './context/AppContext';
 // Storefront Components & Pages
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
+import Footer from './components/Footer';
 import BottomBar from './components/BottomBar';
 import Home from './pages/Home';
 import ProductDetail from './pages/ProductDetail';
@@ -62,6 +63,9 @@ export default function App() {
               </Route>
             </Routes>
           </main>
+
+          {/* Footer Component with Legal and Support links */}
+          <Footer />
 
           {/* Mobile Bottom Navigation Bar (Instagram-style) */}
           <BottomBar />

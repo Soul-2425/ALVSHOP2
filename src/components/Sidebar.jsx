@@ -12,15 +12,10 @@ export default function Sidebar({ isOpen, onClose }) {
     onClose();
   };
 
-  const navLinks = [
+  const mainNavLinks = [
     { label: '🛍️ Catálogo de Productos', path: '/' },
     { label: '👤 Mi Perfil & Billetera', path: '/profile' },
     { label: '🌐 Comunidad & Feed', path: '/feed' },
-    { label: '🎧 Soporte Técnico', path: '/support' },
-    { label: 'ℹ️ Sobre Nosotros', path: '/about' },
-    { label: '📞 Contactos', path: '/contact' },
-    { label: '📜 Términos y Condiciones', path: '/terms' },
-    { label: '🔒 Políticas de Privacidad', path: '/privacy' },
   ];
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
@@ -109,9 +104,9 @@ export default function Sidebar({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* Navigation List */}
-        <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {navLinks.map((item) => {
+        {/* Main Navigation List */}
+        <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {mainNavLinks.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Link
@@ -123,7 +118,7 @@ export default function Sidebar({ isOpen, onClose }) {
                   alignItems: 'center',
                   padding: '12px 16px',
                   borderRadius: 'var(--radius-md)',
-                  fontSize: '0.9rem',
+                  fontSize: '0.92rem',
                   fontWeight: '600',
                   color: isActive ? 'var(--accent-cyan)' : 'var(--text-main)',
                   backgroundColor: isActive ? 'rgba(6, 182, 212, 0.1)' : 'transparent',
