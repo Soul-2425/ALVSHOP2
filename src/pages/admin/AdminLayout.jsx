@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { NavLink, Outlet, Navigate } from 'react-router-dom';
+import React from 'react';
+import { NavLink, Outlet, Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 
 export default function AdminLayout() {
@@ -9,20 +9,43 @@ export default function AdminLayout() {
     return <div className="container" style={{ padding: '60px 0', textAlign: 'center' }}>Cargando panel...</div>;
   }
 
-  // Protect Admin Route
-  const isAdminOrAdvisor = role === 'Admin' || role === 'Asesor';
+  // Not logged in
+  if (!user) {
+    return (
+      <div className="container" style={{ padding: '60px 20px', textAlign: 'center', maxWidth: '480px' }}>
+        <div className="glass-panel" style={{ padding: '32px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-cyan)' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🔑</div>
+          <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>Iniciar Sesión Requerido</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Debes iniciar sesión con tu cuenta de Administrador para gestionar la tienda.
+          </p>
+          <Link to="/profile" className="btn-cyan" style={{ padding: '12px 24px', fontSize: '0.9rem' }}>
+            Ir a Iniciar Sesión ➔
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Protect Admin Route (Case-insensitive check for Admin / Asesor)
+  const normalizedRole = role ? String(role).trim().toLowerCase() : '';
+  const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
+
   if (!isAdminOrAdvisor) {
     return (
       <div className="container" style={{ padding: '60px 20px', textAlign: 'center', maxWidth: '500px' }}>
         <div className="glass-panel" style={{ padding: '30px', borderRadius: 'var(--radius-lg)' }}>
           <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🔒</div>
           <h2 style={{ fontSize: '1.4rem', marginBottom: '8px' }}>Acceso Restringido</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '12px' }}>
             Esta sección es exclusiva para el equipo de Administración y Asesores de ALVSHOP.
           </p>
-          <NavLink to="/" className="btn-cyan">
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+            Tu usuario actual: <strong>{user.email}</strong> (Rol: <span style={{ color: 'var(--accent-cyan)' }}>{role || 'Sin Rol'}</span>)
+          </div>
+          <Link to="/" className="btn-cyan">
             Volver a la Tienda
-          </NavLink>
+          </Link>
         </div>
       </div>
     );
