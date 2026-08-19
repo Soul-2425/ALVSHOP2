@@ -18,61 +18,98 @@ export default function AdminDashboard() {
     async function loadAnalytics() {
       setLoading(true);
 
-      // 1. Fetch Orders
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('*, order_items(*, products(name, cost))');
+      try {
+        // 1. Fetch Orders from Supabase
+        const { data: orders, error: ordErr } = await supabase
+          .from('orders')
+          .select('*, profiles(id, full_name, role), order_items(*, products(name, cost))');
 
-      let grossSales = 0;
-      let totalCost = 0;
-      let completedCount = 0;
+        let grossSales = 0;
+        let totalCost = 0;
+        let completedCount = 0;
+        const productCounts = {};
+        const resellerMap = {};
 
-      if (orders) {
-        orders.forEach(ord => {
-          if (ord.status === 'Completed') {
-            grossSales += Number(ord.total_usdt || 0);
-            completedCount++;
-            ord.order_items?.forEach(item => {
-              const itemCost = Number(item.cost_usdt || item.products?.cost || 0) * (item.quantity || 1);
-              totalCost += itemCost;
-            });
-          }
+        if (orders && !ordErr) {
+          orders.forEach(ord => {
+            if (ord.status === 'Completed') {
+              const orderTotal = Number(ord.total_usdt || 0);
+              grossSales += orderTotal;
+              completedCount++;
+
+              // Track Reseller sales
+              if (ord.profiles?.role === 'Revendedor') {
+                const resId = ord.profiles.id;
+                if (!resellerMap[resId]) {
+                  resellerMap[resId] = {
+                    name: ord.profiles.full_name || 'Revendedor #' + resId.slice(0, 5),
+                    totalSales: 0,
+                    totalCost: 0,
+                    ordersCount: 0
+                  };
+                }
+                resellerMap[resId].totalSales += orderTotal;
+                resellerMap[resId].ordersCount += 1;
+              }
+
+              // Calculate costs and product sales
+              ord.order_items?.forEach(item => {
+                const qty = item.quantity || 1;
+                const unitCost = Number(item.cost_usdt || item.products?.cost || 0);
+                const itemCost = unitCost * qty;
+                totalCost += itemCost;
+
+                if (ord.profiles?.role === 'Revendedor' && ord.profiles?.id && resellerMap[ord.profiles.id]) {
+                  resellerMap[ord.profiles.id].totalCost += itemCost;
+                }
+
+                const prodName = item.products?.name || 'Producto #' + (item.product_id || 'item');
+                if (!productCounts[prodName]) {
+                  productCounts[prodName] = { name: prodName, unitsSold: 0, revenue: 0 };
+                }
+                productCounts[prodName].unitsSold += qty;
+                productCounts[prodName].revenue += Number(item.price_usdt || 0) * qty;
+              });
+            }
+          });
+        }
+
+        const netProfit = grossSales - totalCost;
+
+        // 2. Fetch Resellers Count
+        const { count: resCount } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('role', 'Revendedor');
+
+        // Set Real Metrics (Defaults to 0)
+        setMetrics({
+          totalSalesUsdt: grossSales,
+          totalCostUsdt: totalCost,
+          netProfitUsdt: netProfit,
+          totalOrders: orders ? orders.length : 0,
+          completedOrders: completedCount,
+          resellersCount: resCount || 0
         });
+
+        // Set Real Best-Sellers (Sorted by units sold)
+        const sortedProducts = Object.values(productCounts).sort((a, b) => b.unitsSold - a.unitsSold);
+        setBestSellers(sortedProducts);
+
+        // Set Real Reseller Sales
+        const formattedResellers = Object.values(resellerMap).map(r => ({
+          name: r.name,
+          totalSales: r.totalSales,
+          netMargin: r.totalSales - r.totalCost,
+          ordersCount: r.ordersCount
+        }));
+        setResellerSales(formattedResellers);
+
+      } catch (err) {
+        console.error('Error loading analytics:', err);
+      } finally {
+        setLoading(false);
       }
-
-      const netProfit = grossSales - totalCost;
-
-      // 2. Fetch Resellers Count
-      const { count: resCount } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', 'Revendedor');
-
-      setMetrics({
-        totalSalesUsdt: grossSales || 1450.50,
-        totalCostUsdt: totalCost || 1120.00,
-        netProfitUsdt: netProfit || 330.50,
-        totalOrders: orders?.length || 48,
-        completedOrders: completedCount || 42,
-        resellersCount: resCount || 8
-      });
-
-      // Sample Best-Sellers Ranking
-      setBestSellers([
-        { name: '100 + 10 Diamantes Free Fire', category: 'Gaming', unitsSold: 142, revenue: 156.20 },
-        { name: '310 + 31 Diamantes Free Fire', category: 'Gaming', unitsSold: 88, revenue: 281.60 },
-        { name: 'Netflix 1 Pantalla Ultra HD', category: 'Streaming', unitsSold: 64, revenue: 224.00 },
-        { name: 'Spotify Premium 3 Meses', category: 'Streaming', unitsSold: 35, revenue: 140.00 }
-      ]);
-
-      // Sample Reseller Analytics
-      setResellerSales([
-        { name: 'GamerShop_GT', totalSales: 420.00, netMargin: 54.00, ordersCount: 38 },
-        { name: 'Recargas_GuatePro', totalSales: 310.50, netMargin: 42.00, ordersCount: 26 },
-        { name: 'JonaReseller18', totalSales: 215.00, netMargin: 28.50, ordersCount: 19 }
-      ]);
-
-      setLoading(false);
     }
 
     loadAnalytics();
@@ -107,7 +144,7 @@ export default function AdminDashboard() {
           <div style={{ fontSize: '1.8rem', fontWeight: '900', color: 'var(--accent-cyan)', margin: '4px 0' }}>
             {metrics.completedOrders} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/ {metrics.totalOrders}</span>
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{metrics.resellersCount} Revendedores Activos</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{metrics.resellersCount} Revendedores Registrados</div>
         </div>
       </div>
 
@@ -120,26 +157,32 @@ export default function AdminDashboard() {
             <span>🤝</span> Analítica de Revendedores
           </h3>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '8px 4px' }}>Revendedor</th>
-                  <th style={{ padding: '8px 4px' }}>Pedidos</th>
-                  <th style={{ padding: '8px 4px' }}>Venta Bruta</th>
-                  <th style={{ padding: '8px 4px' }}>Margen Neto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resellerSales.map((res, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
-                    <td style={{ padding: '10px 4px', fontWeight: '700' }}>{res.name}</td>
-                    <td style={{ padding: '10px 4px' }}>{res.ordersCount}</td>
-                    <td style={{ padding: '10px 4px' }}>${res.totalSales.toFixed(2)}</td>
-                    <td style={{ padding: '10px 4px', color: '#34d399', fontWeight: '700' }}>+${res.netMargin.toFixed(2)}</td>
+            {resellerSales.length === 0 ? (
+              <div style={{ padding: '24px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No hay revendedores con ventas registradas aún.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '8px 4px' }}>Revendedor</th>
+                    <th style={{ padding: '8px 4px' }}>Pedidos</th>
+                    <th style={{ padding: '8px 4px' }}>Venta Bruta</th>
+                    <th style={{ padding: '8px 4px' }}>Margen Neto</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {resellerSales.map((res, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                      <td style={{ padding: '10px 4px', fontWeight: '700' }}>{res.name}</td>
+                      <td style={{ padding: '10px 4px' }}>{res.ordersCount}</td>
+                      <td style={{ padding: '10px 4px' }}>${res.totalSales.toFixed(2)}</td>
+                      <td style={{ padding: '10px 4px', color: '#34d399', fontWeight: '700' }}>+${res.netMargin.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
@@ -149,27 +192,33 @@ export default function AdminDashboard() {
             <span>🏆</span> Ranking Best-Sellers (Más Vendidos)
           </h3>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '8px 4px' }}>Producto</th>
-                  <th style={{ padding: '8px 4px' }}>Unidades</th>
-                  <th style={{ padding: '8px 4px' }}>Ingresos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bestSellers.map((item, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
-                    <td style={{ padding: '10px 4px', fontWeight: '700' }}>
-                      <span style={{ color: 'var(--accent-cyan)', marginRight: '6px' }}>#{i + 1}</span>
-                      {item.name}
-                    </td>
-                    <td style={{ padding: '10px 4px' }}>{item.unitsSold} u.</td>
-                    <td style={{ padding: '10px 4px', color: 'var(--accent-cyan)', fontWeight: '700' }}>${item.revenue.toFixed(2)}</td>
+            {bestSellers.length === 0 ? (
+              <div style={{ padding: '24px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No hay productos vendidos aún en la tienda.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '8px 4px' }}>Producto</th>
+                    <th style={{ padding: '8px 4px' }}>Unidades</th>
+                    <th style={{ padding: '8px 4px' }}>Ingresos</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {bestSellers.map((item, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                      <td style={{ padding: '10px 4px', fontWeight: '700' }}>
+                        <span style={{ color: 'var(--accent-cyan)', marginRight: '6px' }}>#{i + 1}</span>
+                        {item.name}
+                      </td>
+                      <td style={{ padding: '10px 4px' }}>{item.unitsSold} u.</td>
+                      <td style={{ padding: '10px 4px', color: 'var(--accent-cyan)', fontWeight: '700' }}>${item.revenue.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
