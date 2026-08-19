@@ -1,0 +1,69 @@
+# Walkthrough - ALVSHOP: Plataforma de E-commerce, Recargas y Bienes Digitales
+
+La plataforma **ALVSHOP** ha sido desarrollada e integrada con éxito en su totalidad, conectada a la base de datos de **Supabase** y preparada para despliegue en **Netlify**.
+
+---
+
+## 🎨 1. Identidad Visual & Sistema de Temas Dinámico
+- **Paleta por Defecto:**
+  - **Fondo:** Negro Carbón (`#0a0d14`)
+  - **Primario:** Azul Marino (`#1e3a8a`)
+  - **Acento / Brillo:** Cyan Neón (`#06b6d4`)
+- **Personalización Total:** El administrador puede cambiar estos 3 colores en cualquier momento desde el Backoffice con **Color Pickers** visuales; toda la web adopta los nuevos colores en tiempo real sin tocar código.
+
+---
+
+## 📱 2. Portal de Clientes (Frontend Storefront)
+
+| Componente / Vista | Ruta | Características Implementadas |
+| :--- | :--- | :--- |
+| **Top Header** | Todas | Logo dinámico, **Selector de Moneda Toggle (USDT $\leftrightarrow$ GTQ)** con cálculo dinámico según tasa de cambio, e **Indicador Permanente de Saldo USDT** con modal de recarga y pedidos. |
+| **Menú Hamburguesa (Sidebar)** | Drawer | Acceso a sub-páginas independientes: *Perfil, Catálogo, Comunidad, Soporte, Sobre Nosotros, Contactos, Términos y Privacidad*. |
+| **Bottom Navigation Bar (App-like)** | Móvil | Barra fija inferior estilo Instagram con accesos rápidos a: 🛍️ Tienda, 🌐 Feed y 👤 Perfil. |
+| **Página Principal & Catálogo** | `/` | Banner promocional dinámico, selector de categorías por chips, **cuadrícula estricta de 2 columnas por 3 filas (6 productos/pág)** y paginación inferior. |
+| **Ficha de Producto & Checkout** | `/product/:id` | **Form Builder dinámico** (pide UID, servidores, perfiles), **Validador en Vivo de UID Free Fire** conectado a la API de Jorge, botón de acción dinámico (*"Comprar"* o *"Solicitar"*), reseñas con estrellas, y pasarela con Billetera USDT o Transferencia Manual en Quetzales (Banrural) con comprobante y acceso a WhatsApp. |
+| **Comunidad & Feed** | `/feed` | Publicaciones multimedia, sistema de comentarios y likes, y accesos directos a redes sociales (Instagram, TikTok, WhatsApp, Facebook). |
+| **Chat de Soporte Técnico** | `/support` | Sistema de tickets con mensajes en tiempo real y fallback a WhatsApp directo. |
+| **Perfil & Billetera** | `/profile` | Inicio de sesión / Registro, saldo USDT disponible, **Código de referido con botón de copia rápida**, solicitud de recargas y visualización de pedidos con credenciales entregadas. |
+
+---
+
+## ⚙️ 3. Panel de Control Administrativo (Backoffice)
+
+Estructurado en sub-páginas independientes y optimizadas bajo `/admin`:
+
+1. **Dashboard & Analítica (`/admin`):**
+   - Métricas de **Ganancias Brutas y Netas** calculadas en tiempo real (`Total Ventas - Costo Proveedor`).
+   - Tabla de analítica de **Revendedores** (ventas y márgenes netos).
+   - Ranking **Best-Sellers** de productos más vendidos.
+2. **Gestor Avanzado de Usuarios y Roles (`/admin/users`):**
+   - Sub-pestañas: *Todos \| Clientes General \| Clientes Oferta \| Clientes Especiales \| Revendedores \| Asesores \| Admins*.
+   - Tablas de 10 en 10, orden alfabético, filtros de búsqueda por nombre, correo, teléfono, país y código de referido.
+   - Selector para cambio de roles instantáneo.
+3. **Gestor de Inventario y 3 Precios (`/admin/products`):**
+   - Creación de productos con **3 niveles de precios en USDT**: *Precio Público, Precio Revendedor y Costo Proveedor*.
+   - Form Builder para configurar qué datos pedir al cliente durante la compra.
+4. **Módulo de Streaming (`/admin/streaming`):**
+   - Inventario de cuentas digitales (correo, contraseña, PIN, perfil y estado de venta).
+5. **Módulo de Cupones (`/admin/coupons`):**
+   - Creación de códigos promocionales con **selector de fecha y hora de vencimiento**, descuento en `%` o `USDT`, mínimo de compra y límite de usos.
+6. **Finanzas & Tasa de Cambio (`/admin/finance`):**
+   - Editor de tasa de conversión dinámico (1 USDT = X GTQ), configuración de cuentas bancarias Banrural y descuentos porcentuales por rol.
+7. **Branding, Colores & SEO (`/admin/branding`):**
+   - **Color Pickers interactivos en vivo (Negro Carbón, Azul Marino, Cyan Neón)**.
+   - Subida de logotipos y favicon.
+   - Módulo de inyección de scripts en `<head>` (Meta Pixel, Google Ads).
+   - Conector No-Code de APIs de proveedores externos.
+
+---
+
+## 📁 4. Módulos Reservados para Jorge
+- `notificaciones y apis/notificaciones/`: Documentado y con plantilla en [pushService.js](file:///C:/Users/sOLcar/Documents/Proyectos/ALVstore/notificaciones%20y%20apis/notificaciones/pushService.js) listo para conectar Web Push / Firebase.
+- `notificaciones y apis/apis/`: Documentado y con plantilla en [index.js](file:///C:/Users/sOLcar/Documents/Proyectos/ALVstore/notificaciones%20y%20apis/apis/index.js) para los endpoints de Free Fire.
+- Canal de comunicación completo en **[NOTA_PARA_JORGE.md](file:///C:/Users/sOLcar/Documents/Proyectos/ALVstore/NOTA_PARA_JORGE.md)**.
+
+---
+
+## 🚀 5. Verificación y Despliegue
+- **Compilación de Producción:** `npm run build` ejecutado exitosamente con **0 errores**.
+- **Regla SPA Netlify:** Archivo `public/_redirects` creado para asegurar que todas las rutas funcionen sin errores 404 al recargar.
