@@ -73,19 +73,19 @@ export default function Home() {
   return (
     <div className="container" style={{ paddingTop: '16px' }}>
       
-      {/* Immersive Gamer Banner (Name Only + Gamer Background) */}
+      {/* Immersive Gamer Banner (Gamer Image Background + Dynamic Store Name Only) */}
       <div style={{
         borderRadius: 'var(--radius-lg)',
-        padding: '36px 20px',
+        padding: '50px 20px',
         marginBottom: '24px',
-        background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 13, 20, 0.98) 100%)',
         backgroundImage: `
-          radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.18) 0%, transparent 60%),
-          radial-gradient(circle at 10% 20%, rgba(30, 58, 138, 0.35) 0%, transparent 50%),
-          linear-gradient(180deg, rgba(13, 17, 26, 0.8) 0%, rgba(10, 13, 20, 0.95) 100%)
+          linear-gradient(180deg, rgba(10, 13, 20, 0.55) 0%, rgba(10, 13, 20, 0.85) 100%),
+          url('/gamer-banner.jpg')
         `,
-        border: '1px solid rgba(6, 182, 212, 0.3)',
-        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.6), inset 0 0 30px rgba(6, 182, 212, 0.06)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center 40%',
+        border: '1px solid rgba(6, 182, 212, 0.4)',
+        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(6, 182, 212, 0.15)',
         position: 'relative',
         overflow: 'hidden',
         display: 'flex',
@@ -93,55 +93,33 @@ export default function Home() {
         justifyContent: 'center',
         textAlign: 'center'
       }}>
-        {/* Subtle Cyber Gamer Glow Line */}
+        {/* Subtle Top Cyber Accent Glow */}
         <div style={{
           position: 'absolute',
           top: 0,
-          left: '20%',
-          right: '20%',
+          left: '15%',
+          right: '15%',
           height: '2px',
           background: 'linear-gradient(90deg, transparent, var(--accent-cyan), transparent)',
-          boxShadow: '0 0 12px var(--accent-cyan)'
+          boxShadow: '0 0 16px var(--accent-cyan)'
         }} />
 
-        {/* Dynamic Store Title (Configurable from Backoffice) */}
+        {/* Dynamic Store Title */}
         <h1 style={{
-          fontSize: 'clamp(1.8rem, 6vw, 2.6rem)',
+          fontSize: 'clamp(2rem, 7vw, 3.2rem)',
           fontWeight: '900',
-          letterSpacing: '0.04em',
+          letterSpacing: '0.06em',
           textTransform: 'uppercase',
           margin: 0,
-          background: 'linear-gradient(135deg, #ffffff 30%, var(--accent-cyan) 100%)',
+          background: 'linear-gradient(135deg, #ffffff 40%, var(--accent-cyan) 100%)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          textShadow: '0 0 25px rgba(6, 182, 212, 0.45)',
+          filter: 'drop-shadow(0 0 20px rgba(6, 182, 212, 0.7))',
           position: 'relative',
           zIndex: 2
         }}>
           {config?.site_title || 'ALVSHOP'}
         </h1>
-
-        {/* Ambient Glow Orbs */}
-        <div style={{
-          position: 'absolute',
-          right: '-40px',
-          bottom: '-40px',
-          width: '180px',
-          height: '180px',
-          background: 'radial-gradient(circle, rgba(6, 182, 212, 0.25) 0%, transparent 70%)',
-          filter: 'blur(25px)',
-          zIndex: 1
-        }} />
-        <div style={{
-          position: 'absolute',
-          left: '-40px',
-          top: '-40px',
-          width: '180px',
-          height: '180px',
-          background: 'radial-gradient(circle, rgba(30, 58, 138, 0.35) 0%, transparent 70%)',
-          filter: 'blur(25px)',
-          zIndex: 1
-        }} />
       </div>
 
       {/* Category Pills Filter */}
