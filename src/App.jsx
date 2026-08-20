@@ -9,6 +9,7 @@ import Footer from './components/Footer';
 import BottomBar from './components/BottomBar';
 import Home from './pages/Home';
 import ProductDetail from './pages/ProductDetail';
+import Likes from './pages/Likes';
 import Feed from './pages/Feed';
 import Support from './pages/Support';
 import Profile from './pages/Profile';
@@ -43,6 +44,7 @@ export default function App() {
               {/* Storefront Routes */}
               <Route path="/" element={<Home />} />
               <Route path="/product/:id" element={<ProductDetail />} />
+              <Route path="/likes" element={<Likes />} />
               <Route path="/feed" element={<Feed />} />
               <Route path="/support" element={<Support />} />
               <Route path="/profile" element={<Profile />} />

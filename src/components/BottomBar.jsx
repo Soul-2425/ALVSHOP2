@@ -26,7 +26,7 @@ export default function BottomBar() {
         <path d="M16 14h2" />
       </svg>
     ),
-    feed: (active) => (
+    likes: (active) => (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? '#06b6d4' : '#8e9aa8'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
       </svg>
@@ -62,11 +62,11 @@ export default function BottomBar() {
       checkActive: (loc) => loc.pathname === '/profile' && loc.search.includes('tab=wallet')
     },
     {
-      id: 'feed',
-      to: '/feed',
-      label: 'Feed',
-      iconKey: 'feed',
-      checkActive: (loc) => loc.pathname === '/feed'
+      id: 'likes',
+      to: '/likes',
+      label: 'Likes',
+      iconKey: 'likes',
+      checkActive: (loc) => loc.pathname === '/likes'
     },
     {
       id: 'perfil',
