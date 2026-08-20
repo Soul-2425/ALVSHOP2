@@ -29,6 +29,9 @@ export default function Profile() {
   const [depositLoading, setDepositLoading] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
 
+  const normalizedRole = role ? String(role).trim().toLowerCase() : '';
+  const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
+
   // Load User Orders
   useEffect(() => {
     async function loadOrders() {
@@ -85,6 +88,10 @@ export default function Profile() {
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   // Handle Wallet Recharge Request
@@ -234,12 +241,13 @@ export default function Profile() {
 
   return (
     <div className="container" style={{ paddingTop: '20px', maxWidth: '780px' }}>
+      
       {/* Profile Header Card */}
       <div className="glass-panel" style={{
         borderRadius: 'var(--radius-lg)',
         padding: '24px',
         border: '1px solid var(--border-cyan)',
-        marginBottom: '24px',
+        marginBottom: '20px',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
@@ -271,27 +279,74 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Wallet Balance Widget */}
-        <div style={{
-          background: 'rgba(30, 58, 138, 0.3)',
-          border: '1px solid var(--border-cyan)',
-          borderRadius: 'var(--radius-md)',
-          padding: '12px 20px',
-          textAlign: 'right'
-        }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Saldo Disponible</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
-            ${walletBalance.toFixed(2)} <span style={{ fontSize: '0.8rem' }}>USDT</span>
+        {/* Wallet Balance Widget & Sign Out */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <div style={{
+            background: 'rgba(30, 58, 138, 0.3)',
+            border: '1px solid var(--border-cyan)',
+            borderRadius: 'var(--radius-md)',
+            padding: '10px 18px',
+            textAlign: 'right'
+          }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Saldo Disponible</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
+              ${walletBalance.toFixed(2)} <span style={{ fontSize: '0.8rem' }}>USDT</span>
+            </div>
           </div>
+
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#f87171',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            🚪 Salir
+          </button>
         </div>
       </div>
+
+      {/* Admin Backoffice Direct Action Banner (If Admin / Asesor) */}
+      {isAdminOrAdvisor && (
+        <div style={{
+          borderRadius: 'var(--radius-md)',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.5) 0%, rgba(6, 182, 212, 0.25) 100%)',
+          border: '1px solid var(--border-cyan)',
+          boxShadow: '0 4px 20px rgba(6, 182, 212, 0.2)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div>
+            <div style={{ fontSize: '1rem', fontWeight: '800', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>👑</span> Panel de Control (Backoffice)
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#a5f3fc', marginTop: '2px' }}>
+              Acceso exclusivo para administrar pedidos, productos, cupones y finanzas
+            </div>
+          </div>
+          <Link to="/admin" className="btn-cyan" style={{ padding: '10px 20px', fontSize: '0.88rem', fontWeight: '800' }}>
+            Acceder al Panel ➔
+          </Link>
+        </div>
+      )}
 
       {/* Referral Code Box */}
       {profile?.referral_code && (
         <div className="glass-panel" style={{
           borderRadius: 'var(--radius-md)',
           padding: '16px 20px',
-          marginBottom: '24px',
+          marginBottom: '20px',
           border: '1px solid var(--border-glass)',
           display: 'flex',
           alignItems: 'center',
@@ -312,7 +367,7 @@ export default function Profile() {
       )}
 
       {/* Profile Subtabs */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveTab('orders')}
           style={{
@@ -344,6 +399,28 @@ export default function Profile() {
         >
           ➕ Recargar Billetera
         </button>
+
+        {isAdminOrAdvisor && (
+          <Link
+            to="/admin"
+            style={{
+              padding: '10px 18px',
+              borderRadius: 'var(--radius-md)',
+              fontWeight: '700',
+              fontSize: '0.85rem',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'linear-gradient(135deg, #1e3a8a 0%, #06b6d4 100%)',
+              color: '#fff',
+              border: '1px solid var(--border-cyan)',
+              boxShadow: '0 2px 10px rgba(6, 182, 212, 0.25)'
+            }}
+          >
+            👑 Panel de Control
+          </Link>
+        )}
       </div>
 
       {/* Tab: Orders History */}
