@@ -43,7 +43,6 @@ export default function Home() {
         .range(from, to);
 
       if (selectedCategory !== 'all') {
-        // Find subcategories in this category
         const { data: subcats } = await supabase
           .from('subcategories')
           .select('id')
@@ -72,46 +71,75 @@ export default function Home() {
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
 
   return (
-    <div className="container" style={{ paddingTop: '20px' }}>
-      {/* Dynamic Hero Banner */}
-      <div className="glass-panel" style={{
+    <div className="container" style={{ paddingTop: '16px' }}>
+      
+      {/* Immersive Gamer Banner (Name Only + Gamer Background) */}
+      <div style={{
         borderRadius: 'var(--radius-lg)',
-        padding: '28px 24px',
-        marginBottom: '28px',
-        background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(6, 182, 212, 0.15) 100%)',
-        border: '1px solid var(--border-cyan)',
+        padding: '36px 20px',
+        marginBottom: '24px',
+        background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 13, 20, 0.98) 100%)',
+        backgroundImage: `
+          radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.18) 0%, transparent 60%),
+          radial-gradient(circle at 10% 20%, rgba(30, 58, 138, 0.35) 0%, transparent 50%),
+          linear-gradient(180deg, rgba(13, 17, 26, 0.8) 0%, rgba(10, 13, 20, 0.95) 100%)
+        `,
+        border: '1px solid rgba(6, 182, 212, 0.3)',
+        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.6), inset 0 0 30px rgba(6, 182, 212, 0.06)',
         position: 'relative',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center'
       }}>
-        <div style={{ maxWidth: '600px', position: 'relative', zIndex: 2 }}>
-          <div className="badge-cyan" style={{ marginBottom: '10px' }}>
-            ⚡ Recargas y Bienes Digitales
-          </div>
-          <h1 style={{ fontSize: '1.8rem', lineHeight: 1.2, marginBottom: '10px' }}>
-            Recargas Gamer & Cuentas Digitales en <span className="glow-text-cyan">ALVSHOP</span>
-          </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '18px' }}>
-            Entrega inmediata por ID (Free Fire, Mobile Legends) y stock garantizado en servicios de streaming.
-          </p>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <a href="#catalogo" className="btn-cyan" style={{ fontSize: '0.85rem' }}>
-              Explorar Catálogo ➔
-            </a>
-            <Link to="/likes" className="btn-glass" style={{ fontSize: '0.85rem' }}>
-              👍 Enviar Likes
-            </Link>
-          </div>
-        </div>
-
-        {/* Ambient Glow Graphic */}
+        {/* Subtle Cyber Gamer Glow Line */}
         <div style={{
           position: 'absolute',
-          right: '-50px',
-          bottom: '-50px',
-          width: '220px',
-          height: '220px',
-          background: 'radial-gradient(circle, var(--accent-cyan-glow) 0%, transparent 70%)',
-          filter: 'blur(30px)',
+          top: 0,
+          left: '20%',
+          right: '20%',
+          height: '2px',
+          background: 'linear-gradient(90deg, transparent, var(--accent-cyan), transparent)',
+          boxShadow: '0 0 12px var(--accent-cyan)'
+        }} />
+
+        {/* Dynamic Store Title (Configurable from Backoffice) */}
+        <h1 style={{
+          fontSize: 'clamp(1.8rem, 6vw, 2.6rem)',
+          fontWeight: '900',
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          margin: 0,
+          background: 'linear-gradient(135deg, #ffffff 30%, var(--accent-cyan) 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          textShadow: '0 0 25px rgba(6, 182, 212, 0.45)',
+          position: 'relative',
+          zIndex: 2
+        }}>
+          {config?.site_title || 'ALVSHOP'}
+        </h1>
+
+        {/* Ambient Glow Orbs */}
+        <div style={{
+          position: 'absolute',
+          right: '-40px',
+          bottom: '-40px',
+          width: '180px',
+          height: '180px',
+          background: 'radial-gradient(circle, rgba(6, 182, 212, 0.25) 0%, transparent 70%)',
+          filter: 'blur(25px)',
+          zIndex: 1
+        }} />
+        <div style={{
+          position: 'absolute',
+          left: '-40px',
+          top: '-40px',
+          width: '180px',
+          height: '180px',
+          background: 'radial-gradient(circle, rgba(30, 58, 138, 0.35) 0%, transparent 70%)',
+          filter: 'blur(25px)',
           zIndex: 1
         }} />
       </div>
@@ -119,7 +147,7 @@ export default function Home() {
       {/* Category Pills Filter */}
       <div id="catalogo" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>🎮</span> Catálogo Principal
           </h3>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -178,7 +206,7 @@ export default function Home() {
       {/* Strict 2x3 Grid (6 items) */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
-          Cargando catálogo de ALVSHOP...
+          Cargando catálogo...
         </div>
       ) : products.length === 0 ? (
         <div className="glass-panel" style={{
