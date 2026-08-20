@@ -15,16 +15,20 @@ export default function Home() {
 
   const ITEMS_PER_PAGE = 6; // Strict 2 columns x 3 rows
 
-  // Fetch Categories
+  // Fetch Categories from Supabase
   useEffect(() => {
     async function loadCategories() {
       const { data, error } = await supabase.from('categories').select('*').order('name');
-      if (data && !error) setCategories(data);
+      if (data && !error) {
+        setCategories(data);
+      } else {
+        setCategories([]);
+      }
     }
     loadCategories();
   }, []);
 
-  // Fetch Products with 2x3 Pagination
+  // Fetch Products from Supabase
   useEffect(() => {
     async function loadProducts() {
       setLoading(true);
@@ -56,83 +60,8 @@ export default function Home() {
         setProducts(data);
         setTotalCount(count || 0);
       } else {
-        // Fallback sample data if database is empty initially
-        const sampleProducts = [
-          {
-            id: 'sample-ff-100',
-            name: '100 + 10 Diamantes Free Fire (Directo UID)',
-            price_public: 1.10,
-            price_reseller: 0.95,
-            cost: 0.85,
-            stock: 999,
-            validation_type: 'Free Fire',
-            requires_validation: true,
-            button_action_text: 'Solicitar',
-            image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60'
-          },
-          {
-            id: 'sample-ff-310',
-            name: '310 + 31 Diamantes Free Fire (Directo UID)',
-            price_public: 3.20,
-            price_reseller: 2.85,
-            cost: 2.60,
-            stock: 999,
-            validation_type: 'Free Fire',
-            requires_validation: true,
-            button_action_text: 'Solicitar',
-            image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=500&auto=format&fit=crop&q=60'
-          },
-          {
-            id: 'sample-ff-520',
-            name: '520 + 52 Diamantes Free Fire (Directo UID)',
-            price_public: 5.30,
-            price_reseller: 4.80,
-            cost: 4.40,
-            stock: 999,
-            validation_type: 'Free Fire',
-            requires_validation: true,
-            button_action_text: 'Solicitar',
-            image_url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=500&auto=format&fit=crop&q=60'
-          },
-          {
-            id: 'sample-net-1m',
-            name: 'Netflix 1 Pantalla Ultra HD (30 Días)',
-            price_public: 3.50,
-            price_reseller: 2.90,
-            cost: 2.20,
-            stock: 25,
-            validation_type: 'Streaming',
-            requires_validation: false,
-            button_action_text: 'Comprar',
-            image_url: 'https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=500&auto=format&fit=crop&q=60'
-          },
-          {
-            id: 'sample-dis-1m',
-            name: 'Disney+ / Star+ Premium (30 Días)',
-            price_public: 2.80,
-            price_reseller: 2.20,
-            cost: 1.80,
-            stock: 18,
-            validation_type: 'Streaming',
-            requires_validation: false,
-            button_action_text: 'Comprar',
-            image_url: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=500&auto=format&fit=crop&q=60'
-          },
-          {
-            id: 'sample-spo-3m',
-            name: 'Spotify Premium Individual (3 Meses)',
-            price_public: 4.00,
-            price_reseller: 3.20,
-            cost: 2.50,
-            stock: 30,
-            validation_type: 'Streaming',
-            requires_validation: false,
-            button_action_text: 'Comprar',
-            image_url: 'https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=500&auto=format&fit=crop&q=60'
-          }
-        ];
-        setProducts(sampleProducts);
-        setTotalCount(6);
+        setProducts([]);
+        setTotalCount(0);
       }
       setLoading(false);
     }
@@ -168,8 +97,8 @@ export default function Home() {
             <a href="#catalogo" className="btn-cyan" style={{ fontSize: '0.85rem' }}>
               Explorar Catálogo ➔
             </a>
-            <Link to="/feed" className="btn-glass" style={{ fontSize: '0.85rem' }}>
-              Ver Comunidad
+            <Link to="/likes" className="btn-glass" style={{ fontSize: '0.85rem' }}>
+              👍 Enviar Likes
             </Link>
           </div>
         </div>
@@ -250,6 +179,22 @@ export default function Home() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
           Cargando catálogo de ALVSHOP...
+        </div>
+      ) : products.length === 0 ? (
+        <div className="glass-panel" style={{
+          padding: '40px 20px',
+          textAlign: 'center',
+          borderRadius: 'var(--radius-lg)',
+          margin: '20px 0'
+        }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🛍️</div>
+          <h3 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>No hay productos disponibles actualmente</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '400px', margin: '0 auto 16px auto' }}>
+            El administrador aún no ha publicado productos en esta categoría. Puedes agregarlos desde el Backoffice.
+          </p>
+          <Link to="/admin/products" className="btn-glass" style={{ fontSize: '0.85rem' }}>
+            👑 Ir al Gestor de Productos
+          </Link>
         </div>
       ) : (
         <div className="store-grid-2x3">
