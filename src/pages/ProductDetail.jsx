@@ -234,23 +234,6 @@ export default function ProductDetail() {
           }
         });
 
-        // Notify Admins
-        notifyAdminNewOrder({
-          orderId: orderData.id,
-          amount: finalPriceUsdt,
-          customerName: profile?.full_name || user.email,
-          paymentMethod: 'Binance Pay'
-        });
-
-        // Notify Customer
-        sendPushNotification({
-          userId: user.id,
-          title: '🛒 ¡Orden Generada (Binance Pay)!',
-          body: `Tu orden #${orderData.id.slice(0, 8)} de ${product.name} está lista para pagar.`,
-          type: 'order_created',
-          metadata: { orderId: orderData.id, url: '/profile?tab=orders' }
-        });
-
         setCreatedOrderForBinance(orderData);
         setShowCheckout(false);
         setShowBinanceModal(true);

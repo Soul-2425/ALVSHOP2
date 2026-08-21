@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createBinancePayOrder, queryBinancePayOrder, completeBinancePayment, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { soundEffects } from '../services/soundEffects';
 import { useApp } from '../context/AppContext';
-import { notifyOrderCompleted } from '../../notificaciones y apis/notificaciones/pushService';
+import { notifyOrderCompleted, notifyAdminNewOrder } from '../../notificaciones y apis/notificaciones/pushService';
 import { supabase } from '../supabaseClient';
 
 export default function BinancePayModal({
@@ -147,7 +147,7 @@ export default function BinancePayModal({
           .eq('id', finalOrderId);
       }
 
-      // Notificación instantánea de entrega
+      // Notificación instantánea de entrega al cliente
       if (user?.id) {
         notifyOrderCompleted({
           orderId: finalOrderId,
@@ -156,6 +156,14 @@ export default function BinancePayModal({
           amount: amountUsdt
         });
       }
+
+      // Notificación al Administrador
+      notifyAdminNewOrder({
+        orderId: finalOrderId,
+        amount: amountUsdt,
+        customerName: user?.email || 'Cliente',
+        paymentMethod: 'Binance Pay (USDT)'
+      });
     }
 
     if (user?.id) {
