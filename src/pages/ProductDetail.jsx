@@ -73,10 +73,10 @@ export default function ProductDetail() {
 
       if (fieldsData && fieldsData.length > 0) {
         setFields(fieldsData);
-      } else if (id.includes('ff') || id === 'sample-ff-100') {
+      } else {
+        // Fallback: Always ensure at least "ID de Jugador (UID)" is present for recharges / digital services
         setFields([
-          { id: 'f1', field_name: 'ID de Jugador (UID)', field_type: 'text', is_required: true },
-          { id: 'f2', field_name: 'Región / Servidor', field_type: 'text', is_required: true }
+          { id: 'default-uid', field_name: 'ID de Jugador (UID)', field_type: 'text', is_required: true }
         ]);
       }
 
@@ -116,12 +116,12 @@ export default function ProductDetail() {
     try {
       // Calls Jorge's API integration function
       const result = await validatePlayerUid(uidValue, product?.validation_type || 'Free Fire');
-      if (result.success && result.nickname) {
+      if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
         setValidationError('');
       } else {
         setPlayerNickname(null);
-        setValidationError(result.error || 'ID de jugador no encontrado');
+        setValidationError(result?.error || 'ID de jugador no encontrado');
       }
     } catch (err) {
       setValidationError('Error conectando con la API de validación');
@@ -333,9 +333,11 @@ export default function ProductDetail() {
             {formatPrice(product.price_public)}
           </div>
 
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.6 }}>
-            {product.description}
-          </p>
+          {product.description && (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.6 }}>
+              {product.description}
+            </p>
+          )}
 
           {/* Dynamic Form Builder (UID, PIN, Account fields) */}
           <div style={{
@@ -351,8 +353,8 @@ export default function ProductDetail() {
 
             {fields.map((field) => (
               <div key={field.id} style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '600' }}>
-                  {field.field_name} {field.is_required && <span style={{ color: '#f87171' }}>*</span>}
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#fff', marginBottom: '6px', fontWeight: '700' }}>
+                  {field.field_name} {field.is_required && <span style={{ color: 'var(--accent-cyan)' }}>*</span>}
                 </label>
                 <input
                   type={field.field_type || 'text'}
@@ -362,12 +364,15 @@ export default function ProductDetail() {
                   onChange={(e) => handleInputChange(field.field_name, e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '10px 14px',
+                    padding: '12px 14px',
                     borderRadius: 'var(--radius-sm)',
-                    background: '#0d111a',
-                    border: '1px solid var(--border-glass)',
+                    background: '#070b09',
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
                     color: '#fff',
-                    fontSize: '0.9rem'
+                    fontSize: '0.95rem',
+                    fontWeight: '600',
+                    outline: 'none',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)'
                   }}
                 />
               </div>
@@ -417,7 +422,7 @@ export default function ProductDetail() {
           <button
             onClick={() => setShowCheckout(true)}
             className="btn-cyan"
-            style={{ width: '100%', padding: '14px', fontSize: '1rem' }}
+            style={{ width: '100%', padding: '14px', fontSize: '1rem', fontWeight: '800' }}
           >
             {product.button_action_text || 'Comprar Ahora'} ➔
           </button>

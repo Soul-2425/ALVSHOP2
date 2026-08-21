@@ -56,6 +56,11 @@ export default function AdminProducts() {
     setDynamicFields(updated);
   };
 
+  const handleRemoveField = (index) => {
+    const updated = dynamicFields.filter((_, idx) => idx !== index);
+    setDynamicFields(updated.length > 0 ? updated : ['ID de Jugador (UID)']);
+  };
+
   // Create Category
   const handleCreateCategory = async (e) => {
     e.preventDefault();
@@ -129,12 +134,14 @@ export default function AdminProducts() {
 
       if (prodErr) throw prodErr;
 
-      // Insert dynamic fields
+      // Insert dynamic fields into product_fields
       for (let i = 0; i < dynamicFields.length; i++) {
         if (dynamicFields[i].trim()) {
           await supabase.from('product_fields').insert({
             product_id: newProd.id,
             field_name: dynamicFields[i].trim(),
+            field_type: 'text',
+            is_required: true,
             sort_order: i
           });
         }
@@ -143,12 +150,14 @@ export default function AdminProducts() {
       await loadData();
       setShowProductModal(false);
       setName('');
+      setDescription('');
       setPricePublic('');
       setPriceReseller('');
       setCost('');
-      alert('¡Producto publicado exitosamente con sus 3 precios configurados!');
+      setDynamicFields(['ID de Jugador (UID)']);
+      alert('¡Producto publicado exitosamente con sus campos de formulario y 3 precios configurados!');
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert('Error guardando producto: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -168,7 +177,14 @@ export default function AdminProducts() {
           <button onClick={() => setShowCategoryModal(true)} className="btn-glass" style={{ fontSize: '0.85rem' }}>
             📁 Gestionar Categorías ({categories.length})
           </button>
-          <button onClick={() => setShowProductModal(true)} className="btn-cyan" style={{ fontSize: '0.85rem' }}>
+          <button
+            onClick={() => {
+              setDynamicFields(['ID de Jugador (UID)']);
+              setShowProductModal(true);
+            }}
+            className="btn-cyan"
+            style={{ fontSize: '0.85rem' }}
+          >
             ➕ Crear Nuevo Producto
           </button>
         </div>
@@ -343,7 +359,7 @@ export default function AdminProducts() {
                 <input
                   type="text"
                   required
-                  placeholder="Ej. 100 + 10 Diamantes Free Fire"
+                  placeholder="Ej. +2,000 likes"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
@@ -354,7 +370,7 @@ export default function AdminProducts() {
                 <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Descripción</label>
                 <textarea
                   rows="2"
-                  placeholder="Detalles de entrega, servidores compatibles..."
+                  placeholder="Detalles de entrega, 1800-2200 likes x ID..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
@@ -369,7 +385,7 @@ export default function AdminProducts() {
                     type="number"
                     step="0.01"
                     required
-                    placeholder="1.10"
+                    placeholder="6.00"
                     value={pricePublic}
                     onChange={(e) => setPricePublic(e.target.value)}
                     style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-cyan)', color: '#fff', fontWeight: '700' }}
@@ -381,7 +397,7 @@ export default function AdminProducts() {
                     type="number"
                     step="0.01"
                     required
-                    placeholder="0.95"
+                    placeholder="5.00"
                     value={priceReseller}
                     onChange={(e) => setPriceReseller(e.target.value)}
                     style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '700' }}
@@ -393,7 +409,7 @@ export default function AdminProducts() {
                     type="number"
                     step="0.01"
                     required
-                    placeholder="0.85"
+                    placeholder="4.00"
                     value={cost}
                     onChange={(e) => setCost(e.target.value)}
                     style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '700' }}
@@ -425,7 +441,7 @@ export default function AdminProducts() {
                 </div>
               </div>
 
-              {/* Form Builder */}
+              {/* Form Builder for dynamic inputs */}
               <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <label style={{ fontSize: '0.8rem', fontWeight: '700' }}>Campos requeridos al cliente (Form Builder):</label>
@@ -434,14 +450,24 @@ export default function AdminProducts() {
                   </button>
                 </div>
                 {dynamicFields.map((field, idx) => (
-                  <input
-                    key={idx}
-                    type="text"
-                    placeholder="Ej. ID de Jugador (UID) o PIN de perfil"
-                    value={field}
-                    onChange={(e) => handleFieldChange(idx, e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', marginBottom: '6px', fontSize: '0.85rem' }}
-                  />
+                  <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Ej. ID de Jugador (UID)"
+                      value={field}
+                      onChange={(e) => handleFieldChange(idx, e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                    {dynamicFields.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveField(idx)}
+                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
 
