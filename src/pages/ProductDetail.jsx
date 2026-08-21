@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
-import { notifyAdminNewOrder, notifyOrderCompleted } from '../../notificaciones y apis/notificaciones/pushService';
+import { notifyAdminNewOrder, notifyOrderCompleted, sendPushNotification } from '../../notificaciones y apis/notificaciones/pushService';
 import BinancePayModal from '../components/BinancePayModal';
 
 export default function ProductDetail() {
@@ -242,6 +242,15 @@ export default function ProductDetail() {
           paymentMethod: 'Binance Pay'
         });
 
+        // Notify Customer
+        sendPushNotification({
+          userId: user.id,
+          title: '🛒 ¡Orden Generada (Binance Pay)!',
+          body: `Tu orden #${orderData.id.slice(0, 8)} de ${product.name} está lista para pagar.`,
+          type: 'order_created',
+          metadata: { orderId: orderData.id, url: '/profile?tab=orders' }
+        });
+
         setCreatedOrderForBinance(orderData);
         setShowCheckout(false);
         setShowBinanceModal(true);
@@ -302,6 +311,15 @@ export default function ProductDetail() {
           nickname: playerNickname || '',
           product_name: product.name,
           total_usdt: finalPriceUsdt
+        });
+      } else {
+        // Notification for manual bank transfer order
+        sendPushNotification({
+          userId: user.id,
+          title: '📋 ¡Pedido Registrado en Verificación!',
+          body: `Tu orden #${orderData.id.slice(0, 8)} de ${product.name} por $${finalPriceUsdt.toFixed(2)} USDT está pendiente de comprobante.`,
+          type: 'order_created',
+          metadata: { orderId: orderData.id, url: '/profile?tab=orders' }
         });
       }
 

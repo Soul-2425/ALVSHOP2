@@ -9,7 +9,18 @@ export default function Profile() {
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'orders';
 
-  const { user, profile, role, walletBalance, config, fetchProfile } = useApp();
+  const {
+    user,
+    profile,
+    role,
+    walletBalance,
+    config,
+    fetchProfile,
+    notifications,
+    unreadCount,
+    clearAllNotifications
+  } = useApp();
+
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // Auth Form State
@@ -32,10 +43,17 @@ export default function Profile() {
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showBinanceModal, setShowBinanceModal] = useState(false);
   const [binanceDepositAmount, setBinanceDepositAmount] = useState('10');
-  const [pushStatus, setPushStatus] = useState('default');
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
+
+  // Sync tab from URL params if present
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   // Load User Orders
   useEffect(() => {
@@ -158,14 +176,14 @@ export default function Profile() {
               color: '#f87171',
               padding: '10px',
               borderRadius: 'var(--radius-sm)',
-              fontSize: '0.8rem',
+              fontSize: '0.85rem',
               marginBottom: '16px'
             }}>
-              ⚠️ {authError}
+              {authError}
             </div>
           )}
 
-          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {isSignUp && (
               <>
                 <div>
@@ -173,29 +191,21 @@ export default function Profile() {
                   <input
                     type="text"
                     required
-                    placeholder="Ej. Jonathan Álvarez"
+                    placeholder="Tu Nombre"
                     value={authFullName}
                     onChange={(e) => setAuthFullName(e.target.value)}
                     style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
                   />
                 </div>
+
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Teléfono / WhatsApp</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Número de WhatsApp</label>
                   <input
                     type="tel"
-                    placeholder="+502 1234 5678"
+                    required
+                    placeholder="502 1234 5678"
                     value={authPhone}
                     onChange={(e) => setAuthPhone(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Código de Referido (Opcional)</label>
-                  <input
-                    type="text"
-                    placeholder="ALV-XXXX"
-                    value={referralInput}
-                    onChange={(e) => setReferralInput(e.target.value)}
                     style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
                   />
                 </div>
@@ -319,24 +329,23 @@ export default function Profile() {
 
       {/* Admin Backoffice Direct Action Banner (If Admin / Asesor) */}
       {isAdminOrAdvisor && (
-        <div style={{
+        <div className="glass-panel" style={{
           borderRadius: 'var(--radius-md)',
           padding: '16px 20px',
           marginBottom: '20px',
-          background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.5) 0%, rgba(6, 182, 212, 0.25) 100%)',
           border: '1px solid var(--border-cyan)',
-          boxShadow: '0 4px 20px rgba(6, 182, 212, 0.2)',
+          background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(6, 182, 212, 0.15) 100%)',
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
+          justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '12px'
         }}>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: '800', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>👑</span> Panel de Control (Backoffice)
+            <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+              👑 Panel de Control (Backoffice)
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#a5f3fc', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Acceso exclusivo para administrar pedidos, productos, cupones y finanzas
             </div>
           </div>
@@ -371,7 +380,7 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Profile Subtabs */}
+      {/* Profile Subtabs Navigation Bar */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveTab('orders')}
@@ -387,6 +396,37 @@ export default function Profile() {
           }}
         >
           📦 Mis Pedidos ({orders.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('notifications')}
+          style={{
+            padding: '10px 18px',
+            borderRadius: 'var(--radius-md)',
+            fontWeight: '700',
+            fontSize: '0.85rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: activeTab === 'notifications' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
+            color: activeTab === 'notifications' ? '#000' : 'var(--text-main)',
+            border: activeTab === 'notifications' ? 'none' : '1px solid var(--border-glass)'
+          }}
+        >
+          <span>🔔</span> Mis Notificaciones
+          {unreadCount > 0 && (
+            <span style={{
+              background: '#f87171',
+              color: '#fff',
+              borderRadius: '50%',
+              fontSize: '0.7rem',
+              padding: '2px 6px',
+              fontWeight: '900'
+            }}>
+              {unreadCount}
+            </span>
+          )}
         </button>
 
         <button
@@ -428,7 +468,7 @@ export default function Profile() {
         )}
       </div>
 
-      {/* Tab: Orders History */}
+      {/* Tab 1: Orders History */}
       {activeTab === 'orders' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {loadingOrders ? (
@@ -449,10 +489,11 @@ export default function Profile() {
                 Pending: '#60a5fa',
                 Rejected: '#f87171'
               };
+
               const statusLabels = {
                 Completed: 'Completado / Entregado',
-                Verification: 'En Verificación',
-                Pending: 'Pendiente',
+                Verification: 'En Verificación de Pago',
+                Pending: 'Pendiente de Pago',
                 Rejected: 'Rechazado'
               };
 
@@ -460,54 +501,64 @@ export default function Profile() {
                 <div key={ord.id} className="glass-panel" style={{
                   borderRadius: 'var(--radius-md)',
                   padding: '16px',
-                  border: '1px solid var(--border-glass)'
+                  border: '1px solid var(--border-glass)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Orden #{ord.id.slice(0, 8)} • {new Date(ord.created_at).toLocaleDateString()}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Orden: </span>
+                      <strong style={{ color: 'var(--accent-cyan)' }}>#{ord.id.slice(0, 8)}</strong>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
+                        {new Date(ord.created_at).toLocaleString()}
+                      </span>
                     </div>
+
                     <span style={{
-                      fontSize: '0.75rem',
-                      fontWeight: '800',
-                      padding: '3px 10px',
+                      padding: '4px 10px',
                       borderRadius: 'var(--radius-full)',
-                      background: `${statusColors[ord.status]}22`,
-                      color: statusColors[ord.status],
-                      border: `1px solid ${statusColors[ord.status]}44`
+                      fontSize: '0.75rem',
+                      fontWeight: '700',
+                      background: `${statusColors[ord.status] || '#60a5fa'}22`,
+                      color: statusColors[ord.status] || '#60a5fa',
+                      border: `1px solid ${statusColors[ord.status] || '#60a5fa'}55`
                     }}>
                       {statusLabels[ord.status] || ord.status}
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      {ord.order_items?.map((item) => (
-                        <div key={item.id} style={{ fontWeight: '700', fontSize: '0.9rem' }}>
-                          {item.products?.name || 'Recarga Digital'} (x{item.quantity})
+                  {/* Order Items */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {ord.order_items?.map((item) => (
+                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                        <div>
+                          <strong>{item.products?.name || 'Recarga Digital'}</strong>
+                          {item.fields_data && Object.keys(item.fields_data).length > 0 && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {Object.entries(item.fields_data).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                            </div>
+                          )}
                         </div>
-                      ))}
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Método: {ord.payment_method === 'Wallet' ? 'Billetera USDT' : 'Transferencia Quetzales'}
+                        <div style={{ fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                          ${Number(item.price_usdt).toFixed(2)} USDT
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
-                      ${Number(ord.total_usdt).toFixed(2)} USDT
-                    </div>
+                    ))}
                   </div>
 
-                  {/* Credentials delivery display (for streaming accounts) */}
-                  {ord.order_items?.some(i => i.credentials_delivered) && (
-                    <div style={{
-                      marginTop: '10px',
-                      padding: '10px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'rgba(6, 182, 212, 0.1)',
-                      border: '1px solid var(--border-cyan)',
-                      fontSize: '0.8rem'
-                    }}>
-                      <strong>Credenciales Entregadas:</strong> {ord.order_items.find(i => i.credentials_delivered)?.credentials_delivered}
-                    </div>
-                  )}
+                  {/* Total & Payment Method */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderTop: '1px solid var(--border-glass)',
+                    paddingTop: '8px',
+                    fontSize: '0.85rem'
+                  }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Método: {ord.payment_method}</span>
+                    <div>Total: <strong>${Number(ord.total_usdt).toFixed(2)} USDT</strong> (Q{Number(ord.total_gtq).toFixed(2)} GTQ)</div>
+                  </div>
                 </div>
               );
             })
@@ -515,32 +566,91 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Tab: Wallet Top-Up Request */}
+      {/* Tab 2: Notifications History */}
+      {activeTab === 'notifications' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '1.05rem', margin: 0 }}>Historial de Alertas & Notificaciones</h3>
+            {notifications.length > 0 && (
+              <button onClick={clearAllNotifications} className="btn-glass" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                🧹 Limpiar
+              </button>
+            )}
+          </div>
+
+          {notifications.length === 0 ? (
+            <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🔔</div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No tienes notificaciones pendientes.</p>
+            </div>
+          ) : (
+            notifications.map((notif) => (
+              <div key={notif.id} className="glass-panel" style={{
+                padding: '16px',
+                borderRadius: 'var(--radius-md)',
+                border: notif.is_read ? '1px solid var(--border-glass)' : '1px solid var(--border-cyan)',
+                background: notif.is_read ? 'rgba(255,255,255,0.02)' : 'rgba(6, 182, 212, 0.05)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '1.4rem' }}>
+                    {notif.type === 'order_completed' ? '🎉' : notif.type === 'order_created' ? '🛒' : notif.type === 'support_reply' ? '💬' : '🔔'}
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#fff' }}>{notif.title}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{notif.body}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', marginTop: '4px' }}>
+                      {new Date(notif.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {notif.metadata?.url && (
+                  <Link
+                    to={notif.metadata.url}
+                    className="btn-glass"
+                    style={{ fontSize: '0.75rem', padding: '6px 12px', whiteSpace: 'nowrap' }}
+                  >
+                    Ver ➔
+                  </Link>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Tab 3: Wallet Recharge */}
       {activeTab === 'wallet' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Binance Pay Automated Instant Deposit */}
+          {/* Binance Pay Automated Instant Recharge */}
           <div className="glass-panel" style={{
             borderRadius: 'var(--radius-md)',
             padding: '24px',
             border: '1px solid #f0b90b',
-            boxShadow: '0 0 25px rgba(240, 185, 11, 0.15)'
+            background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.08) 0%, rgba(13, 17, 26, 0.8) 100%)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <span style={{ fontSize: '1.4rem' }}>🟡</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '1.5rem' }}>🟡</span>
               <div>
-                <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Instantánea con Binance Pay</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Acreditación automática en tiempo real sin esperas ni confirmación manual.
-                </div>
+                <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Instantánea con Binance Pay (USDT)</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Acreditación automática en menos de 1 minuto</div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '14px', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', flex: 1, minWidth: '160px' }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Ingresa el monto que deseas recargar a tu billetera y escanea el código con tu App de Binance:
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', width: '150px' }}>
                 <input
                   type="number"
-                  min="1"
                   step="1"
+                  min="1"
                   value={binanceDepositAmount}
                   onChange={(e) => setBinanceDepositAmount(e.target.value)}
                   style={{

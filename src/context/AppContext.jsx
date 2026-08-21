@@ -38,26 +38,25 @@ export function AppProvider({ children }) {
 
   const [isLoading, setIsLoading] = useState(true);
 
-  // Add Notification to floating Toast queue with Auto-Dismiss
+  // Add Notification to floating Toast queue with Sound
   const addNotification = useCallback((notif) => {
     const id = notif.id || 'notif-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
     const newNotif = { ...notif, id, created_at: notif.created_at || new Date().toISOString() };
 
-    setNotifications((prev) => [newNotif, ...prev.slice(0, 4)]);
+    setNotifications((prev) => {
+      const exists = prev.some((n) => n.id === id);
+      if (exists) return prev;
+      return [newNotif, ...prev];
+    });
     setUnreadCount((prev) => prev + 1);
 
     // Reproducir tono según tipo
     if (!isMuted) {
       if (notif.type === 'order_completed') soundEffects.playOrderCompletedSound();
-      else if (notif.type === 'admin_new_order') soundEffects.playNewOrderAdminSound();
+      else if (notif.type === 'admin_new_order' || notif.type === 'order_created') soundEffects.playNewOrderAdminSound();
       else if (notif.type === 'support_reply' || notif.type === 'admin_support_message') soundEffects.playChatMessageSound();
       else if (notif.type === 'feed_interaction') soundEffects.playFeedInteractionSound();
     }
-
-    // Auto-remover en 7 segundos
-    setTimeout(() => {
-      removeNotification(id);
-    }, 7000);
   }, [isMuted]);
 
   const removeNotification = (id) => {
@@ -75,6 +74,27 @@ export function AppProvider({ children }) {
       soundEffects.setMuted(next);
       return next;
     });
+  };
+
+  // Load User Persistent Notification Logs from Supabase
+  const loadUserNotifications = async (userId) => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('notification_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (data && !error) {
+        setNotifications(data);
+        const unread = data.filter(n => !n.is_read).length;
+        setUnreadCount(unread);
+      }
+    } catch (err) {
+      console.warn('Error loading notifications:', err);
+    }
   };
 
   // Load Config & Apply Dynamic CSS Variables
@@ -131,7 +151,8 @@ export function AppProvider({ children }) {
         setRole(data.role || 'Cliente Común');
         setWalletBalance(Number(data.wallet_balance || 0));
 
-        // Auto-solicitar suscripción push si aún no está registrada
+        // Load notifications and request permission
+        loadUserNotifications(userId);
         requestPushPermission(userId);
       }
     } catch (err) {
@@ -161,6 +182,8 @@ export function AppProvider({ children }) {
         setProfile(null);
         setRole('Cliente Común');
         setWalletBalance(0.00);
+        setNotifications([]);
+        setUnreadCount(0);
       }
       setIsLoading(false);
     });
@@ -188,13 +211,13 @@ export function AppProvider({ children }) {
             type: 'admin_new_order',
             title: '🛒 ¡Nuevo Pedido en Tienda!',
             body: `Orden #${(payload.new.id || '').slice(0, 8)} por $${Number(payload.new.total_usdt || 0).toFixed(2)} USDT`,
-            metadata: { url: '/admin', orderId: payload.new.id }
+            metadata: { url: '/admin/orders', orderId: payload.new.id }
           });
         }
       })
       .subscribe();
 
-    // 2. Canal Personal del Usuario (Para pedidos completados y respuestas de soporte)
+    // 2. Canal Personal del Usuario (Para pedidos creados, completados y respuestas de soporte)
     let userChannel = null;
     if (user?.id) {
       userChannel = supabase.channel(`user_channel_${user.id}`);
@@ -203,6 +226,16 @@ export function AppProvider({ children }) {
         .on('broadcast', { event: 'push_notification' }, (payload) => {
           if (payload?.payload) {
             addNotification(payload.payload);
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, (payload) => {
+          if (payload.new) {
+            addNotification({
+              type: 'order_created',
+              title: '🛒 ¡Pedido Registrado!',
+              body: `Tu pedido #${(payload.new.id || '').slice(0, 8)} por $${Number(payload.new.total_usdt || 0).toFixed(2)} USDT fue registrado con éxito.`,
+              metadata: { url: '/profile?tab=orders', orderId: payload.new.id }
+            });
           }
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, (payload) => {
@@ -258,11 +291,13 @@ export function AppProvider({ children }) {
         walletBalance,
         setWalletBalance,
         currency,
-        toggleCurrency,
+        setCurrency,
         exchangeRate,
+        setExchangeRate,
+        formatPrice,
+        toggleCurrency,
         config,
         loadConfig,
-        formatPrice,
         fetchProfile,
         isLoading,
         notifications,
@@ -270,6 +305,7 @@ export function AppProvider({ children }) {
         addNotification,
         removeNotification,
         clearAllNotifications,
+        loadUserNotifications,
         isMuted,
         toggleMute
       }}
