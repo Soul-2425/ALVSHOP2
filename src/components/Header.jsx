@@ -22,6 +22,25 @@ export default function Header({ onToggleSidebar }) {
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const navigate = useNavigate();
 
+  // Helper to get notification type label & badge styling
+  const getTypeBadge = (type) => {
+    switch (type) {
+      case 'order_created':
+        return { label: 'PEDIDO CREADO', icon: '🛒', color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' };
+      case 'order_completed':
+        return { label: 'ENTREGA EXITOSA', icon: '🎉', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' };
+      case 'admin_new_order':
+        return { label: 'VENTA EN TIENDA', icon: '💰', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' };
+      case 'support_reply':
+      case 'admin_support_message':
+        return { label: 'SOPORTE TÉCNICO', icon: '💬', color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.15)' };
+      case 'feed_interaction':
+        return { label: 'COMUNIDAD', icon: '❤️', color: '#f472b6', bg: 'rgba(244, 114, 182, 0.15)' };
+      default:
+        return { label: 'NOTIFICACIÓN', icon: '🔔', color: 'var(--accent-cyan)', bg: 'rgba(6, 182, 212, 0.15)' };
+    }
+  };
+
   return (
     <>
       <header style={{
@@ -153,63 +172,137 @@ export default function Header({ onToggleSidebar }) {
                 )}
               </button>
 
-              {/* Notifications Dropdown Panel */}
+              {/* Responsive Notifications Dropdown with Backdrop */}
               {showNotificationsDrawer && (
-                <div className="glass-panel animate-fade" style={{
-                  position: 'absolute',
-                  top: '46px',
-                  right: 0,
-                  width: '320px',
-                  borderRadius: 'var(--radius-lg)',
-                  border: '1px solid var(--border-cyan)',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
-                  padding: '16px',
-                  zIndex: 60
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <div style={{ fontWeight: '800', fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>
-                      🔔 Notificaciones en Vivo
-                    </div>
-                    {notifications.length > 0 && (
-                      <button
-                        onClick={clearAllNotifications}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer' }}
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                  </div>
+                <>
+                  {/* Backdrop Click Outside */}
+                  <div
+                    onClick={() => setShowNotificationsDrawer(false)}
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      zIndex: 90,
+                      background: 'rgba(0,0,0,0.3)'
+                    }}
+                  />
 
-                  {notifications.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                      No tienes notificaciones recientes.
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
-                      {notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => {
-                            if (n.metadata?.url) {
-                              navigate(n.metadata.url);
-                              setShowNotificationsDrawer(false);
-                            }
-                          }}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.04)',
-                            borderRadius: 'var(--radius-sm)',
-                            padding: '8px 10px',
-                            cursor: n.metadata?.url ? 'pointer' : 'default',
-                            border: '1px solid var(--border-glass)'
-                          }}
+                  {/* Dropdown Panel */}
+                  <div className="glass-panel animate-fade" style={{
+                    position: 'absolute',
+                    top: '46px',
+                    right: 0,
+                    width: 'min(360px, 92vw)',
+                    maxHeight: '480px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--border-cyan)',
+                    boxShadow: '0 12px 35px rgba(0,0,0,0.75)',
+                    padding: '16px',
+                    zIndex: 100,
+                    background: 'rgba(13, 17, 26, 0.96)',
+                    backdropFilter: 'blur(20px)'
+                  }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                      <div style={{ fontWeight: '800', fontSize: '0.9rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>🔔</span> Notificaciones & Alertas
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {notifications.length > 0 && (
+                          <button
+                            onClick={clearAllNotifications}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer' }}
+                          >
+                            Limpiar
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setShowNotificationsDrawer(false)}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.9rem', cursor: 'pointer' }}
                         >
-                          <div style={{ fontSize: '0.78rem', fontWeight: '700', color: '#fff' }}>{n.title}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{n.body}</div>
-                        </div>
-                      ))}
+                          ✕
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    {/* Notifications List */}
+                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '2px' }}>
+                      {notifications.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                          <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>📭</div>
+                          No tienes notificaciones pendientes.
+                        </div>
+                      ) : (
+                        notifications.map((n) => {
+                          const badge = getTypeBadge(n.type);
+                          return (
+                            <div
+                              key={n.id}
+                              onClick={() => {
+                                if (n.metadata?.url) {
+                                  navigate(n.metadata.url);
+                                  setShowNotificationsDrawer(false);
+                                }
+                              }}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '10px 12px',
+                                cursor: n.metadata?.url ? 'pointer' : 'default',
+                                border: '1px solid var(--border-glass)',
+                                transition: 'all 0.2s ease',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: '800',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  background: badge.bg,
+                                  color: badge.color
+                                }}>
+                                  {badge.icon} {badge.label}
+                                </span>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                  {new Date(n.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+
+                              <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#fff', marginTop: '2px' }}>
+                                {n.title}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                                {n.body}
+                              </div>
+
+                              {n.metadata?.url && (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: '700', marginTop: '4px', textAlign: 'right' }}>
+                                  Ver detalle ➔
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Footer link to Profile Notifications */}
+                    <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '10px', marginTop: '8px', textAlign: 'center' }}>
+                      <Link
+                        to="/profile?tab=notifications"
+                        onClick={() => setShowNotificationsDrawer(false)}
+                        style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', textDecoration: 'none', fontWeight: '700' }}
+                      >
+                        Ver todas mis notificaciones ➔
+                      </Link>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
             
