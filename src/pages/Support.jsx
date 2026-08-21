@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
+import { notifyAdminSupportMessage, notifySupportReply } from '../../notificaciones y apis/notificaciones/pushService';
+import { soundEffects } from '../services/soundEffects';
 
 export default function Support() {
-  const { user, profile, config } = useApp();
+  const { user, profile, role, config } = useApp();
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [conversationId, setConversationId] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const normalizedRole = role ? String(role).trim().toLowerCase() : '';
+  const isAdmin = normalizedRole === 'admin' || normalizedRole === 'asesor';
 
   useEffect(() => {
     async function initChat() {
@@ -61,15 +66,49 @@ export default function Support() {
     initChat();
   }, [user]);
 
+  // Realtime Supabase Subscription for incoming messages
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const channel = supabase
+      .channel(`support_chat_${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'support_messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => {
+          if (payload.new) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+            soundEffects.playChatMessageSound();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMessage.trim() || !user || !conversationId) return;
 
+    const textToSend = inputMessage.trim();
+    const isReplyFromAdmin = isAdmin;
+
     const userMsg = {
       conversation_id: conversationId,
       sender_id: user.id,
-      message: inputMessage.trim(),
-      is_admin_reply: false
+      message: textToSend,
+      is_admin_reply: isReplyFromAdmin
     };
 
     try {
@@ -80,21 +119,38 @@ export default function Support() {
         .single();
 
       if (data && !error) {
-        setMessages(prev => [...prev, data]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.id)) return prev;
+          return [...prev, data];
+        });
         setInputMessage('');
 
-        // Simulate instant automated advisor response if needed
-        setTimeout(() => {
-          setMessages(prev => [
-            ...prev,
-            {
+        // Trigger Push Notifications
+        if (!isReplyFromAdmin) {
+          notifyAdminSupportMessage({
+            conversationId: conversationId,
+            userName: profile?.full_name || user.email,
+            message: textToSend
+          });
+
+          // Simulate advisor response if offline/testing
+          setTimeout(() => {
+            const advisorReply = {
               id: 'm-' + Date.now(),
-              message: 'Gracias por escribirnos. Un asesor de ALVSHOP revisará tu mensaje en breve.',
+              message: 'Gracias por escribirnos. Un asesor de ALVSHOP revisará tu pedido en breve.',
               is_admin_reply: true,
               created_at: new Date().toISOString()
-            }
-          ]);
-        }, 1200);
+            };
+            setMessages((prev) => [...prev, advisorReply]);
+            soundEffects.playChatMessageSound();
+          }, 1200);
+        } else {
+          notifySupportReply({
+            conversationId: conversationId,
+            userId: user.id,
+            message: textToSend
+          });
+        }
       }
     } catch (err) {
       alert('Error enviando mensaje: ' + err.message);

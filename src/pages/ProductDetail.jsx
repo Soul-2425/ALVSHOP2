@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
-import { validatePlayerUid } from '../../notificaciones y apis/apis/index';
+import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
+import { notifyAdminNewOrder, notifyOrderCompleted } from '../../notificaciones y apis/notificaciones/pushService';
+import BinancePayModal from '../components/BinancePayModal';
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -18,17 +20,21 @@ export default function ProductDetail() {
   // Live UID Validation state (For Free Fire / Games)
   const [validatingUid, setValidatingUid] = useState(false);
   const [playerNickname, setPlayerNickname] = useState(null);
+  const [playerLevel, setPlayerLevel] = useState(null);
+  const [playerRegion, setPlayerRegion] = useState(null);
   const [validationError, setValidationError] = useState('');
 
   // Checkout modal
   const [showCheckout, setShowCheckout] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('Wallet'); // 'Wallet' or 'Manual'
+  const [paymentMethod, setPaymentMethod] = useState('Wallet'); // 'Wallet', 'Manual', 'Binance'
   const [receiptFile, setReceiptFile] = useState(null);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
+  const [showBinanceModal, setShowBinanceModal] = useState(false);
+  const [createdOrderForBinance, setCreatedOrderForBinance] = useState(null);
 
   // New Review Form
   const [newRating, setNewRating] = useState(5);
@@ -106,6 +112,8 @@ export default function ProductDetail() {
   const handleUidValidation = async (uidValue) => {
     if (!uidValue || uidValue.length < 5) {
       setPlayerNickname(null);
+      setPlayerLevel(null);
+      setPlayerRegion(null);
       setValidationError('');
       return;
     }
@@ -114,10 +122,12 @@ export default function ProductDetail() {
     setValidationError('');
 
     try {
-      // Calls Jorge's API integration function
+      // Calls Free Fire UID validation service
       const result = await validatePlayerUid(uidValue, product?.validation_type || 'Free Fire');
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
+        setPlayerLevel(result.account_level || 50);
+        setPlayerRegion(result.region || 'LATAM');
         setValidationError('');
       } else {
         setPlayerNickname(null);
@@ -193,6 +203,51 @@ export default function ProductDetail() {
     setIsProcessing(true);
 
     try {
+      // If Binance Pay selected, create pending order and launch modal
+      if (paymentMethod === 'Binance') {
+        const { data: orderData, error: orderErr } = await supabase
+          .from('orders')
+          .insert({
+            user_id: user.id,
+            total_usdt: finalPriceUsdt,
+            total_gtq: Number(finalPriceGtq),
+            status: 'Pending',
+            payment_method: 'Manual',
+            coupon_id: appliedCoupon?.id || null,
+            discount_amount_usdt: discountUsdt,
+            customer_notes: JSON.stringify({ ...formData, payment_gateway: 'Binance Pay' })
+          })
+          .select()
+          .single();
+
+        if (orderErr) throw orderErr;
+
+        await supabase.from('order_items').insert({
+          order_id: orderData.id,
+          product_id: product.id,
+          quantity: 1,
+          price_usdt: finalPriceUsdt,
+          cost_usdt: product.cost || 0,
+          fields_data: {
+            ...formData,
+            validated_nickname: playerNickname || ''
+          }
+        });
+
+        // Notify Admins
+        notifyAdminNewOrder({
+          orderId: orderData.id,
+          amount: finalPriceUsdt,
+          customerName: profile?.full_name || user.email,
+          paymentMethod: 'Binance Pay'
+        });
+
+        setCreatedOrderForBinance(orderData);
+        setShowCheckout(false);
+        setShowBinanceModal(true);
+        return;
+      }
+
       // 1. Create Order in Supabase
       const newOrderStatus = paymentMethod === 'Wallet' ? 'Completed' : 'Verification';
 
@@ -236,7 +291,27 @@ export default function ProductDetail() {
           amount_usdt: finalPriceUsdt,
           order_id: orderData.id
         });
+
+        // Instant notification to customer
+        notifyOrderCompleted({ orderId: orderData.id, userId: user.id, amount: finalPriceUsdt });
+
+        // Trigger Supplier automated recharge
+        processGameRecharge({
+          id: orderData.id,
+          uid: formData['ID de Jugador (UID)'] || formData.uid || '',
+          nickname: playerNickname || '',
+          product_name: product.name,
+          total_usdt: finalPriceUsdt
+        });
       }
+
+      // Notify Admins
+      notifyAdminNewOrder({
+        orderId: orderData.id,
+        amount: finalPriceUsdt,
+        customerName: profile?.full_name || user.email,
+        paymentMethod: paymentMethod === 'Wallet' ? 'Billetera ALV' : 'Transferencia GTQ'
+      });
 
       setOrderSuccess(orderData);
     } catch (err) {
@@ -601,11 +676,11 @@ export default function ProductDetail() {
                 {/* Payment Method Selector */}
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ fontSize: '0.8rem', fontWeight: '700', display: 'block', marginBottom: '8px' }}>Selecciona Método de Pago:</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                     <div
                       onClick={() => setPaymentMethod('Wallet')}
                       style={{
-                        padding: '12px',
+                        padding: '12px 8px',
                         borderRadius: 'var(--radius-md)',
                         background: paymentMethod === 'Wallet' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                         border: paymentMethod === 'Wallet' ? '1px solid var(--border-cyan)' : '1px solid var(--border-glass)',
@@ -614,14 +689,30 @@ export default function ProductDetail() {
                       }}
                     >
                       <div style={{ fontSize: '1.2rem' }}>💎</div>
-                      <div style={{ fontSize: '0.8rem', fontWeight: '700', marginTop: '4px' }}>Billetera Interna</div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Saldo: ${walletBalance.toFixed(2)} USDT</div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px' }}>Billetera Interna</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Saldo: ${walletBalance.toFixed(2)}</div>
+                    </div>
+
+                    <div
+                      onClick={() => setPaymentMethod('Binance')}
+                      style={{
+                        padding: '12px 8px',
+                        borderRadius: 'var(--radius-md)',
+                        background: paymentMethod === 'Binance' ? 'rgba(240, 185, 11, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                        border: paymentMethod === 'Binance' ? '1px solid #f0b90b' : '1px solid var(--border-glass)',
+                        cursor: 'pointer',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.2rem' }}>🟡</div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px', color: '#f0b90b' }}>Binance Pay</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Auto QR / Instantáneo</div>
                     </div>
 
                     <div
                       onClick={() => setPaymentMethod('Manual')}
                       style={{
-                        padding: '12px',
+                        padding: '12px 8px',
                         borderRadius: 'var(--radius-md)',
                         background: paymentMethod === 'Manual' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                         border: paymentMethod === 'Manual' ? '1px solid var(--border-cyan)' : '1px solid var(--border-glass)',
@@ -630,8 +721,8 @@ export default function ProductDetail() {
                       }}
                     >
                       <div style={{ fontSize: '1.2rem' }}>🏦</div>
-                      <div style={{ fontSize: '0.8rem', fontWeight: '700', marginTop: '4px' }}>Transferencia GTQ</div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Banrural / Quetzales</div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px' }}>Transferencia GTQ</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Banrural / Quetzales</div>
                     </div>
                   </div>
                 </div>
@@ -726,6 +817,29 @@ export default function ProductDetail() {
           </div>
         </div>
       )}
+
+      {/* Automated Binance Pay Modal */}
+      <BinancePayModal
+        isOpen={showBinanceModal}
+        onClose={() => setShowBinanceModal(false)}
+        orderData={createdOrderForBinance}
+        amountUsdt={finalPriceUsdt}
+        description={product?.name || 'Recarga ALVSHOP'}
+        onPaymentSuccess={() => {
+          if (createdOrderForBinance?.id) {
+            processGameRecharge({
+              id: createdOrderForBinance.id,
+              uid: formData['ID de Jugador (UID)'] || formData.uid || '',
+              nickname: playerNickname || '',
+              product_name: product.name,
+              total_usdt: finalPriceUsdt
+            });
+          }
+          setShowBinanceModal(false);
+          setOrderSuccess({ ...createdOrderForBinance, status: 'Completed' });
+          setShowCheckout(true);
+        }}
+      />
     </div>
   );
 }

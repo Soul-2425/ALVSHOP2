@@ -19,12 +19,17 @@ import { About, Contact, Terms, Privacy } from './pages/StaticPages';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminOrders from './pages/admin/AdminOrders';
+import AdminIntegrations from './pages/admin/AdminIntegrations';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminProducts from './pages/admin/AdminProducts';
 import AdminStreaming from './pages/admin/AdminStreaming';
 import AdminCoupons from './pages/admin/AdminCoupons';
 import AdminFinance from './pages/admin/AdminFinance';
 import AdminBranding from './pages/admin/AdminBranding';
+
+// Real-time Push & Toast Components
+import NotificationToastContainer from './components/NotificationToastContainer';
+import PushPermissionBanner from './components/PushPermissionBanner';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -33,6 +38,9 @@ export default function App() {
     <AppProvider>
       <Router>
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          {/* Push Permission Prompt Banner */}
+          <PushPermissionBanner />
+
           {/* Top Header */}
           <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
@@ -58,6 +66,7 @@ export default function App() {
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />
                 <Route path="orders" element={<AdminOrders />} />
+                <Route path="integrations" element={<AdminIntegrations />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="products" element={<AdminProducts />} />
                 <Route path="streaming" element={<AdminStreaming />} />
@@ -73,6 +82,9 @@ export default function App() {
 
           {/* Mobile Bottom Navigation Bar (Instagram-style) */}
           <BottomBar />
+
+          {/* Global Real-time Notification Toast System */}
+          <NotificationToastContainer />
         </div>
       </Router>
     </AppProvider>

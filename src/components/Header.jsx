@@ -3,8 +3,23 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
 export default function Header({ onToggleSidebar }) {
-  const { walletBalance, currency, toggleCurrency, config, user, profile, role } = useApp();
+  const {
+    walletBalance,
+    currency,
+    toggleCurrency,
+    config,
+    user,
+    profile,
+    role,
+    notifications,
+    unreadCount,
+    clearAllNotifications,
+    isMuted,
+    toggleMute
+  } = useApp();
+
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const navigate = useNavigate();
 
   return (
@@ -13,7 +28,7 @@ export default function Header({ onToggleSidebar }) {
         position: 'sticky',
         top: 0,
         zIndex: 40,
-        backgroundColor: 'rgba(10, 13, 20, 0.85)',
+        backgroundColor: 'rgba(10, 13, 20, 0.88)',
         backdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border-glass)'
       }}>
@@ -72,8 +87,131 @@ export default function Header({ onToggleSidebar }) {
             </Link>
           </div>
 
-          {/* Right: Currency Toggle & Wallet */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Right: Sound, Notifications, Currency Toggle & Wallet */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            
+            {/* Audio Mute/Unmute Toggle */}
+            <button
+              onClick={toggleMute}
+              style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid var(--border-glass)',
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                color: isMuted ? 'var(--text-muted)' : 'var(--accent-cyan)'
+              }}
+              title={isMuted ? 'Activar Sonidos de Alerta' : 'Silenciar Sonidos'}
+            >
+              {isMuted ? '🔇' : '🔊'}
+            </button>
+
+            {/* Notification Bell with Badge */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowNotificationsDrawer(!showNotificationsDrawer)}
+                style={{
+                  background: unreadCount > 0 ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: unreadCount > 0 ? '1px solid var(--border-cyan)' : '1px solid var(--border-glass)',
+                  borderRadius: '50%',
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '0.95rem',
+                  position: 'relative'
+                }}
+                title="Notificaciones en Tiempo Real"
+              >
+                🔔
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-3px',
+                    right: '-3px',
+                    background: '#f87171',
+                    color: '#fff',
+                    borderRadius: '50%',
+                    fontSize: '0.65rem',
+                    fontWeight: '800',
+                    width: '18px',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 0 8px rgba(248, 113, 113, 0.6)'
+                  }}>
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notifications Dropdown Panel */}
+              {showNotificationsDrawer && (
+                <div className="glass-panel animate-fade" style={{
+                  position: 'absolute',
+                  top: '46px',
+                  right: 0,
+                  width: '320px',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border-cyan)',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
+                  padding: '16px',
+                  zIndex: 60
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div style={{ fontWeight: '800', fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>
+                      🔔 Notificaciones en Vivo
+                    </div>
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={clearAllNotifications}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer' }}
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      No tienes notificaciones recientes.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                      {notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (n.metadata?.url) {
+                              navigate(n.metadata.url);
+                              setShowNotificationsDrawer(false);
+                            }
+                          }}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '8px 10px',
+                            cursor: n.metadata?.url ? 'pointer' : 'default',
+                            border: '1px solid var(--border-glass)'
+                          }}
+                        >
+                          <div style={{ fontSize: '0.78rem', fontWeight: '700', color: '#fff' }}>{n.title}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{n.body}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             
             {/* Currency Selector (Toggle USDT / GTQ) */}
             <div
