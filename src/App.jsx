@@ -18,6 +18,7 @@ import { About, Contact, Terms, Privacy } from './pages/StaticPages';
 // Admin Backoffice Subpages
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminOrders from './pages/admin/AdminOrders';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminProducts from './pages/admin/AdminProducts';
 import AdminStreaming from './pages/admin/AdminStreaming';
@@ -56,6 +57,7 @@ export default function App() {
               {/* Admin Backoffice Subpages */}
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />
+                <Route path="orders" element={<AdminOrders />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="products" element={<AdminProducts />} />
                 <Route path="streaming" element={<AdminStreaming />} />

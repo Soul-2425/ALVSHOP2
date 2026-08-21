@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 
 export default function AdminLayout() {
   const { role, user, isLoading } = useApp();
+  const tabsContainerRef = useRef(null);
 
   if (isLoading) {
     return <div className="container" style={{ padding: '60px 0', textAlign: 'center' }}>Cargando panel...</div>;
@@ -52,14 +53,21 @@ export default function AdminLayout() {
   }
 
   const adminMenu = [
-    { to: '/admin', end: true, label: '📊 Dashboard & Analítica', icon: '📈' },
-    { to: '/admin/users', label: '👥 Usuarios y Roles', icon: '👤' },
-    { to: '/admin/products', label: '📦 Productos & 3 Precios', icon: '🏷️' },
-    { to: '/admin/streaming', label: '🎬 Stock Streaming', icon: '🔑' },
-    { to: '/admin/coupons', label: '🎁 Cupones & Promos', icon: '🎟️' },
-    { to: '/admin/finance', label: '💰 Finanzas & Tasa GTQ', icon: '💵' },
-    { to: '/admin/branding', label: '🎨 Branding, Colores & SEO', icon: '✨' },
+    { to: '/admin', end: true, label: 'Dashboard', icon: '📊' },
+    { to: '/admin/orders', label: 'Gestión de Pedidos', icon: '📦' },
+    { to: '/admin/users', label: 'Usuarios y Roles', icon: '👥' },
+    { to: '/admin/products', label: 'Productos & 3 Precios', icon: '🏷️' },
+    { to: '/admin/streaming', label: 'Stock Streaming', icon: '🎬' },
+    { to: '/admin/coupons', label: 'Cupones & Promos', icon: '🎁' },
+    { to: '/admin/finance', label: 'Finanzas & Tasa GTQ', icon: '💰' },
+    { to: '/admin/branding', label: 'Branding, Colores & SEO', icon: '🎨' },
   ];
+
+  const scrollTabs = (offset) => {
+    if (tabsContainerRef.current) {
+      tabsContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
 
   return (
     <div className="container" style={{ paddingTop: '20px', paddingBottom: '60px' }}>
@@ -91,41 +99,93 @@ export default function AdminLayout() {
         </div>
       </div>
 
-      {/* Admin Horizontal Tabs Navigation */}
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        overflowX: 'auto',
-        paddingBottom: '12px',
-        marginBottom: '20px',
-        scrollbarWidth: 'none'
-      }}>
-        {adminMenu.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            style={({ isActive }) => ({
-              padding: '10px 16px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.85rem',
-              fontWeight: '700',
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.2s ease',
-              background: isActive ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
-              color: isActive ? '#000' : 'var(--text-main)',
-              border: isActive ? 'none' : '1px solid var(--border-glass)',
-              boxShadow: isActive ? '0 0 15px rgba(6, 182, 212, 0.4)' : 'none'
-            })}
-          >
-            <span>{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+      {/* Admin Tabs Navigation Container with PC Arrows and Wheel Scroll */}
+      <div style={{ position: 'relative', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        
+        {/* Left Arrow Button (For PC Click-to-Scroll) */}
+        <button
+          onClick={() => scrollTabs(-240)}
+          className="btn-glass"
+          title="Desplazar a la izquierda"
+          style={{
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}
+        >
+          ◀
+        </button>
+
+        {/* Scrollable Tabs Bar */}
+        <div
+          ref={tabsContainerRef}
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+          style={{
+            display: 'flex',
+            gap: '8px',
+            overflowX: 'auto',
+            scrollBehavior: 'smooth',
+            paddingBottom: '8px',
+            paddingTop: '2px',
+            flex: 1
+          }}
+        >
+          {adminMenu.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              style={({ isActive }) => ({
+                padding: '10px 16px',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '0.85rem',
+                fontWeight: '700',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexShrink: 0,
+                transition: 'all 0.2s ease',
+                background: isActive ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
+                color: isActive ? '#000' : 'var(--text-main)',
+                border: isActive ? 'none' : '1px solid var(--border-glass)',
+                boxShadow: isActive ? '0 0 15px rgba(6, 182, 212, 0.4)' : 'none'
+              })}
+            >
+              <span>{item.icon}</span>
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+        </div>
+
+        {/* Right Arrow Button (For PC Click-to-Scroll) */}
+        <button
+          onClick={() => scrollTabs(240)}
+          className="btn-glass"
+          title="Desplazar a la derecha"
+          style={{
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}
+        >
+          ▶
+        </button>
       </div>
 
       {/* Admin Subpage Outlet */}
