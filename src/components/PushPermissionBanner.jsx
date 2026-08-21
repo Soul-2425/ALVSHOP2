@@ -7,6 +7,7 @@ export default function PushPermissionBanner() {
   const [permissionStatus, setPermissionStatus] = useState('granted');
   const [dismissed, setDismissed] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState('');
 
   useEffect(() => {
     const status = getPushPermissionStatus();
@@ -22,12 +23,35 @@ export default function PushPermissionBanner() {
 
   const handleEnablePush = async () => {
     setRequesting(true);
-    const granted = await requestPushPermission(user?.id);
-    setRequesting(false);
-    if (granted) {
-      setPermissionStatus('granted');
-    } else {
-      setPermissionStatus(getPushPermissionStatus());
+    setFeedbackMsg('');
+
+    // Check if on insecure HTTP
+    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isSecure) {
+      alert('⚠️ Las notificaciones Web Push requieren conexión segura (HTTPS) o localhost. En celulares funcionará al desplegar en Netlify con HTTPS.');
+      setRequesting(false);
+      return;
+    }
+
+    try {
+      const granted = await requestPushPermission(user?.id);
+      setRequesting(false);
+
+      if (granted) {
+        setPermissionStatus('granted');
+        alert('🎉 ¡Notificaciones activadas exitosamente! Recibirás alertas cuando tus pedidos se completen.');
+      } else {
+        const current = getPushPermissionStatus();
+        setPermissionStatus(current);
+        if (current === 'denied') {
+          alert('⚠️ Las notificaciones están bloqueadas en tu navegador. Haz clic en el icono del candado 🔒 al lado del enlace (URL) y selecciona "Permitir Notificaciones".');
+        } else {
+          alert('ℹ️ Debes hacer clic en "Permitir" en la ventana emergente de tu navegador para activar las alertas.');
+        }
+      }
+    } catch (err) {
+      setRequesting(false);
+      alert('Error activando notificaciones: ' + err.message);
     }
   };
 
@@ -38,11 +62,13 @@ export default function PushPermissionBanner() {
 
   return (
     <div style={{
-      background: 'linear-gradient(90deg, rgba(30, 58, 138, 0.9) 0%, rgba(6, 182, 212, 0.25) 100%)',
+      background: 'linear-gradient(90deg, rgba(30, 58, 138, 0.95) 0%, rgba(6, 182, 212, 0.3) 100%)',
       borderBottom: '1px solid var(--border-cyan)',
       padding: '10px 16px',
       color: '#fff',
-      fontSize: '0.85rem'
+      fontSize: '0.85rem',
+      position: 'relative',
+      zIndex: 40
     }}>
       <div className="container" style={{
         display: 'flex',
