@@ -20,6 +20,7 @@ export default function BinancePayModal({
   const [timeLeft, setTimeLeft] = useState(15 * 60); // 15 minutos
   const [status, setStatus] = useState('PENDING'); // 'PENDING', 'VERIFYING', 'PAID', 'EXPIRED'
   const [copiedId, setCopiedId] = useState(false);
+  const [copiedAmount, setCopiedAmount] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
   const [rechargeStatus, setRechargeStatus] = useState(null);
   const [userTxId, setUserTxId] = useState('');
@@ -195,6 +196,14 @@ export default function BinancePayModal({
     setTimeout(() => setCopiedId(false), 2000);
   };
 
+  const copyAmount = () => {
+    navigator.clipboard.writeText(Number(amountUsdt).toFixed(2));
+    setCopiedAmount(true);
+    setTimeout(() => setCopiedAmount(false), 2000);
+  };
+
+  const dynamicDeeplink = `${(config?.binance_deeplink_url || 'https://app.binance.com/uni-qr/T567z1pn')}?amount=${Number(amountUsdt).toFixed(2)}&currency=USDT&note=${encodeURIComponent(`ALVSHOP-${orderData?.id?.slice(0, 8) || ''}`)}`;
+
   if (!isOpen) return null;
 
   return (
@@ -221,62 +230,74 @@ export default function BinancePayModal({
         position: 'relative',
         animation: 'fadeInUp 0.3s ease'
       }}>
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-muted)',
+            fontSize: '1.2rem',
+            cursor: 'pointer'
+          }}
+        >
+          ✕
+        </button>
+
         {/* Modal Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              background: '#f0b90b',
-              color: '#000',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: '900',
-              fontSize: '1.2rem'
-            }}>
-              🟡
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#f0b90b' }}>Binance Pay Checkout</h3>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cuenta Oficial: <strong>{binanceName}</strong></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{
+            background: '#f0b90b',
+            color: '#000',
+            width: '36px',
+            height: '36px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: '900',
+            fontSize: '1.1rem'
+          }}>
+            B
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f0b90b' }}>Pasarela Binance Pay</h3>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Pago 100% Directo a Cuenta Oficial ALVSHOP
             </div>
           </div>
-
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
-          >
-            ✕
-          </button>
         </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
-            <div className="spinner" style={{ margin: '0 auto 16px' }} />
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Cargando pasarela Binance Pay...</p>
+            <div className="spinner" style={{ margin: '0 auto 12px auto' }} />
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Conectando con Binance Pay...</p>
           </div>
         ) : status === 'PAID' ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: '3.5rem', marginBottom: '12px', animation: 'bounce 0.6s ease' }}>🎉</div>
-            <h3 style={{ color: '#10b981', fontSize: '1.3rem', marginBottom: '6px' }}>¡Pago Confirmado & Acreditado!</h3>
+            <div style={{ fontSize: '3.5rem', marginBottom: '10px' }}>🎉</div>
+            <h3 style={{ color: '#10b981', fontSize: '1.3rem', marginBottom: '6px' }}>¡Pago Confirmado con Éxito!</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Tu pago de <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> ha sido recibido con éxito en la cuenta de <strong>{binanceName}</strong>.
+              Se han verificado <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> para tu cuenta.
             </p>
             
             <div style={{
               background: 'rgba(16, 185, 129, 0.1)',
-              border: '1px solid #10b981',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
               borderRadius: 'var(--radius-md)',
               padding: '12px',
-              fontSize: '0.8rem',
-              color: '#10b981',
-              marginBottom: '16px',
-              textAlign: 'left'
+              marginBottom: '20px',
+              fontSize: '0.85rem'
             }}>
-              <div>✅ Estado del Pago: <strong>PAGADO (USDT)</strong></div>
-              <div>⚡ Despacho de Recarga: <strong>{rechargeStatus?.mappedData?.status || 'PROCESADO'}</strong></div>
+              <div style={{ fontWeight: '700', color: '#10b981' }}>
+                🚀 Despacho Automático Activado
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                {rechargeStatus?.message || 'Tu recarga ha sido procesada de inmediato con el proveedor.'}
+              </div>
               {rechargeStatus?.mappedData?.supplier_transaction_id && (
                 <div style={{ fontSize: '0.75rem', marginTop: '4px', color: '#6ee7b7' }}>
                   ID Proveedor: {rechargeStatus.mappedData.supplier_transaction_id}
@@ -301,29 +322,65 @@ export default function BinancePayModal({
           </div>
         ) : (
           <div>
-            {/* Amount Banner */}
+            {/* Exact Amount Banner with 1-Click Copy */}
             <div style={{
               background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.15) 0%, rgba(30, 58, 138, 0.2) 100%)',
-              border: '1px solid rgba(240, 185, 11, 0.3)',
+              border: '1px solid rgba(240, 185, 11, 0.35)',
               borderRadius: 'var(--radius-md)',
               padding: '12px 16px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '14px'
+              marginBottom: '10px'
             }}>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Monto a Transferir:</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#f0b90b' }}>
-                  ${Number(amountUsdt).toFixed(2)} <span style={{ fontSize: '0.85rem' }}>USDT</span>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Monto Exacto a Transferir:</div>
+                <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#f0b90b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>${Number(amountUsdt).toFixed(2)}</span>
+                  <span style={{ fontSize: '0.85rem' }}>USDT</span>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Expira en:</div>
-                <div style={{ fontSize: '1rem', fontWeight: '800', color: timeLeft < 120 ? '#ef4444' : 'var(--text-main)' }}>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={copyAmount}
+                  style={{
+                    background: copiedAmount ? '#10b981' : 'rgba(240, 185, 11, 0.2)',
+                    color: copiedAmount ? '#fff' : '#f0b90b',
+                    border: '1px solid rgba(240, 185, 11, 0.4)',
+                    padding: '5px 10px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {copiedAmount ? '✅ Monto Copiado' : '📋 Copiar Monto'}
+                </button>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                   ⏱️ {formatMinutes(timeLeft)}
                 </div>
               </div>
+            </div>
+
+            {/* Anti-Fraud / Price Lock Notice */}
+            <div style={{
+              background: 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '8px 12px',
+              marginBottom: '14px',
+              fontSize: '0.73rem',
+              color: '#93c5fd',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <span>🔒</span>
+              <span>
+                <strong>Monto bloqueado por la tienda:</strong> La recarga solo se despacha si el importe transferido coincide exactamente con <strong>${Number(amountUsdt).toFixed(2)} USDT</strong>.
+              </span>
             </div>
 
             {/* Official Binance Pay ID Box */}
@@ -389,14 +446,14 @@ export default function BinancePayModal({
                 />
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Escanea con la app de Binance para pagar a <strong>{binanceName}</strong>
+                Escanea con la app de Binance para transferir <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> a <strong>{binanceName}</strong>
               </div>
             </div>
 
             {/* Direct Open in App Button & Deeplink */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
               <a
-                href={config?.binance_deeplink_url || 'https://app.binance.com/uni-qr/T567z1pn'}
+                href={dynamicDeeplink}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -406,7 +463,7 @@ export default function BinancePayModal({
                   gap: '8px',
                   background: '#f0b90b',
                   color: '#000',
-                  padding: '11px 16px',
+                  padding: '12px 16px',
                   borderRadius: 'var(--radius-md)',
                   fontWeight: '900',
                   fontSize: '0.88rem',
@@ -415,7 +472,7 @@ export default function BinancePayModal({
                   boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)'
                 }}
               >
-                <span>🟡</span> Abrir en App de Binance (Transferir a {binanceName}) ➔
+                <span>🟡</span> Abrir en App de Binance (${Number(amountUsdt).toFixed(2)} USDT) ➔
               </a>
             </div>
 
