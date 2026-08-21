@@ -14,13 +14,20 @@ export default function BinancePayModal({
   isWalletDeposit = false,
   onPaymentSuccess
 }) {
-  const { user, fetchProfile } = useApp();
+  const { user, fetchProfile, config } = useApp();
   const [loading, setLoading] = useState(true);
   const [payOrder, setPayOrder] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15 * 60); // 15 minutos
   const [status, setStatus] = useState('PENDING'); // 'PENDING', 'VERIFYING', 'PAID', 'EXPIRED'
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
   const [rechargeStatus, setRechargeStatus] = useState(null);
+  const [userTxId, setUserTxId] = useState('');
+  const [isManualConfirming, setIsManualConfirming] = useState(false);
+
+  const binancePayId = config?.binance_pay_id || '527653920';
+  const binanceName = config?.binance_name || 'AlvJona';
+  const binanceQr = config?.binance_qr_url || '/binance-qr.jpg';
 
   // Inicializar orden de Binance Pay
   useEffect(() => {
@@ -32,6 +39,7 @@ export default function BinancePayModal({
       setStatus('PENDING');
       setTimeLeft(15 * 60);
       setRechargeStatus(null);
+      setUserTxId('');
 
       try {
         const orderId = orderData?.id || `DEP-${Date.now()}`;
@@ -138,24 +146,45 @@ export default function BinancePayModal({
           })
           .eq('id', finalOrderId);
       }
-    }
 
-    if (user?.id) {
-      await fetchProfile(user.id);
-      if (finalOrderId) {
-        notifyOrderCompleted({ orderId: finalOrderId, userId: user.id, amount: amountUsdt });
+      // Notificación instantánea de entrega
+      if (user?.id) {
+        notifyOrderCompleted({
+          orderId: finalOrderId,
+          userId: user.id,
+          product: description || 'Recarga de Diamantes',
+          amount: amountUsdt
+        });
       }
     }
 
-    if (onPaymentSuccess) {
-      onPaymentSuccess({ txId, amount: amountUsdt });
+    if (user?.id) {
+      fetchProfile(user.id);
     }
+
+    if (onPaymentSuccess) {
+      onPaymentSuccess({ amount: amountUsdt, txId });
+    }
+  };
+
+  const handleManualCustomerConfirm = async (e) => {
+    e.preventDefault();
+    setIsManualConfirming(true);
+    const confirmedTxId = userTxId.trim() || `BPAY-MANUAL-${Date.now()}`;
+    await handleConfirmSuccess(confirmedTxId);
+    setIsManualConfirming(false);
   };
 
   const formatMinutes = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const copyPayId = () => {
+    navigator.clipboard.writeText(binancePayId);
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 2000);
   };
 
   if (!isOpen) return null;
@@ -165,7 +194,7 @@ export default function BinancePayModal({
       position: 'fixed',
       inset: 0,
       zIndex: 1000,
-      backgroundColor: 'rgba(0, 0, 0, 0.82)',
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
       backdropFilter: 'blur(10px)',
       display: 'flex',
       alignItems: 'center',
@@ -174,7 +203,9 @@ export default function BinancePayModal({
     }}>
       <div className="glass-panel" style={{
         width: '100%',
-        maxWidth: '460px',
+        maxWidth: '480px',
+        maxHeight: '94vh',
+        overflowY: 'auto',
         borderRadius: 'var(--radius-lg)',
         border: '1px solid #f0b90b',
         boxShadow: '0 0 35px rgba(240, 185, 11, 0.25)',
@@ -186,8 +217,8 @@ export default function BinancePayModal({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '34px',
-              height: '34px',
+              width: '36px',
+              height: '36px',
               borderRadius: '50%',
               background: '#f0b90b',
               color: '#000',
@@ -195,13 +226,13 @@ export default function BinancePayModal({
               alignItems: 'center',
               justifyContent: 'center',
               fontWeight: '900',
-              fontSize: '1.1rem'
+              fontSize: '1.2rem'
             }}>
               🟡
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#f0b90b' }}>Binance Pay Checkout</h3>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cobro & Despacho Automatizado por USDT</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cuenta Oficial: <strong>{binanceName}</strong></div>
             </div>
           </div>
 
@@ -216,14 +247,14 @@ export default function BinancePayModal({
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <div className="spinner" style={{ margin: '0 auto 16px' }} />
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Generando orden de pago en Binance Pay...</p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Cargando pasarela Binance Pay...</p>
           </div>
         ) : status === 'PAID' ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: '3.5rem', marginBottom: '12px', animation: 'bounce 0.6s ease' }}>🎉</div>
-            <h3 style={{ color: '#10b981', fontSize: '1.3rem', marginBottom: '6px' }}>¡Pago Confirmado & Procesado!</h3>
+            <h3 style={{ color: '#10b981', fontSize: '1.3rem', marginBottom: '6px' }}>¡Pago Confirmado & Acreditado!</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Tu pago de <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> ha sido acreditado y enviado a procesar con la API del proveedor.
+              Tu pago de <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> ha sido recibido con éxito en la cuenta de <strong>{binanceName}</strong>.
             </p>
             
             <div style={{
@@ -237,7 +268,7 @@ export default function BinancePayModal({
               textAlign: 'left'
             }}>
               <div>✅ Estado del Pago: <strong>PAGADO (USDT)</strong></div>
-              <div>⚡ Despacho de Recarga: <strong>{rechargeStatus?.mappedData?.status || 'DELIVERED'}</strong></div>
+              <div>⚡ Despacho de Recarga: <strong>{rechargeStatus?.mappedData?.status || 'PROCESADO'}</strong></div>
               {rechargeStatus?.mappedData?.supplier_transaction_id && (
                 <div style={{ fontSize: '0.75rem', marginTop: '4px', color: '#6ee7b7' }}>
                   ID Proveedor: {rechargeStatus.mappedData.supplier_transaction_id}
@@ -271,10 +302,10 @@ export default function BinancePayModal({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '16px'
+              marginBottom: '14px'
             }}>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Monto a Pagar:</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Monto a Transferir:</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#f0b90b' }}>
                   ${Number(amountUsdt).toFixed(2)} <span style={{ fontSize: '0.85rem' }}>USDT</span>
                 </div>
@@ -287,31 +318,77 @@ export default function BinancePayModal({
               </div>
             </div>
 
-            {/* QR Code and App Deep Link */}
-            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+            {/* Official Binance Pay ID Box */}
+            <div style={{
+              background: 'rgba(240, 185, 11, 0.06)',
+              border: '1px solid rgba(240, 185, 11, 0.25)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+              marginBottom: '14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Binance Pay ID (Receptor):</div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#f0b90b', letterSpacing: '0.05em' }}>
+                  {binancePayId}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Titular: <strong style={{ color: '#fff' }}>{binanceName}</strong>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={copyPayId}
+                className="btn-cyan"
+                style={{
+                  background: copiedId ? '#10b981' : '#f0b90b',
+                  color: '#000',
+                  padding: '8px 14px',
+                  fontSize: '0.78rem',
+                  fontWeight: '800',
+                  border: 'none'
+                }}
+              >
+                {copiedId ? '✅ ¡Copiado!' : '📋 Copiar Pay ID'}
+              </button>
+            </div>
+
+            {/* QR Code */}
+            <div style={{ textAlign: 'center', marginBottom: '14px' }}>
               <div style={{
                 display: 'inline-block',
-                background: '#fff',
-                padding: '12px',
+                background: '#0d111a',
+                border: '1px solid rgba(240, 185, 11, 0.4)',
+                padding: '8px',
                 borderRadius: 'var(--radius-md)',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                marginBottom: '12px'
+                boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+                marginBottom: '8px'
               }}>
                 <img
-                  src={payOrder?.qrContent}
-                  alt="Binance Pay QR Code"
-                  style={{ width: '180px', height: '180px', display: 'block' }}
+                  src={binanceQr}
+                  alt="Código QR de Binance Pay"
+                  style={{
+                    width: '200px',
+                    height: '200px',
+                    objectFit: 'contain',
+                    display: 'block',
+                    borderRadius: '6px'
+                  }}
                 />
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Escanea con la app de Binance (Binance Pay)
+                Escanea con la app de Binance para pagar a <strong>{binanceName}</strong>
               </div>
             </div>
 
-            {/* Direct Open in App Button */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+            {/* Direct Open in App Button & Deeplink */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
               <a
-                href={payOrder?.universalUrl}
+                href={`https://app.binance.com/qr/dplk5b722247b97341388fc2dfd15024765d`}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -321,49 +398,85 @@ export default function BinancePayModal({
                   gap: '8px',
                   background: '#f0b90b',
                   color: '#000',
-                  padding: '10px 16px',
+                  padding: '11px 16px',
                   borderRadius: 'var(--radius-md)',
-                  fontWeight: '800',
-                  fontSize: '0.85rem',
+                  fontWeight: '900',
+                  fontSize: '0.88rem',
                   textDecoration: 'none',
                   textAlign: 'center',
-                  boxShadow: '0 0 15px rgba(240, 185, 11, 0.4)'
+                  boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)'
                 }}
               >
-                <span>🟡</span> Abrir en App de Binance
+                <span>🟡</span> Abrir en App de Binance ➔
               </a>
-
-              {/* Simulated Auto-Verification Button for Testing / Sandbox */}
-              <button
-                type="button"
-                onClick={() => handleConfirmSuccess('BPAY-SIMULATED-' + Date.now())}
-                className="btn-glass"
-                style={{ fontSize: '0.75rem', padding: '8px', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}
-              >
-                ⚡ Simular Aprobación Instantánea (Prueba de Pago y Despacho)
-              </button>
             </div>
 
-            {/* Trade Info / Order ID */}
+            {/* Customer Manual Confirm Form */}
+            <form onSubmit={handleManualCustomerConfirm} style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid var(--border-glass)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                ¿Ya enviaste los USDT? Ingresa tu ID de Orden o Pay ID (Opcional):
+              </label>
+              <input
+                type="text"
+                placeholder="Ej. 527653920 o TxID de Binance"
+                value={userTxId}
+                onChange={(e) => setUserTxId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '4px',
+                  background: '#0d111a',
+                  border: '1px solid var(--border-glass)',
+                  color: '#fff',
+                  fontSize: '0.8rem'
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isManualConfirming}
+                className="btn-cyan"
+                style={{
+                  padding: '10px',
+                  fontSize: '0.82rem',
+                  fontWeight: '800',
+                  background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                  border: 'none',
+                  color: '#000'
+                }}
+              >
+                {isManualConfirming ? 'Verificando...' : '✅ Ya Realicé el Pago en Binance ➔'}
+              </button>
+            </form>
+
+            {/* Trade Info */}
             <div style={{
               fontSize: '0.72rem',
               color: 'var(--text-muted)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              borderTop: '1px solid var(--border-glass)',
-              paddingTop: '10px'
+              marginTop: '10px',
+              paddingTop: '8px',
+              borderTop: '1px solid var(--border-glass)'
             }}>
-              <div>Ref: <span style={{ color: 'var(--text-main)' }}>{payOrder?.merchantTradeNo}</span></div>
+              <div>Ref: <span style={{ color: 'var(--text-main)' }}>{payOrder?.merchantTradeNo || orderData?.id}</span></div>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(payOrder?.merchantTradeNo || '');
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
+                  navigator.clipboard.writeText(payOrder?.merchantTradeNo || orderData?.id || '');
+                  setCopiedRef(true);
+                  setTimeout(() => setCopiedRef(false), 2000);
                 }}
                 style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', fontSize: '0.72rem' }}
               >
-                {copied ? '✓ Copiado' : 'Copiar Ref'}
+                {copiedRef ? '✓ Copiado' : 'Copiar Ref'}
               </button>
             </div>
           </div>

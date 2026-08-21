@@ -32,6 +32,10 @@ export function AppProvider({ children }) {
     banners: [],
     bank_accounts: [{ bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }],
     social_links: { instagram: '', tiktok: '', whatsapp: '50250000000', facebook: '' },
+    binance_pay_id: '527653920',
+    binance_name: 'AlvJona',
+    binance_qr_url: '/binance-qr.jpg',
+    binance_usdt_address: '',
     discount_offer_pct: 5,
     discount_special_pct: 10
   });
@@ -107,7 +111,19 @@ export function AppProvider({ children }) {
         .single();
 
       if (data && !error) {
-        setConfig(prev => ({ ...prev, ...data }));
+        const binancePayId = data.social_links?.binance_pay_id || data.binance_pay_id || '527653920';
+        const binanceName = data.social_links?.binance_name || data.binance_name || 'AlvJona';
+        const binanceQrUrl = data.social_links?.binance_qr_url || data.binance_qr_url || '/binance-qr.jpg';
+        const binanceUsdtAddress = data.social_links?.binance_usdt_address || '';
+
+        setConfig(prev => ({
+          ...prev,
+          ...data,
+          binance_pay_id: binancePayId,
+          binance_name: binanceName,
+          binance_qr_url: binanceQrUrl,
+          binance_usdt_address: binanceUsdtAddress
+        }));
         if (data.usdt_gtq_rate) setExchangeRate(Number(data.usdt_gtq_rate));
 
         // Inject Dynamic Colors into CSS Root
