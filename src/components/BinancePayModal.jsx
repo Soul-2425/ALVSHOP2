@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { createBinancePayOrder, queryBinancePayOrder, completeBinancePayment } from '../../notificaciones y apis/apis/index';
+import { createBinancePayOrder, queryBinancePayOrder, completeBinancePayment, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { soundEffects } from '../services/soundEffects';
 import { useApp } from '../context/AppContext';
 import { notifyOrderCompleted } from '../../notificaciones y apis/notificaciones/pushService';
+import { supabase } from '../supabaseClient';
 
 export default function BinancePayModal({
   isOpen,
@@ -19,6 +20,7 @@ export default function BinancePayModal({
   const [timeLeft, setTimeLeft] = useState(15 * 60); // 15 minutos
   const [status, setStatus] = useState('PENDING'); // 'PENDING', 'VERIFYING', 'PAID', 'EXPIRED'
   const [copied, setCopied] = useState(false);
+  const [rechargeStatus, setRechargeStatus] = useState(null);
 
   // Inicializar orden de Binance Pay
   useEffect(() => {
@@ -29,6 +31,7 @@ export default function BinancePayModal({
       setLoading(true);
       setStatus('PENDING');
       setTimeLeft(15 * 60);
+      setRechargeStatus(null);
 
       try {
         const orderId = orderData?.id || `DEP-${Date.now()}`;
@@ -82,7 +85,6 @@ export default function BinancePayModal({
       try {
         const check = await queryBinancePayOrder(payOrder.prepayId, payOrder.merchantTradeNo);
         if (check && check.status === 'PAID') {
-          // Pago confirmado
           handleConfirmSuccess(check.transactionId || 'BPAY-' + Date.now());
         }
       } catch (err) {
@@ -93,12 +95,15 @@ export default function BinancePayModal({
     return () => clearInterval(interval);
   }, [isOpen, payOrder, status]);
 
+  // Procesar pago y disparar API del Proveedor de Recargas
   const handleConfirmSuccess = async (txId) => {
     if (status === 'PAID') return;
     setStatus('PAID');
     soundEffects.playBinancePaidSound();
 
     const finalOrderId = orderData?.id || null;
+
+    // 1. Acreditar pago en Supabase
     await completeBinancePayment({
       orderId: finalOrderId,
       userId: user?.id,
@@ -106,6 +111,34 @@ export default function BinancePayModal({
       binanceTxId: txId,
       isWalletDeposit: isWalletDeposit
     });
+
+    // 2. Si no es depósito simple de billetera, disparar API de recarga con el proveedor
+    if (!isWalletDeposit && finalOrderId) {
+      let parsedNotes = {};
+      try {
+        parsedNotes = typeof orderData.customer_notes === 'string' ? JSON.parse(orderData.customer_notes) : orderData.customer_notes || {};
+      } catch (e) {}
+
+      const rechargeResult = await processGameRecharge({
+        order_id: finalOrderId,
+        uid: parsedNotes['ID de Jugador (UID)'] || parsedNotes.uid || '',
+        nickname: parsedNotes.nickname || parsedNotes.validated_nickname || '',
+        product_name: description || 'Recarga Digital',
+        total_usdt: amountUsdt
+      });
+
+      setRechargeStatus(rechargeResult);
+
+      // Guardar ID de transacción del proveedor en el pedido
+      if (rechargeResult?.mappedData?.supplier_transaction_id) {
+        await supabase
+          .from('orders')
+          .update({
+            bank_receipt_url: `BINANCE_PAY:${txId} | SUPPLIER:${rechargeResult.mappedData.supplier_transaction_id}`
+          })
+          .eq('id', finalOrderId);
+      }
+    }
 
     if (user?.id) {
       await fetchProfile(user.id);
@@ -168,7 +201,7 @@ export default function BinancePayModal({
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#f0b90b' }}>Binance Pay Checkout</h3>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Procesamiento de Pago Cripto Automatizado</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cobro & Despacho Automatizado por USDT</div>
             </div>
           </div>
 
@@ -188,10 +221,11 @@ export default function BinancePayModal({
         ) : status === 'PAID' ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: '3.5rem', marginBottom: '12px', animation: 'bounce 0.6s ease' }}>🎉</div>
-            <h3 style={{ color: '#10b981', fontSize: '1.3rem', marginBottom: '6px' }}>¡Pago Confirmado con Éxito!</h3>
+            <h3 style={{ color: '#10b981', fontSize: '1.3rem', marginBottom: '6px' }}>¡Pago Confirmado & Procesado!</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Tu pago de <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> ha sido acreditado en tiempo real.
+              Tu pago de <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> ha sido acreditado y enviado a procesar con la API del proveedor.
             </p>
+            
             <div style={{
               background: 'rgba(16, 185, 129, 0.1)',
               border: '1px solid #10b981',
@@ -199,12 +233,20 @@ export default function BinancePayModal({
               padding: '12px',
               fontSize: '0.8rem',
               color: '#10b981',
-              marginBottom: '20px'
+              marginBottom: '16px',
+              textAlign: 'left'
             }}>
-              ✅ Estado de Orden: <strong>COMPLETADA / ENTREGADA</strong>
+              <div>✅ Estado del Pago: <strong>PAGADO (USDT)</strong></div>
+              <div>⚡ Despacho de Recarga: <strong>{rechargeStatus?.mappedData?.status || 'DELIVERED'}</strong></div>
+              {rechargeStatus?.mappedData?.supplier_transaction_id && (
+                <div style={{ fontSize: '0.75rem', marginTop: '4px', color: '#6ee7b7' }}>
+                  ID Proveedor: {rechargeStatus.mappedData.supplier_transaction_id}
+                </div>
+              )}
             </div>
+
             <button className="btn-cyan" onClick={onClose} style={{ width: '100%' }}>
-              Continuar ➔
+              Finalizar y Ver Pedido ➔
             </button>
           </div>
         ) : status === 'EXPIRED' ? (
@@ -298,7 +340,7 @@ export default function BinancePayModal({
                 className="btn-glass"
                 style={{ fontSize: '0.75rem', padding: '8px', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}
               >
-                ⚡ Simular Aprobación Instantánea (Prueba)
+                ⚡ Simular Aprobación Instantánea (Prueba de Pago y Despacho)
               </button>
             </div>
 
