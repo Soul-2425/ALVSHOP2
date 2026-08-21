@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { requestPushPermission } from '../../notificaciones y apis/notificaciones/pushService';
+import { soundEffects } from '../services/soundEffects';
 
 const AppContext = createContext();
 
@@ -11,6 +12,11 @@ export function AppProvider({ children }) {
   const [role, setRole] = useState('Cliente Común');
   const [walletBalance, setWalletBalance] = useState(0.00);
   
+  // Realtime Push Toasts & Notifications
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+
   // Currency Toggle: 'USDT' or 'GTQ'
   const [currency, setCurrency] = useState('USDT');
   const [exchangeRate, setExchangeRate] = useState(7.80);
@@ -31,6 +37,45 @@ export function AppProvider({ children }) {
   });
 
   const [isLoading, setIsLoading] = useState(true);
+
+  // Add Notification to floating Toast queue with Auto-Dismiss
+  const addNotification = useCallback((notif) => {
+    const id = notif.id || 'notif-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+    const newNotif = { ...notif, id, created_at: notif.created_at || new Date().toISOString() };
+
+    setNotifications((prev) => [newNotif, ...prev.slice(0, 4)]);
+    setUnreadCount((prev) => prev + 1);
+
+    // Reproducir tono según tipo
+    if (!isMuted) {
+      if (notif.type === 'order_completed') soundEffects.playOrderCompletedSound();
+      else if (notif.type === 'admin_new_order') soundEffects.playNewOrderAdminSound();
+      else if (notif.type === 'support_reply' || notif.type === 'admin_support_message') soundEffects.playChatMessageSound();
+      else if (notif.type === 'feed_interaction') soundEffects.playFeedInteractionSound();
+    }
+
+    // Auto-remover en 7 segundos
+    setTimeout(() => {
+      removeNotification(id);
+    }, 7000);
+  }, [isMuted]);
+
+  const removeNotification = (id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const clearAllNotifications = () => {
+    setNotifications([]);
+    setUnreadCount(0);
+  };
+
+  const toggleMute = () => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      soundEffects.setMuted(next);
+      return next;
+    });
+  };
 
   // Load Config & Apply Dynamic CSS Variables
   const loadConfig = async () => {
@@ -86,7 +131,7 @@ export function AppProvider({ children }) {
         setRole(data.role || 'Cliente Común');
         setWalletBalance(Number(data.wallet_balance || 0));
 
-        // Trigger Jorge's Push Notification request
+        // Auto-solicitar suscripción push si aún no está registrada
         requestPushPermission(userId);
       }
     } catch (err) {
@@ -122,6 +167,62 @@ export function AppProvider({ children }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Supabase Realtime Channels (Push WebSockets)
+  useEffect(() => {
+    const normalizedRole = role ? String(role).trim().toLowerCase() : '';
+    const isAdmin = normalizedRole === 'admin' || normalizedRole === 'asesor';
+
+    // 1. Canal Global de Admin (Para nuevos pedidos, comentarios feed y soporte entrante)
+    const adminChannel = supabase.channel('admin_global_channel');
+
+    adminChannel
+      .on('broadcast', { event: 'push_notification' }, (payload) => {
+        if (isAdmin && payload?.payload) {
+          addNotification(payload.payload);
+        }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
+        if (isAdmin && payload.new) {
+          addNotification({
+            type: 'admin_new_order',
+            title: '🛒 ¡Nuevo Pedido en Tienda!',
+            body: `Orden #${(payload.new.id || '').slice(0, 8)} por $${Number(payload.new.total_usdt || 0).toFixed(2)} USDT`,
+            metadata: { url: '/admin', orderId: payload.new.id }
+          });
+        }
+      })
+      .subscribe();
+
+    // 2. Canal Personal del Usuario (Para pedidos completados y respuestas de soporte)
+    let userChannel = null;
+    if (user?.id) {
+      userChannel = supabase.channel(`user_channel_${user.id}`);
+
+      userChannel
+        .on('broadcast', { event: 'push_notification' }, (payload) => {
+          if (payload?.payload) {
+            addNotification(payload.payload);
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, (payload) => {
+          if (payload.new && payload.new.status === 'Completed' && payload.old?.status !== 'Completed') {
+            addNotification({
+              type: 'order_completed',
+              title: '🎉 ¡Pedido Completado y Entregado!',
+              body: `Tu orden #${(payload.new.id || '').slice(0, 8)} ha sido entregada exitosamente.`,
+              metadata: { url: '/profile?tab=orders', orderId: payload.new.id }
+            });
+          }
+        })
+        .subscribe();
+    }
+
+    return () => {
+      supabase.removeChannel(adminChannel);
+      if (userChannel) supabase.removeChannel(userChannel);
+    };
+  }, [user, role, addNotification]);
 
   // Format Price with Currency Toggle (USDT or GTQ)
   const formatPrice = (usdtAmount, customRole = null) => {
@@ -163,7 +264,14 @@ export function AppProvider({ children }) {
         loadConfig,
         formatPrice,
         fetchProfile,
-        isLoading
+        isLoading,
+        notifications,
+        unreadCount,
+        addNotification,
+        removeNotification,
+        clearAllNotifications,
+        isMuted,
+        toggleMute
       }}
     >
       {children}

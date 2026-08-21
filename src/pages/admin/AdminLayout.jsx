@@ -53,6 +53,7 @@ export default function AdminLayout() {
 
   const adminMenu = [
     { to: '/admin', end: true, label: '📊 Dashboard & Analítica', icon: '📈' },
+    { to: '/admin/integrations', label: '⚡ Integraciones & APIs', icon: '🔌' },
     { to: '/admin/users', label: '👥 Usuarios y Roles', icon: '👤' },
     { to: '/admin/products', label: '📦 Productos & 3 Precios', icon: '🏷️' },
     { to: '/admin/streaming', label: '🎬 Stock Streaming', icon: '🔑' },

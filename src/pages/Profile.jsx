@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
+import BinancePayModal from '../components/BinancePayModal';
+import { requestPushPermission, getPushPermissionStatus } from '../../notificaciones y apis/notificaciones/pushService';
 
 export default function Profile() {
   const [searchParams] = useSearchParams();
@@ -28,6 +30,9 @@ export default function Profile() {
   const [depositAmount, setDepositAmount] = useState('');
   const [depositLoading, setDepositLoading] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
+  const [showBinanceModal, setShowBinanceModal] = useState(false);
+  const [binanceDepositAmount, setBinanceDepositAmount] = useState('10');
+  const [pushStatus, setPushStatus] = useState('default');
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
@@ -512,62 +517,138 @@ export default function Profile() {
 
       {/* Tab: Wallet Top-Up Request */}
       {activeTab === 'wallet' && (
-        <div className="glass-panel" style={{
-          borderRadius: 'var(--radius-md)',
-          padding: '24px',
-          border: '1px solid var(--border-cyan)'
-        }}>
-          <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Solicitar Recarga a Billetera</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            Las recargas a tu billetera base se acreditan en USDT al realizar una transferencia bancaria equivalente en Quetzales.
-          </p>
-
-          <form onSubmit={handleRequestDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Monto a Recargar (en USDT):
-              </label>
-              <input
-                type="number"
-                step="0.5"
-                min="1"
-                required
-                placeholder="Ej. 10.00"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: '#0d111a',
-                  border: '1px solid var(--border-glass)',
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontWeight: '700'
-                }}
-              />
-            </div>
-
-            {depositAmount && (
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                padding: '12px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.85rem'
-              }}>
-                <div>Total a transferir en Quetzales: <strong>Q{(Number(depositAmount) * 7.8).toFixed(2)} GTQ</strong></div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Cuenta Banrural: 4313076359 (Jonathan Alvares)
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Binance Pay Automated Instant Deposit */}
+          <div className="glass-panel" style={{
+            borderRadius: 'var(--radius-md)',
+            padding: '24px',
+            border: '1px solid #f0b90b',
+            boxShadow: '0 0 25px rgba(240, 185, 11, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '1.4rem' }}>🟡</span>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Instantánea con Binance Pay</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Acreditación automática en tiempo real sin esperas ni confirmación manual.
                 </div>
               </div>
-            )}
+            </div>
 
-            <button type="submit" disabled={depositLoading} className="btn-cyan" style={{ padding: '12px' }}>
-              {depositLoading ? 'Enviando...' : 'Solicitar Recarga ➔'}
-            </button>
-          </form>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '14px', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '160px' }}>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={binanceDepositAmount}
+                  onChange={(e) => setBinanceDepositAmount(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#f0b90b',
+                    fontSize: '1.1rem',
+                    fontWeight: '800'
+                  }}
+                />
+                <span style={{ position: 'absolute', right: '12px', top: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  USDT
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowBinanceModal(true)}
+                className="btn-cyan"
+                style={{
+                  background: '#f0b90b',
+                  color: '#000',
+                  fontWeight: '800',
+                  padding: '11px 20px',
+                  boxShadow: '0 0 15px rgba(240, 185, 11, 0.4)'
+                }}
+              >
+                ⚡ Recargar con Binance Pay ➔
+              </button>
+            </div>
+          </div>
+
+          {/* Manual Bank Transfer Deposit */}
+          <div className="glass-panel" style={{
+            borderRadius: 'var(--radius-md)',
+            padding: '24px',
+            border: '1px solid var(--border-cyan)'
+          }}>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Recarga con Transferencia Bancaria (Quetzales)</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Transfiere en Quetzales a Banrural y un asesor validará tu boleta para acreditar tus USDT.
+            </p>
+
+            <form onSubmit={handleRequestDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Monto a Recargar (en USDT):
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  required
+                  placeholder="Ej. 10.00"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontSize: '1rem',
+                    fontWeight: '700'
+                  }}
+                />
+              </div>
+
+              {depositAmount && (
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  padding: '12px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.85rem'
+                }}>
+                  <div>Total a transferir en Quetzales: <strong>Q{(Number(depositAmount) * 7.8).toFixed(2)} GTQ</strong></div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Cuenta Banrural: 4313076359 (Jonathan Alvares)
+                  </div>
+                </div>
+              )}
+
+              <button type="submit" disabled={depositLoading} className="btn-cyan" style={{ padding: '12px' }}>
+                {depositLoading ? 'Enviando...' : 'Solicitar Recarga Manual ➔'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
+
+      {/* Binance Pay Deposit Modal */}
+      <BinancePayModal
+        isOpen={showBinanceModal}
+        onClose={() => setShowBinanceModal(false)}
+        orderData={{ id: `WALLET-DEP-${Date.now()}` }}
+        amountUsdt={Number(binanceDepositAmount || 10)}
+        description="Recarga de Billetera ALVSHOP"
+        isWalletDeposit={true}
+        onPaymentSuccess={({ amount }) => {
+          alert(`¡Recarga de $${amount} USDT acreditada a tu billetera con éxito!`);
+          setShowBinanceModal(false);
+          if (user?.id) fetchProfile(user.id);
+        }}
+      />
     </div>
   );
 }
