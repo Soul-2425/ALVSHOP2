@@ -539,11 +539,10 @@ export async function queryBinancePayOrder(prepayId, merchantTradeNo) {
     }
   }
 
-  // Simulación para flujo interactivo
+  // En modo sin credenciales activas, mantener en estado PENDING a la espera de confirmación real
   return {
     success: true,
-    status: 'PAID',
-    transactionId: 'BPAY-' + Math.floor(100000000 + Math.random() * 900000000)
+    status: 'PENDING'
   };
 }
 
