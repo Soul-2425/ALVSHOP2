@@ -35,6 +35,7 @@ export function AppProvider({ children }) {
     binance_pay_id: '527653920',
     binance_name: 'AlvJona',
     binance_qr_url: '/binance-qr.jpg',
+    binance_deeplink_url: 'https://app.binance.com/uni-qr/T567z1pn',
     binance_usdt_address: '',
     discount_offer_pct: 5,
     discount_special_pct: 10
@@ -114,6 +115,7 @@ export function AppProvider({ children }) {
         const binancePayId = data.social_links?.binance_pay_id || data.binance_pay_id || '527653920';
         const binanceName = data.social_links?.binance_name || data.binance_name || 'AlvJona';
         const binanceQrUrl = data.social_links?.binance_qr_url || data.binance_qr_url || '/binance-qr.jpg';
+        const binanceDeeplink = data.social_links?.binance_deeplink_url || data.binance_deeplink_url || 'https://app.binance.com/uni-qr/T567z1pn';
         const binanceUsdtAddress = data.social_links?.binance_usdt_address || '';
 
         setConfig(prev => ({
@@ -122,6 +124,7 @@ export function AppProvider({ children }) {
           binance_pay_id: binancePayId,
           binance_name: binanceName,
           binance_qr_url: binanceQrUrl,
+          binance_deeplink_url: binanceDeeplink,
           binance_usdt_address: binanceUsdtAddress
         }));
         if (data.usdt_gtq_rate) setExchangeRate(Number(data.usdt_gtq_rate));

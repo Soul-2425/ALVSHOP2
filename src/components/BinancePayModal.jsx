@@ -388,7 +388,7 @@ export default function BinancePayModal({
             {/* Direct Open in App Button & Deeplink */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
               <a
-                href={`https://app.binance.com/qr/dplk5b722247b97341388fc2dfd15024765d`}
+                href={config?.binance_deeplink_url || 'https://app.binance.com/uni-qr/T567z1pn'}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -407,7 +407,7 @@ export default function BinancePayModal({
                   boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)'
                 }}
               >
-                <span>🟡</span> Abrir en App de Binance ➔
+                <span>🟡</span> Abrir en App de Binance (Transferir a {binanceName}) ➔
               </a>
             </div>
 

@@ -14,6 +14,7 @@ export default function AdminFinance() {
   const [binancePayId, setBinancePayId] = useState('527653920');
   const [binanceName, setBinanceName] = useState('AlvJona');
   const [binanceQrUrl, setBinanceQrUrl] = useState('/binance-qr.jpg');
+  const [binanceDeeplinkUrl, setBinanceDeeplinkUrl] = useState('https://app.binance.com/uni-qr/T567z1pn');
   const [binanceUsdtAddress, setBinanceUsdtAddress] = useState('');
   const [uploadingQr, setUploadingQr] = useState(false);
 
@@ -29,6 +30,7 @@ export default function AdminFinance() {
       if (config.binance_pay_id) setBinancePayId(config.binance_pay_id);
       if (config.binance_name) setBinanceName(config.binance_name);
       if (config.binance_qr_url) setBinanceQrUrl(config.binance_qr_url);
+      if (config.binance_deeplink_url) setBinanceDeeplinkUrl(config.binance_deeplink_url);
       if (config.binance_usdt_address) setBinanceUsdtAddress(config.binance_usdt_address);
     }
   }, [config]);
@@ -92,6 +94,7 @@ export default function AdminFinance() {
         binance_pay_id: binancePayId.trim(),
         binance_name: binanceName.trim(),
         binance_qr_url: binanceQrUrl.trim(),
+        binance_deeplink_url: binanceDeeplinkUrl.trim(),
         binance_usdt_address: binanceUsdtAddress.trim()
       };
 
@@ -250,6 +253,28 @@ export default function AdminFinance() {
                   style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}
                 />
                 {uploadingQr && <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Subiendo QR...</span>}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Enlace Universal / Deeplink de Binance App (Abre la app directamente):
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://app.binance.com/uni-qr/T567z1pn"
+                  value={binanceDeeplinkUrl}
+                  onChange={(e) => setBinanceDeeplinkUrl(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#f0b90b',
+                    fontSize: '0.8rem',
+                    fontFamily: 'monospace'
+                  }}
+                />
               </div>
             </div>
           </div>
