@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext';
 import ProductCard from '../components/ProductCard';
 
 export default function Home() {
-  const { config } = useApp();
+  const { config, profile } = useApp();
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -289,13 +289,15 @@ export default function Home() {
           margin: '20px 0'
         }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🛍️</div>
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>No hay productos en esta categoría</h3>
+          <h3 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>No hay productos disponibles por el momento</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '440px', margin: '0 auto 16px auto' }}>
-            Los productos de otras categorías (como Streaming o Gift Cards) no se mostrarán aquí. Puedes publicar artículos en esta sección desde el panel de administración.
+            Estamos preparando nuevas ofertas y paquetes para esta sección. ¡Vuelve a consultar pronto!
           </p>
-          <Link to="/admin/products" className="btn-glass" style={{ fontSize: '0.85rem' }}>
-            👑 Ir al Gestor de Productos
-          </Link>
+          {(profile?.role === 'admin' || profile?.is_admin) && (
+            <Link to="/admin/products" className="btn-glass" style={{ fontSize: '0.85rem' }}>
+              👑 Ir al Gestor de Productos (Admin)
+            </Link>
+          )}
         </div>
       ) : (
         <div className="store-grid-2x3">

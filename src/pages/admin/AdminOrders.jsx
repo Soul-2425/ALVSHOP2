@@ -15,8 +15,9 @@ export default function AdminOrders() {
   // Order Details Modal
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [deletingOrder, setDeletingOrder] = useState(false);
+  const [cleaningOld, setCleaningOld] = useState(false);
   const [credentialsInput, setCredentialsInput] = useState('');
-  const [notesInput, setNotesInput] = useState('');
 
   // Load Orders from Supabase
   const loadOrders = async () => {
@@ -27,7 +28,7 @@ export default function AdminOrders() {
         .select(`
           *,
           profiles(full_name, email, phone, role),
-          order_items(*, products(name, image_url))
+          order_items(*, products(name, image_url, stock))
         `)
         .order('created_at', { ascending: false });
 
@@ -111,7 +112,7 @@ export default function AdminOrders() {
     Rejected: { label: 'Rechazado', bg: 'rgba(248, 113, 113, 0.15)', color: '#f87171', border: 'rgba(248, 113, 113, 0.4)' }
   };
 
-  // Update Status in Supabase
+  // Update Status in Supabase & Reduce Product Stock on Completed
   const handleUpdateOrderStatus = async (newStatus) => {
     if (!selectedOrder) return;
     setUpdatingStatus(true);
@@ -124,6 +125,27 @@ export default function AdminOrders() {
 
       if (error) throw error;
 
+      // Deduct product stock if marked as Completed
+      if (newStatus === 'Completed' && selectedOrder.status !== 'Completed') {
+        for (const item of (selectedOrder.order_items || [])) {
+          if (item.product_id) {
+            const { data: currentProd } = await supabase
+              .from('products')
+              .select('stock')
+              .eq('id', item.product_id)
+              .single();
+
+            if (currentProd) {
+              const newStock = Math.max(0, (currentProd.stock || 0) - (item.quantity || 1));
+              await supabase
+                .from('products')
+                .update({ stock: newStock })
+                .eq('id', item.product_id);
+            }
+          }
+        }
+      }
+
       // If credentials were provided, save in order_items
       if (credentialsInput.trim() && selectedOrder.order_items?.[0]) {
         await supabase
@@ -132,7 +154,7 @@ export default function AdminOrders() {
           .eq('id', selectedOrder.order_items[0].id);
       }
 
-      alert(`¡Estado del pedido actualizado a "${statusConfig[newStatus]?.label || newStatus}"!`);
+      alert(`¡Estado del pedido actualizado a "${statusConfig[newStatus]?.label || newStatus}" y stock descontado exitosamente!`);
       setSelectedOrder(null);
       setCredentialsInput('');
       await loadOrders();
@@ -143,22 +165,110 @@ export default function AdminOrders() {
     }
   };
 
+  // Delete Individual Order
+  const handleDeleteOrder = async (orderId) => {
+    if (!confirm(`¿Estás seguro de eliminar permanentemente la orden #${orderId.slice(0, 8)}? Esta acción liberará espacio en la base de datos.`)) return;
+    setDeletingOrder(true);
+    try {
+      // 1. Delete associated order items
+      await supabase.from('order_items').delete().eq('order_id', orderId);
+      // 2. Delete the order
+      const { error } = await supabase.from('orders').delete().eq('id', orderId);
+      if (error) throw error;
+
+      alert('¡Pedido eliminado permanentemente del registro!');
+      if (selectedOrder?.id === orderId) setSelectedOrder(null);
+      await loadOrders();
+    } catch (err) {
+      alert('Error eliminando pedido: ' + err.message);
+    } finally {
+      setDeletingOrder(false);
+    }
+  };
+
+  // 40-Day Cleanup: Purge orders older than 40 days to keep DB fast & clean
+  const handleCleanupOldOrders = async () => {
+    const days = 40;
+    const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const cutoffIso = cutoffDate.toISOString();
+    const formattedCutoff = cutoffDate.toLocaleDateString();
+
+    if (!confirm(`🧹 ¿Deseas depurar la base de datos eliminando todos los pedidos con más de 40 días de antigüedad (creados antes del ${formattedCutoff})? Esto liberará espacio y eliminará registros antiguos.`)) {
+      return;
+    }
+
+    setCleaningOld(true);
+    try {
+      // 1. Query old orders
+      const { data: oldOrders, error: fetchErr } = await supabase
+        .from('orders')
+        .select('id')
+        .lt('created_at', cutoffIso);
+
+      if (fetchErr) throw fetchErr;
+
+      if (!oldOrders || oldOrders.length === 0) {
+        alert('No se encontraron pedidos con más de 40 días de antigüedad. La base de datos ya está al día.');
+        return;
+      }
+
+      const oldIds = oldOrders.map(o => o.id);
+
+      // 2. Delete order items
+      await supabase.from('order_items').delete().in('order_id', oldIds);
+
+      // 3. Delete old orders
+      const { error: delErr } = await supabase.from('orders').delete().in('id', oldIds);
+      if (delErr) throw delErr;
+
+      alert(`✅ ¡Depuración completada! Se eliminaron ${oldIds.length} pedidos antiguos (> 40 días) para mantener la base de datos limpia.`);
+      await loadOrders();
+    } catch (err) {
+      alert('Error depurando pedidos antiguos: ' + err.message);
+    } finally {
+      setCleaningOld(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
-      {/* Header & Quick Refresh */}
+      {/* Header & Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>📦</span> Historial & Gestión de Pedidos
           </h3>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Filtra por fecha, estado y gestiona la entrega de diamantes y cuentas
+            Filtra por fecha, cambia estados, descuenta stock y limpia registros antiguos
           </p>
         </div>
-        <button onClick={loadOrders} className="btn-glass" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>🔄</span> Recargar Lista
-        </button>
+
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleCleanupOldOrders}
+            disabled={cleaningOld}
+            style={{
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#f87171',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.82rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>🧹</span> {cleaningOld ? 'Depurando...' : 'Limpiar Pedidos (> 40 días)'}
+          </button>
+
+          <button onClick={loadOrders} className="btn-glass" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>🔄</span> Recargar Lista
+          </button>
+        </div>
       </div>
 
       {/* Summary Metrics Cards */}
@@ -201,100 +311,79 @@ export default function AdminOrders() {
         flexDirection: 'column',
         gap: '14px'
       }}>
-        
-        {/* Row 1: Date Filter Presets */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>📅 Filtrar Fecha:</span>
-          
-          {[
-            { key: 'all', label: 'Todo el Tiempo' },
-            { key: 'today', label: '⚡ Hoy' },
-            { key: '7days', label: '📆 Últimos 7 Días' },
-            { key: 'this_month', label: '🗓️ Este Mes' },
-            { key: 'custom', label: '🔍 Rango Personalizado' }
-          ].map((preset) => (
-            <button
-              key={preset.key}
-              onClick={() => setDateFilterPreset(preset.key)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '0.8rem',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                background: dateFilterPreset === preset.key ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
-                color: dateFilterPreset === preset.key ? '#000' : 'var(--text-main)',
-                border: dateFilterPreset === preset.key ? 'none' : '1px solid var(--border-glass)'
-              }}
-            >
-              {preset.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>
+            🔍 Filtros de Búsqueda Avanzada
+          </div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {[
+              { key: 'all', label: 'Todo el Historial' },
+              { key: 'today', label: 'Hoy' },
+              { key: '7days', label: 'Últimos 7 Días' },
+              { key: 'this_month', label: 'Este Mes' },
+              { key: 'custom', label: 'Rango Personalizado' }
+            ].map(p => (
+              <button
+                key={p.key}
+                onClick={() => setDateFilterPreset(p.key)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-full)',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  background: dateFilterPreset === p.key ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
+                  color: dateFilterPreset === p.key ? '#000' : 'var(--text-muted)',
+                  border: 'none'
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Row 2: Custom Date Range Pickers (If custom selected) */}
+        {/* Custom Date Pickers */}
         {dateFilterPreset === 'custom' && (
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '10px 14px', borderRadius: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Desde:</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Desde:</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                style={{ background: '#0d111a', color: '#fff', border: '1px solid var(--border-glass)', padding: '6px 10px', borderRadius: '6px', fontSize: '0.8rem' }}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
               />
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Hasta:</label>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Hasta:</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                style={{ background: '#0d111a', color: '#fff', border: '1px solid var(--border-glass)', padding: '6px 10px', borderRadius: '6px', fontSize: '0.8rem' }}
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
               />
             </div>
-
-            {(startDate || endDate) && (
-              <button
-                onClick={() => { setStartDate(''); setEndDate(''); }}
-                style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '0.75rem', cursor: 'pointer' }}
-              >
-                ✕ Limpiar Rango
-              </button>
-            )}
           </div>
         )}
 
-        {/* Row 3: Status & Search Filter */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Status Dropdown */}
-          <div style={{ minWidth: '180px' }}>
+        {/* Search & Status Filter */}
+        <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '10px' }}>
+          <div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '9px 12px',
-                borderRadius: 'var(--radius-sm)',
-                background: '#0d111a',
-                border: '1px solid var(--border-glass)',
-                color: '#fff',
-                fontSize: '0.85rem',
-                fontWeight: '600'
-              }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
             >
-              <option value="all">⚡ Todos los Estados</option>
-              <option value="Pending">Pendiente (Sin pagar / En espera)</option>
-              <option value="Verification">En Verificación (Comprobante adjunto)</option>
-              <option value="Completed">Completado (Entregado)</option>
-              <option value="Rejected">Rechazado</option>
+              <option value="all">Todos los Estados</option>
+              <option value="Completed">✅ Completados</option>
+              <option value="Verification">🔍 En Verificación</option>
+              <option value="Pending">⏳ Pendientes</option>
+              <option value="Rejected">❌ Rechazados</option>
             </select>
           </div>
 
-          {/* Search Bar */}
-          <div style={{ flex: 1, minWidth: '240px' }}>
+          <div>
             <input
               type="text"
               placeholder="Buscar por ID, UID del jugador, correo o producto..."
@@ -406,7 +495,7 @@ export default function AdminOrders() {
 
                     {/* Payment Method */}
                     <td style={{ padding: '12px 8px', fontSize: '0.8rem' }}>
-                      {ord.payment_method === 'Wallet' ? '💎 Billetera' : '🏦 Banrural GTQ'}
+                      {ord.payment_method === 'Wallet' ? '💎 Billetera' : ord.payment_method || 'Binance Pay'}
                     </td>
 
                     {/* Status Badge */}
@@ -426,16 +515,33 @@ export default function AdminOrders() {
 
                     {/* Action */}
                     <td style={{ padding: '12px 8px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => {
-                          setSelectedOrder(ord);
-                          setCredentialsInput(ord.order_items?.[0]?.credentials_delivered || '');
-                        }}
-                        className="btn-cyan"
-                        style={{ padding: '6px 12px', fontSize: '0.78rem', fontWeight: '700' }}
-                      >
-                        Gestionar ⚙️
-                      </button>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button
+                          onClick={() => {
+                            setSelectedOrder(ord);
+                            setCredentialsInput(ord.order_items?.[0]?.credentials_delivered || '');
+                          }}
+                          className="btn-cyan"
+                          style={{ padding: '6px 10px', fontSize: '0.78rem', fontWeight: '700' }}
+                        >
+                          ⚙️ Gestionar
+                        </button>
+                        <button
+                          onClick={() => handleDeleteOrder(ord.id)}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            color: '#f87171',
+                            padding: '6px 8px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem'
+                          }}
+                          title="Eliminar Pedido"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -523,7 +629,7 @@ export default function AdminOrders() {
             {/* Change Status Buttons */}
             <div style={{ marginBottom: '14px' }}>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '8px', color: 'var(--text-muted)' }}>
-                Cambiar Estado del Pedido:
+                Cambiar Estado del Pedido (Descuenta stock automáticamente):
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <button
@@ -596,20 +702,39 @@ export default function AdminOrders() {
               </div>
             </div>
 
-            {/* WhatsApp Direct Contact Button */}
-            {selectedOrder.profiles?.phone && (
-              <a
-                href={`https://wa.me/${selectedOrder.profiles.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                  `Hola ${selectedOrder.profiles.full_name}, te escribimos de ALVSHOP respecto a tu pedido #${selectedOrder.id.slice(0,8)}.`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-glass"
-                style={{ display: 'inline-flex', width: '100%', justifyContent: 'center', padding: '10px', fontSize: '0.85rem', color: '#25D366' }}
+            {/* Actions: Delete Order & WhatsApp Contact */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {selectedOrder.profiles?.phone && (
+                <a
+                  href={`https://wa.me/${selectedOrder.profiles.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                    `Hola ${selectedOrder.profiles.full_name}, te escribimos de ALVSHOP respecto a tu pedido #${selectedOrder.id.slice(0,8)}.`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-glass"
+                  style={{ display: 'inline-flex', width: '100%', justifyContent: 'center', padding: '10px', fontSize: '0.85rem', color: '#25D366' }}
+                >
+                  💬 Contactar al Cliente por WhatsApp ({selectedOrder.profiles.phone})
+                </a>
+              )}
+
+              <button
+                onClick={() => handleDeleteOrder(selectedOrder.id)}
+                disabled={deletingOrder}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#f87171',
+                  padding: '8px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
               >
-                💬 Contactar al Cliente por WhatsApp ({selectedOrder.profiles.phone})
-              </a>
-            )}
+                🗑️ Eliminar Permanentemente Este Pedido
+              </button>
+            </div>
 
           </div>
         </div>

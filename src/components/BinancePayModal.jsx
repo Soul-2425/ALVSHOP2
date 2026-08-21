@@ -121,8 +121,26 @@ export default function BinancePayModal({
       isWalletDeposit: isWalletDeposit
     });
 
-    // 2. Si no es depósito simple de billetera, disparar API de recarga con el proveedor
+    // 2. Si no es depósito simple de billetera, disparar API de recarga con el proveedor y descontar stock
     if (!isWalletDeposit && finalOrderId) {
+      // Descontar stock
+      try {
+        const { data: orderItems } = await supabase.from('order_items').select('product_id, quantity').eq('order_id', finalOrderId);
+        if (orderItems) {
+          for (const it of orderItems) {
+            if (it.product_id) {
+              const { data: curP } = await supabase.from('products').select('stock').eq('id', it.product_id).single();
+              if (curP) {
+                const newStock = Math.max(0, (curP.stock || 0) - (it.quantity || 1));
+                await supabase.from('products').update({ stock: newStock }).eq('id', it.product_id);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Error descontando stock:', e);
+      }
+
       let parsedNotes = {};
       try {
         parsedNotes = typeof orderData.customer_notes === 'string' ? JSON.parse(orderData.customer_notes) : orderData.customer_notes || {};

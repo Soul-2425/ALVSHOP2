@@ -26,7 +26,17 @@ export default function AdminProducts() {
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Modal State for Categories & Subcategories
+  // Inline Category & Subcategory Quick-Creation inside Product Modal
+  const [showQuickCatForm, setShowQuickCatForm] = useState(false);
+  const [quickCatName, setQuickCatName] = useState('');
+  const [quickCatIcon, setQuickCatIcon] = useState('💎');
+  const [creatingQuickCat, setCreatingQuickCat] = useState(false);
+
+  const [showQuickSubcatForm, setShowQuickSubcatForm] = useState(false);
+  const [quickSubcatName, setQuickSubcatName] = useState('');
+  const [creatingQuickSubcat, setCreatingQuickSubcat] = useState(false);
+
+  // Modal State for Full Categories & Subcategories Manager
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('💎');
@@ -37,7 +47,6 @@ export default function AdminProducts() {
   // Subcategory management state inside Category Modal
   const [activeCatForSubcats, setActiveCatForSubcats] = useState(null);
   const [newSubcatName, setNewSubcatName] = useState('');
-  const [newSubcatIcon, setNewSubcatIcon] = useState('⭐');
   const [newSubcatImage, setNewSubcatImage] = useState('');
   const [savingSubcat, setSavingSubcat] = useState(false);
 
@@ -128,6 +137,8 @@ export default function AdminProducts() {
     setButtonText('Comprar');
     setRequiresValidation(false);
     setDynamicFields(['ID de Jugador (UID)']);
+    setShowQuickCatForm(false);
+    setShowQuickSubcatForm(false);
     setShowProductModal(true);
   };
 
@@ -147,6 +158,8 @@ export default function AdminProducts() {
     setButtonText(prod.button_action_text || 'Comprar');
     setRequiresValidation(Boolean(prod.requires_validation));
     setValidationType(prod.validation_type || 'Free Fire');
+    setShowQuickCatForm(false);
+    setShowQuickSubcatForm(false);
 
     // Fetch dynamic fields for this product
     const { data: fields } = await supabase
@@ -164,7 +177,81 @@ export default function AdminProducts() {
     setShowProductModal(true);
   };
 
-  // Create Category
+  // Quick Inline Category Creation
+  const handleQuickCreateCategory = async (e) => {
+    e.preventDefault();
+    if (!quickCatName.trim()) return;
+    setCreatingQuickCat(true);
+
+    const slug = quickCatName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') + '-' + Date.now();
+
+    try {
+      const { data: newCat, error } = await supabase.from('categories').insert({
+        name: quickCatName.trim(),
+        slug,
+        icon: quickCatIcon || '💎'
+      }).select().single();
+
+      if (error) throw error;
+
+      // Auto create a primary subcategory
+      const subSlug = slug + '-sub';
+      const { data: newSub } = await supabase.from('subcategories').insert({
+        category_id: newCat.id,
+        name: newCat.name,
+        slug: subSlug
+      }).select().single();
+
+      setCategories(prev => [...prev, newCat]);
+      if (newSub) {
+        setSubcategories(prev => [...prev, newSub]);
+        setSelectedSubcat(newSub.id);
+      }
+
+      setSelectedCat(newCat.id);
+      setQuickCatName('');
+      setShowQuickCatForm(false);
+      alert(`¡Categoría "${newCat.name}" creada y seleccionada!`);
+    } catch (err) {
+      alert('Error creando categoría: ' + err.message);
+    } finally {
+      setCreatingQuickCat(false);
+    }
+  };
+
+  // Quick Inline Subcategory Creation (e.g. 100+10, 310+31)
+  const handleQuickCreateSubcategory = async (e) => {
+    e.preventDefault();
+    if (!selectedCat || !quickSubcatName.trim()) {
+      alert('Por favor selecciona primero la categoría de destino.');
+      return;
+    }
+    setCreatingQuickSubcat(true);
+
+    const slug = quickSubcatName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') + '-' + Date.now();
+
+    try {
+      const { data: newSub, error } = await supabase.from('subcategories').insert({
+        category_id: selectedCat,
+        name: quickSubcatName.trim(),
+        slug
+      }).select().single();
+
+      if (error) throw error;
+
+      setSubcategories(prev => [...prev, newSub]);
+      setSelectedSubcat(newSub.id);
+      setQuickSubcatName('');
+      setShowQuickSubcatForm(false);
+      alert(`¡Subcategoría "${newSub.name}" creada y seleccionada!`);
+    } catch (err) {
+      alert('Error creando subcategoría: ' + err.message);
+    } finally {
+      setCreatingQuickSubcat(false);
+    }
+  };
+
+  // Create Category in Manager Modal
   const handleCreateCategory = async (e) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -182,7 +269,7 @@ export default function AdminProducts() {
 
       if (error) throw error;
 
-      // Auto-create default subcategory for this category so products are immediately filterable
+      // Auto-create default subcategory
       const subSlug = slug + '-default';
       const { data: defaultSub } = await supabase.from('subcategories').insert({
         category_id: newCat.id,
@@ -219,7 +306,7 @@ export default function AdminProducts() {
     }
   };
 
-  // Create Subcategory
+  // Create Subcategory in Manager Modal
   const handleCreateSubcategory = async (e) => {
     e.preventDefault();
     if (!activeCatForSubcats || !newSubcatName.trim()) return;
@@ -411,7 +498,7 @@ export default function AdminProducts() {
             ) : (
               products.map((p) => {
                 const margin = (Number(p.price_public) - Number(p.cost)).toFixed(2);
-                const catName = p.subcategories?.categories?.name || p.subcategories?.name || 'Sin Categoría';
+                const catName = p.subcategories?.categories?.name || p.subcategories?.name;
                 const catIcon = p.subcategories?.categories?.icon || '📁';
                 const catImg = p.subcategories?.categories?.image_url;
 
@@ -444,14 +531,22 @@ export default function AdminProducts() {
                     </td>
 
                     <td style={{ padding: '12px 8px' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
-                        {catImg ? (
-                          <img src={catImg} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'cover' }} />
-                        ) : (
-                          <span>{catIcon}</span>
-                        )}
-                        <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>{catName}</span>
-                      </div>
+                      {catName ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+                          {catImg ? (
+                            <img src={catImg} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'cover' }} />
+                          ) : (
+                            <span>{catIcon}</span>
+                          )}
+                          <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>
+                            {catName} {p.subcategories?.name && p.subcategories.name !== catName ? `(${p.subcategories.name})` : ''}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: '#f87171', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                          ⚠️ Sin Categoría (Clic en Editar)
+                        </span>
+                      )}
                     </td>
 
                     <td style={{ padding: '12px 8px', color: 'var(--accent-cyan)', fontWeight: '800' }}>
@@ -693,7 +788,7 @@ export default function AdminProducts() {
                           <input
                             type="text"
                             required
-                            placeholder={`Nueva subcategoría para ${c.name} (Ej. Netflix)`}
+                            placeholder={`Nueva subcategoría para ${c.name} (Ej. 100+10, Netflix...)`}
                             value={newSubcatName}
                             onChange={(e) => setNewSubcatName(e.target.value)}
                             style={{ flex: 1, padding: '7px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
@@ -749,19 +844,71 @@ export default function AdminProducts() {
                   {editingProductId ? '✏️ Editar Producto' : '➕ Nuevo Producto / Recarga'}
                 </h3>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Configura categoría de destino, imagen responsive, precios y campos de compra
+                  Configura categoría, subcategoría (ej. 100+10), imagen y 3 niveles de precio
                 </p>
               </div>
               <button onClick={() => setShowProductModal(false)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
             <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Category & Subcategory Selection */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '4px' }}>
+              
+              {/* Category Selection + Quick Create Button */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>
                     📁 Categoría de Destino *
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickCatForm(!showQuickCatForm)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-cyan)',
+                      fontSize: '0.75rem',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {showQuickCatForm ? '✕ Cancelar' : '➕ Crear Nueva Categoría Aquí'}
+                  </button>
+                </div>
+
+                {showQuickCatForm ? (
+                  <div style={{
+                    background: 'rgba(6, 182, 212, 0.08)',
+                    border: '1px solid var(--accent-cyan)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    gap: '8px'
+                  }}>
+                    <input
+                      type="text"
+                      placeholder="Icono"
+                      value={quickCatIcon}
+                      onChange={(e) => setQuickCatIcon(e.target.value)}
+                      style={{ width: '55px', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Nombre (Ej. DIAMANTES 💎 o STREAMING)"
+                      value={quickCatName}
+                      onChange={(e) => setQuickCatName(e.target.value)}
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                    <button
+                      type="button"
+                      disabled={creatingQuickCat}
+                      onClick={handleQuickCreateCategory}
+                      className="btn-cyan"
+                      style={{ padding: '8px 14px', fontSize: '0.8rem' }}
+                    >
+                      {creatingQuickCat ? '...' : 'Guardar'}
+                    </button>
+                  </div>
+                ) : (
                   <select
                     required
                     value={selectedCat}
@@ -778,25 +925,74 @@ export default function AdminProducts() {
                       </option>
                     ))}
                   </select>
+                )}
+              </div>
+
+              {/* Subcategory Selection + Quick Create Button */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>
+                    🏷️ Subcategoría / Paquete (Ej. 100+10, 310+31, Netflix)
+                  </label>
+                  {selectedCat && (
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickSubcatForm(!showQuickSubcatForm)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#60a5fa',
+                        fontSize: '0.75rem',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {showQuickSubcatForm ? '✕ Cancelar' : '➕ Crear Nueva Subcategoría'}
+                    </button>
+                  )}
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    🏷️ Subcategoría (Opcional)
-                  </label>
+                {showQuickSubcatForm ? (
+                  <div style={{
+                    background: 'rgba(96, 165, 250, 0.08)',
+                    border: '1px solid #60a5fa',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    gap: '8px'
+                  }}>
+                    <input
+                      type="text"
+                      placeholder="Nombre (Ej. 100+10 o 5600+560)"
+                      value={quickSubcatName}
+                      onChange={(e) => setQuickSubcatName(e.target.value)}
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                    <button
+                      type="button"
+                      disabled={creatingQuickSubcat}
+                      onClick={handleQuickCreateSubcategory}
+                      className="btn-cyan"
+                      style={{ background: '#3b82f6', padding: '8px 14px', fontSize: '0.8rem' }}
+                    >
+                      {creatingQuickSubcat ? '...' : 'Guardar'}
+                    </button>
+                  </div>
+                ) : (
                   <select
                     value={selectedSubcat}
                     onChange={(e) => setSelectedSubcat(e.target.value)}
                     style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
                   >
-                    <option value="">-- Principal / General --</option>
+                    <option value="">-- General / Sin Subcategoría Específica --</option>
                     {filteredSubcategories.map(s => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
                     ))}
                   </select>
-                </div>
+                )}
               </div>
 
               {/* Product Name */}
@@ -805,7 +1001,7 @@ export default function AdminProducts() {
                 <input
                   type="text"
                   required
-                  placeholder="Ej. 100+10 Diamantes Free Fire o Cuenta Netflix 1 Mes"
+                  placeholder="Ej. 100+10 Diamantes Free Fire o Recarga 5600 Diamantes"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}

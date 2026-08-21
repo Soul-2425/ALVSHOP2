@@ -273,7 +273,7 @@ export default function ProductDetail() {
         }
       });
 
-      // 3. If Paid with Wallet, deduct balance
+      // 3. If Paid with Wallet, deduct balance and deduct product stock
       if (paymentMethod === 'Wallet') {
         const newBal = walletBalance - finalPriceUsdt;
         await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', user.id);
@@ -283,6 +283,12 @@ export default function ProductDetail() {
           amount_usdt: finalPriceUsdt,
           order_id: orderData.id
         });
+
+        // Deduct product stock
+        if (product?.id) {
+          const newStock = Math.max(0, (product.stock || 0) - 1);
+          await supabase.from('products').update({ stock: newStock }).eq('id', product.id);
+        }
 
         // Instant notification to customer
         notifyOrderCompleted({ orderId: orderData.id, userId: user.id, amount: finalPriceUsdt });
