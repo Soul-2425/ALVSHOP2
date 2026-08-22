@@ -19,10 +19,11 @@ import {
   sendPushNotification
 } from '../../../notificaciones y apis/notificaciones/pushService';
 import { soundEffects } from '../../services/soundEffects';
+import { getActiveSecurityStatus, unblockClient } from '../../services/securityShield';
 
 export default function AdminIntegrations() {
   const { config, loadConfig } = useApp();
-  const [activeTab, setActiveTab] = useState('recargas-america'); // 'recargas-america', 'templates', 'ff-validator', 'nocode', 'binance', 'push-monitor'
+  const [activeTab, setActiveTab] = useState('recargas-america'); // 'recargas-america', 'templates', 'ff-validator', 'nocode', 'binance', 'push-monitor', 'security-shield'
 
   // ==========================================
   // STATE: RECARGAS AMÉRICA PROVIDER
@@ -372,6 +373,7 @@ export default function AdminIntegrations() {
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
           {[
             { key: 'recargas-america', label: '⚡ Recargas América (Proveedor)', icon: '💎' },
+            { key: 'security-shield', label: '🛡️ Rate Limit & Anti-Bot', icon: '🛡️' },
             { key: 'templates', label: 'Plantillas de Mensajes', icon: '📝' },
             { key: 'ff-validator', label: 'Validador Free Fire', icon: '🎮' },
             { key: 'nocode', label: 'Conector No-Code', icon: '🧩' },
@@ -631,6 +633,117 @@ export default function AdminIntegrations() {
             )}
           </div>
 
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: RATE LIMIT & ANTI-BOT SECURITY SHIELD */}
+      {/* ========================================================================= */}
+      {activeTab === 'security-shield' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Security Status Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+            <div className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-cyan)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Límite de Tasa (Rate Limit)</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--accent-cyan)', marginTop: '4px' }}>
+                3 Peticiones / min
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '4px' }}>
+                🛡️ Activo en Validación de UIDs & Checkouts
+              </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Política de Baneo Anti-Bot</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#fbbf24', marginTop: '4px' }}>
+                15 Minutos de Bloqueo
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Al detectar 3 violaciones en una ventana de 5 min
+              </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>IPs / Clientes Bloqueados</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '900', color: getActiveSecurityStatus().length > 0 ? '#f87171' : '#34d399', marginTop: '4px' }}>
+                {getActiveSecurityStatus().length} Bloqueados
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                {getActiveSecurityStatus().length > 0 ? '⚠️ Ataques detenidos' : '✅ Tráfico limpio'}
+              </div>
+            </div>
+          </div>
+
+          {/* Active Bans Table */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#fff' }}>⛔ Clientes e IPs Bloqueadas por Abuso</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                  Direcciones IP y clientes que excedieron el límite de 3 intentos por minuto o manifestaron patrones de bot
+                </p>
+              </div>
+            </div>
+
+            {getActiveSecurityStatus().length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '30px',
+                background: 'rgba(52, 211, 153, 0.04)',
+                borderRadius: '8px',
+                border: '1px dashed rgba(52, 211, 153, 0.3)'
+              }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>🛡️</div>
+                <div style={{ fontWeight: '700', color: '#34d399', fontSize: '0.9rem' }}>No hay IPs ni clientes bloqueados en este momento</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  El escudo está monitoreando en tiempo real con límite de 3 intentos/minuto.
+                </div>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '10px' }}>Identificador / IP</th>
+                      <th style={{ padding: '10px' }}>Hora de Baneo</th>
+                      <th style={{ padding: '10px' }}>Tiempo Restante</th>
+                      <th style={{ padding: '10px', textAlign: 'center' }}>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getActiveSecurityStatus().map((ban) => (
+                      <tr key={ban.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                        <td style={{ padding: '12px 10px', fontFamily: 'monospace', color: '#f87171', fontWeight: '700' }}>
+                          {ban.id}
+                        </td>
+                        <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
+                          {ban.bannedAt}
+                        </td>
+                        <td style={{ padding: '12px 10px', color: '#fbbf24', fontWeight: '800' }}>
+                          ⏳ {ban.minutesRemaining} min
+                        </td>
+                        <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              unblockClient(ban.id);
+                              alert(`Cliente ${ban.id} desbloqueado exitosamente.`);
+                              setActiveTab('security-shield');
+                            }}
+                            className="btn-cyan"
+                            style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                          >
+                            🔓 Desbloquear
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

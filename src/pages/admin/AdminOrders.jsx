@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
+import { processGameRecharge } from '../../../notificaciones y apis/apis/index';
+import { notifyOrderCompleted } from '../../../notificaciones y apis/notificaciones/pushService';
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState([]);
@@ -28,17 +30,23 @@ export default function AdminOrders() {
         .select(`
           *,
           profiles(full_name, email, phone, role),
-          order_items(*, products(name, image_url, stock))
+          order_items(
+            id,
+            product_id,
+            quantity,
+            price_usdt,
+            cost_usdt,
+            fields_data,
+            credentials_delivered,
+            products(name, image_url, subcategory_id)
+          )
         `)
         .order('created_at', { ascending: false });
 
-      if (data && !error) {
-        setOrders(data);
-      } else {
-        setOrders([]);
-      }
+      if (error) throw error;
+      setOrders(data || []);
     } catch (err) {
-      console.error(err);
+      console.warn('Error loading orders:', err);
       setOrders([]);
     } finally {
       setLoading(false);
@@ -49,62 +57,51 @@ export default function AdminOrders() {
     loadOrders();
   }, []);
 
-  // Filter Orders based on Date, Status, Search
-  const filteredOrders = orders.filter((order) => {
-    const orderDate = new Date(order.created_at);
-    const now = new Date();
+  // Filter Logic
+  const filteredOrders = orders.filter((ord) => {
+    // 1. Status Filter
+    if (statusFilter !== 'all' && ord.status !== statusFilter) return false;
 
-    // 1. Date Filter
+    // 2. Search Query (Order ID, Customer Name, Email, or Product Name)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchId = ord.id?.toLowerCase().includes(q);
+      const matchName = ord.profiles?.full_name?.toLowerCase().includes(q);
+      const matchEmail = ord.profiles?.email?.toLowerCase().includes(q);
+      const matchProduct = ord.order_items?.some(i => i.products?.name?.toLowerCase().includes(q));
+      if (!matchId && !matchName && !matchEmail && !matchProduct) return false;
+    }
+
+    // 3. Date Filters
     if (dateFilterPreset === 'today') {
-      const isToday = orderDate.toDateString() === now.toDateString();
-      if (!isToday) return false;
+      const today = new Date().toISOString().split('T')[0];
+      const ordDate = new Date(ord.created_at).toISOString().split('T')[0];
+      if (ordDate !== today) return false;
     } else if (dateFilterPreset === '7days') {
-      const diffDays = (now - orderDate) / (1000 * 60 * 60 * 24);
-      if (diffDays > 7) return false;
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      if (new Date(ord.created_at) < sevenDaysAgo) return false;
     } else if (dateFilterPreset === 'this_month') {
-      const isSameMonth = orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
-      if (!isSameMonth) return false;
+      const now = new Date();
+      const ordDate = new Date(ord.created_at);
+      if (ordDate.getMonth() !== now.getMonth() || ordDate.getFullYear() !== now.getFullYear()) return false;
     } else if (dateFilterPreset === 'custom') {
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        if (orderDate < start) return false;
-      }
+      if (startDate && new Date(ord.created_at) < new Date(startDate)) return false;
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        if (orderDate > end) return false;
-      }
-    }
-
-    // 2. Status Filter
-    if (statusFilter !== 'all' && order.status !== statusFilter) {
-      return false;
-    }
-
-    // 3. Search Query Filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      const idMatch = order.id.toLowerCase().includes(query);
-      const emailMatch = order.profiles?.email?.toLowerCase().includes(query);
-      const nameMatch = order.profiles?.full_name?.toLowerCase().includes(query);
-      const notesMatch = order.customer_notes?.toLowerCase().includes(query);
-      const itemMatch = order.order_items?.some(i => i.products?.name?.toLowerCase().includes(query));
-
-      if (!idMatch && !emailMatch && !nameMatch && !notesMatch && !itemMatch) {
-        return false;
+        if (new Date(ord.created_at) > end) return false;
       }
     }
 
     return true;
   });
 
-  // Calculate Metrics from filtered
-  const totalFilteredSalesUsdt = filteredOrders.reduce((sum, o) => sum + Number(o.total_usdt || 0), 0);
-  const pendingOrdersCount = filteredOrders.filter(o => o.status === 'Pending' || o.status === 'Verification').length;
+  // Calculate Metrics from Filtered Orders
+  const totalSalesUsdt = filteredOrders.reduce((acc, ord) => acc + (Number(ord.total_usdt) || 0), 0);
   const completedOrdersCount = filteredOrders.filter(o => o.status === 'Completed').length;
+  const pendingOrdersCount = filteredOrders.filter(o => o.status === 'Verification' || o.status === 'Pending').length;
 
-  // Status Labels & Badges
   const statusConfig = {
     Completed: { label: 'Completado', bg: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: 'rgba(52, 211, 153, 0.4)' },
     Verification: { label: 'En Verificación', bg: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', border: 'rgba(251, 191, 36, 0.4)' },
@@ -112,21 +109,17 @@ export default function AdminOrders() {
     Rejected: { label: 'Rechazado', bg: 'rgba(248, 113, 113, 0.15)', color: '#f87171', border: 'rgba(248, 113, 113, 0.4)' }
   };
 
-  // Update Status in Supabase & Reduce Product Stock on Completed
+  // Update Status in Supabase, Auto-Dispatch Recharge via API & Reduce Product Stock
   const handleUpdateOrderStatus = async (newStatus) => {
     if (!selectedOrder) return;
     setUpdatingStatus(true);
 
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', selectedOrder.id);
+      let supplierTxId = null;
 
-      if (error) throw error;
-
-      // Deduct product stock if marked as Completed
+      // When marked as Completed, execute automated API recharge and deduct stock
       if (newStatus === 'Completed' && selectedOrder.status !== 'Completed') {
+        // 1. Deduct product stock
         for (const item of (selectedOrder.order_items || [])) {
           if (item.product_id) {
             const { data: currentProd } = await supabase
@@ -144,7 +137,54 @@ export default function AdminOrders() {
             }
           }
         }
+
+        // 2. Extract UID and Trigger Supplier API
+        let parsedNotes = {};
+        try {
+          parsedNotes = typeof selectedOrder.customer_notes === 'string'
+            ? JSON.parse(selectedOrder.customer_notes)
+            : selectedOrder.customer_notes || {};
+        } catch (e) {}
+
+        const targetUid = parsedNotes.target_uid || parsedNotes['ID de Jugador (UID)'] || parsedNotes.uid || selectedOrder.order_items?.[0]?.fields_data?.['ID de Jugador (UID)'] || '';
+        const productName = selectedOrder.order_items?.[0]?.products?.name || 'Recarga de Diamantes';
+
+        if (targetUid) {
+          const rechargeRes = await processGameRecharge({
+            order_id: selectedOrder.id,
+            uid: targetUid,
+            nickname: parsedNotes.validated_nickname || '',
+            product_name: productName,
+            total_usdt: selectedOrder.total_usdt
+          });
+
+          supplierTxId = rechargeRes?.mappedData?.supplier_transaction_id;
+        }
+
+        // 3. Instant push notification to customer
+        if (selectedOrder.user_id) {
+          notifyOrderCompleted({
+            orderId: selectedOrder.id,
+            userId: selectedOrder.user_id,
+            product: productName,
+            amount: selectedOrder.total_usdt
+          });
+        }
       }
+
+      // Update Order Status in Supabase
+      const updatePayload = { status: newStatus };
+      if (supplierTxId) {
+        const prevReceipt = selectedOrder.bank_receipt_url || '';
+        updatePayload.bank_receipt_url = prevReceipt ? `${prevReceipt} | SUPPLIER:${supplierTxId}` : `SUPPLIER:${supplierTxId}`;
+      }
+
+      const { error } = await supabase
+        .from('orders')
+        .update(updatePayload)
+        .eq('id', selectedOrder.id);
+
+      if (error) throw error;
 
       // If credentials were provided, save in order_items
       if (credentialsInput.trim() && selectedOrder.order_items?.[0]) {
@@ -154,7 +194,7 @@ export default function AdminOrders() {
           .eq('id', selectedOrder.order_items[0].id);
       }
 
-      alert(`¡Estado del pedido actualizado a "${statusConfig[newStatus]?.label || newStatus}" y stock descontado exitosamente!`);
+      alert(`¡Estado del pedido actualizado a "${statusConfig[newStatus]?.label || newStatus}"!\n${supplierTxId ? `⚡ Recarga enviada exitosamente por la API (Tx Proveedor: ${supplierTxId})` : 'Stock descontado y cliente notificado.'}`);
       setSelectedOrder(null);
       setCredentialsInput('');
       await loadOrders();

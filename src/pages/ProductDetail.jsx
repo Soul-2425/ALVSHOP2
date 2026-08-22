@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { notifyAdminNewOrder, notifyOrderCompleted, sendPushNotification } from '../../notificaciones y apis/notificaciones/pushService';
+import { checkRateLimit } from '../services/securityShield';
 import BinancePayModal from '../components/BinancePayModal';
 
 export default function ProductDetail() {
@@ -28,6 +29,7 @@ export default function ProductDetail() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('Wallet'); // 'Wallet', 'Manual', 'Binance'
   const [receiptFile, setReceiptFile] = useState(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
@@ -55,13 +57,14 @@ export default function ProductDetail() {
       if (prodData) {
         setProduct(prodData);
       } else {
-        // Sample fallback product
+        // Fallback product
         setProduct({
           id: id,
-          name: '100 + 10 Diamantes Free Fire (Directo UID)',
-          description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega 100% garantizada en minutos. Compatible con servidores de Latinoamérica (LATAM).',
-          price_public: 1.10,
-          price_reseller: 0.95,
+          name: '100 + 10 Diamantes Free Fire (Recarga Directa)',
+          description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega 100% garantizada en minutos.',
+          price_public: 1.00,
+          price_reseller: 0.85,
+          cost: 0.71,
           stock: 999,
           requires_validation: true,
           validation_type: 'Free Fire',
@@ -80,7 +83,6 @@ export default function ProductDetail() {
       if (fieldsData && fieldsData.length > 0) {
         setFields(fieldsData);
       } else {
-        // Fallback: Always ensure at least "ID de Jugador (UID)" is present for recharges / digital services
         setFields([
           { id: 'default-uid', field_name: 'ID de Jugador (UID)', field_type: 'text', is_required: true }
         ]);
@@ -108,7 +110,7 @@ export default function ProductDetail() {
     loadProductData();
   }, [id]);
 
-  // Handle Free Fire UID Real-time validation
+  // Handle Free Fire UID Real-time validation with Rate Limiting Shield (Max 3/min)
   const handleUidValidation = async (uidValue) => {
     if (!uidValue || uidValue.length < 5) {
       setPlayerNickname(null);
@@ -118,11 +120,18 @@ export default function ProductDetail() {
       return;
     }
 
+    // Security Rate Limit Check
+    const rateCheck = checkRateLimit('validate_uid');
+    if (!rateCheck.allowed) {
+      setValidationError(rateCheck.error);
+      setPlayerNickname(null);
+      return;
+    }
+
     setValidatingUid(true);
     setValidationError('');
 
     try {
-      // Calls Free Fire UID validation service
       const result = await validatePlayerUid(uidValue, product?.validation_type || 'Free Fire');
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
@@ -131,7 +140,7 @@ export default function ProductDetail() {
         setValidationError('');
       } else {
         setPlayerNickname(null);
-        setValidationError(result?.error || 'ID de jugador no encontrado');
+        setValidationError(result?.error || 'ID de jugador no encontrado en el servidor');
       }
     } catch (err) {
       setValidationError('Error conectando con la API de validación');
@@ -143,7 +152,6 @@ export default function ProductDetail() {
   const handleInputChange = (fieldName, value) => {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
 
-    // Check if this is the UID field
     if (fieldName.toLowerCase().includes('uid') || fieldName.toLowerCase().includes('id')) {
       handleUidValidation(value);
     }
@@ -192,18 +200,73 @@ export default function ProductDetail() {
 
   const finalPriceUsdt = Math.max(0, rawPriceUsdt - discountUsdt);
   const finalPriceGtq = (finalPriceUsdt * exchangeRate).toFixed(2);
+  const hasSufficientBalance = walletBalance >= finalPriceUsdt;
 
-  // Submit Order Checkout
+  // Submit Order Checkout with Triple Flow & Rate Limiting Shield
   const handleProceedPayment = async () => {
     if (!user) {
       navigate('/profile');
       return;
     }
 
+    // Security Rate Limit Check
+    const rateCheck = checkRateLimit('checkout');
+    if (!rateCheck.allowed) {
+      alert(rateCheck.error);
+      return;
+    }
+
+    // Validate Required Fields
+    for (const field of fields) {
+      if (field.is_required && !formData[field.field_name]?.trim()) {
+        alert(`Por favor ingresa el campo: ${field.field_name}`);
+        return;
+      }
+    }
+
+    // FLOW A: WALLET PAYMENT
+    if (paymentMethod === 'Wallet') {
+      if (!hasSufficientBalance) {
+        alert(`Saldo insuficiente en tu billetera. Cuentas con $${walletBalance.toFixed(2)} USDT y el total es de $${finalPriceUsdt.toFixed(2)} USDT.`);
+        return;
+      }
+    }
+
+    // FLOW B: MANUAL BANK TRANSFER (QUETZALES GTQ)
+    if (paymentMethod === 'Manual' && !receiptFile) {
+      if (!confirm('¿Deseas continuar sin adjuntar comprobante ahora? (Podrás enviarlo luego por WhatsApp o subirlo en tu perfil).')) {
+        return;
+      }
+    }
+
     setIsProcessing(true);
 
     try {
-      // If Binance Pay selected, create pending order and launch modal
+      // Upload Receipt if provided for Manual Bank Transfer
+      let uploadedReceiptUrl = null;
+      if (paymentMethod === 'Manual' && receiptFile) {
+        setUploadingReceipt(true);
+        try {
+          const fileExt = receiptFile.name.split('.').pop();
+          const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+          const filePath = `receipts/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(filePath, receiptFile, { upsert: true });
+
+          if (!uploadError) {
+            const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+            uploadedReceiptUrl = data.publicUrl;
+          }
+        } catch (e) {
+          console.warn('Error subiendo comprobante:', e);
+        } finally {
+          setUploadingReceipt(false);
+        }
+      }
+
+      // FLOW C: BINANCE PAY (USDT)
       if (paymentMethod === 'Binance') {
         const { data: orderData, error: orderErr } = await supabase
           .from('orders')
@@ -212,7 +275,7 @@ export default function ProductDetail() {
             total_usdt: finalPriceUsdt,
             total_gtq: Number(finalPriceGtq),
             status: 'Pending',
-            payment_method: 'Manual',
+            payment_method: 'Binance Pay',
             coupon_id: appliedCoupon?.id || null,
             discount_amount_usdt: discountUsdt,
             customer_notes: JSON.stringify({ ...formData, payment_gateway: 'Binance Pay' })
@@ -250,10 +313,15 @@ export default function ProductDetail() {
           total_usdt: finalPriceUsdt,
           total_gtq: Number(finalPriceGtq),
           status: newOrderStatus,
-          payment_method: paymentMethod,
+          payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Transferencia Bancaria GTQ',
+          bank_receipt_url: uploadedReceiptUrl,
           coupon_id: appliedCoupon?.id || null,
           discount_amount_usdt: discountUsdt,
-          customer_notes: JSON.stringify(formData)
+          customer_notes: JSON.stringify({
+            ...formData,
+            validated_nickname: playerNickname || '',
+            target_uid: formData['ID de Jugador (UID)'] || formData.uid || ''
+          })
         })
         .select()
         .single();
@@ -269,11 +337,12 @@ export default function ProductDetail() {
         cost_usdt: product.cost || 0,
         fields_data: {
           ...formData,
-          validated_nickname: playerNickname || ''
+          validated_nickname: playerNickname || '',
+          target_uid: formData['ID de Jugador (UID)'] || formData.uid || ''
         }
       });
 
-      // 3. If Paid with Wallet, deduct balance and deduct product stock
+      // 3. EXECUTE FLOW A (WALLET): Deduct balance, deduct stock & AUTO-DISPATCH RECHARGE
       if (paymentMethod === 'Wallet') {
         const newBal = walletBalance - finalPriceUsdt;
         await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', user.id);
@@ -281,7 +350,9 @@ export default function ProductDetail() {
           user_id: user.id,
           type: 'Purchase',
           amount_usdt: finalPriceUsdt,
-          order_id: orderData.id
+          order_id: orderData.id,
+          status: 'Completed',
+          notes: `Compra de ${product.name}`
         });
 
         // Deduct product stock
@@ -293,20 +364,29 @@ export default function ProductDetail() {
         // Instant notification to customer
         notifyOrderCompleted({ orderId: orderData.id, userId: user.id, amount: finalPriceUsdt });
 
-        // Trigger Supplier automated recharge
-        processGameRecharge({
-          id: orderData.id,
+        // Trigger Supplier automated recharge via Recargas América API
+        const rechargeRes = await processGameRecharge({
+          order_id: orderData.id,
           uid: formData['ID de Jugador (UID)'] || formData.uid || '',
           nickname: playerNickname || '',
           product_name: product.name,
           total_usdt: finalPriceUsdt
         });
+
+        if (rechargeRes?.mappedData?.supplier_transaction_id) {
+          await supabase
+            .from('orders')
+            .update({
+              bank_receipt_url: `WALLET_PAY | SUPPLIER:${rechargeRes.mappedData.supplier_transaction_id}`
+            })
+            .eq('id', orderData.id);
+        }
       } else {
-        // Notification for manual bank transfer order
+        // Notification for manual bank transfer order (Pending Admin Review)
         sendPushNotification({
           userId: user.id,
           title: '📋 ¡Pedido Registrado en Verificación!',
-          body: `Tu orden #${orderData.id.slice(0, 8)} de ${product.name} por $${finalPriceUsdt.toFixed(2)} USDT está pendiente de comprobante.`,
+          body: `Tu orden #${orderData.id.slice(0, 8)} de ${product.name} por Q${finalPriceGtq} GTQ está en revisión. Al ser confirmada se despachará de inmediato.`,
           type: 'order_created',
           metadata: { orderId: orderData.id, url: '/profile?tab=orders' }
         });
@@ -317,7 +397,7 @@ export default function ProductDetail() {
         orderId: orderData.id,
         amount: finalPriceUsdt,
         customerName: profile?.full_name || user.email,
-        paymentMethod: paymentMethod === 'Wallet' ? 'Billetera ALV' : 'Transferencia GTQ'
+        paymentMethod: paymentMethod === 'Wallet' ? 'Billetera ALV (Automático)' : 'Transferencia GTQ (Requiere Aprobación)'
       });
 
       setOrderSuccess(orderData);
@@ -373,128 +453,146 @@ export default function ProductDetail() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
         <Link to="/" style={{ color: 'var(--accent-cyan)' }}>Inicio</Link>
         <span>/</span>
-        <span>{product.subcategories?.categories?.name || 'Gaming'}</span>
+        <span>{product.subcategories?.categories?.name || 'Recargas'}</span>
         <span>/</span>
         <span style={{ color: 'var(--text-main)' }}>{product.name}</span>
       </div>
 
       {/* Main Product Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '28px', marginBottom: '40px' }}>
-        {/* Left: Product Image Showcase */}
-        <div className="glass-panel" style={{
-          borderRadius: 'var(--radius-lg)',
-          overflow: 'hidden',
-          padding: '16px',
-          border: '1px solid var(--border-glass)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <img
-            src={product.image_url}
-            alt={product.name}
-            style={{ width: '100%', maxHeight: '340px', objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
-          />
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '32px',
+        marginBottom: '40px'
+      }}>
+        {/* Product Image & Badges */}
+        <div>
+          <div className="glass-panel" style={{
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+            border: '1px solid var(--border-cyan)',
+            boxShadow: '0 0 25px rgba(6, 182, 212, 0.15)',
+            position: 'relative'
+          }}>
+            <img
+              src={product.image_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=700'}
+              alt={product.name}
+              style={{ width: '100%', height: '360px', objectFit: 'cover', display: 'block' }}
+            />
+            <div style={{
+              position: 'absolute',
+              top: '14px',
+              left: '14px',
+              background: 'rgba(6, 182, 212, 0.9)',
+              color: '#000',
+              fontWeight: '800',
+              fontSize: '0.75rem',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-full)'
+            }}>
+              ⚡ Entrega Automática
+            </div>
+          </div>
         </div>
 
-        {/* Right: Info & Form Builder */}
+        {/* Product Details & Form */}
         <div className="glass-panel" style={{
           borderRadius: 'var(--radius-lg)',
           padding: '24px',
-          border: '1px solid var(--border-cyan)'
+          border: '1px solid var(--border-glass)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between'
         }}>
-          <div className="badge-cyan" style={{ marginBottom: '8px' }}>
-            {product.subcategories?.name || 'Recarga Inmediata'}
-          </div>
-          <h1 style={{ fontSize: '1.6rem', marginBottom: '8px', lineHeight: 1.25 }}>
-            {product.name}
-          </h1>
-
-          <div style={{ fontSize: '2rem', fontWeight: '900', color: 'var(--accent-cyan)', marginBottom: '16px' }}>
-            {formatPrice(product.price_public)}
-          </div>
-
-          {product.description && (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.6 }}>
-              {product.description}
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+              {product.subcategories?.categories?.name || 'Recargas Oficiales'}
+            </div>
+            <h1 style={{ fontSize: '1.6rem', fontWeight: '900', marginBottom: '10px', color: '#fff' }}>
+              {product.name}
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: '1.5', marginBottom: '18px' }}>
+              {product.description || 'Recarga rápida directa a tu cuenta de Free Fire por UID con entrega inmediata.'}
             </p>
-          )}
 
-          {/* Dynamic Form Builder (UID, PIN, Account fields) */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.03)',
-            borderRadius: 'var(--radius-md)',
-            padding: '16px',
-            border: '1px solid var(--border-glass)',
-            marginBottom: '20px'
-          }}>
-            <h4 style={{ fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>📝</span> Datos para la Recarga / Entrega
-            </h4>
-
-            {fields.map((field) => (
-              <div key={field.id} style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#fff', marginBottom: '6px', fontWeight: '700' }}>
-                  {field.field_name} {field.is_required && <span style={{ color: 'var(--accent-cyan)' }}>*</span>}
-                </label>
-                <input
-                  type={field.field_type || 'text'}
-                  required={field.is_required}
-                  placeholder={`Ingresa tu ${field.field_name}`}
-                  value={formData[field.field_name] || ''}
-                  onChange={(e) => handleInputChange(field.field_name, e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: '#070b09',
-                    border: '1px solid rgba(6, 182, 212, 0.4)',
-                    color: '#fff',
-                    fontSize: '0.95rem',
-                    fontWeight: '600',
-                    outline: 'none',
-                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)'
-                  }}
-                />
+            {/* Price Box */}
+            <div style={{
+              background: 'rgba(30, 58, 138, 0.25)',
+              border: '1px solid var(--border-cyan)',
+              borderRadius: 'var(--radius-md)',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>PRECIO EN LÍNEA:</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
+                  ${Number(product.price_public).toFixed(2)} <span style={{ fontSize: '0.9rem' }}>USDT</span>
+                </div>
               </div>
-            ))}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>QUETZALES:</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fbbf24' }}>
+                  Q{(Number(product.price_public) * exchangeRate).toFixed(2)} <span style={{ fontSize: '0.75rem' }}>GTQ</span>
+                </div>
+              </div>
+            </div>
 
-            {/* Live Nickname Validation Alert (Free Fire) */}
+            {/* Required Customer Input Fields */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+              {fields.map((field) => (
+                <div key={field.id}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '4px', color: '#fff' }}>
+                    {field.field_name} {field.is_required && <span style={{ color: '#f87171' }}>*</span>}
+                  </label>
+                  <input
+                    type="text"
+                    required={field.is_required}
+                    placeholder={`Ingresa tu ${field.field_name}...`}
+                    value={formData[field.field_name] || ''}
+                    onChange={(e) => handleInputChange(field.field_name, e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: '#0d111a',
+                      border: validationError ? '1px solid #f87171' : (playerNickname ? '1px solid #34d399' : '1px solid var(--border-glass)'),
+                      color: '#fff',
+                      fontSize: '0.88rem'
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Live Nickname Validation Status Banner */}
             {validatingUid && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', marginTop: '8px' }}>
-                🔍 Consultando Nickname en tiempo real...
+              <div style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div className="spinner-small" /> Verificando Nickname en servidores de Free Fire...
               </div>
             )}
-
             {playerNickname && (
               <div style={{
-                marginTop: '10px',
-                padding: '10px 14px',
+                background: 'rgba(52, 211, 153, 0.12)',
+                border: '1px solid rgba(52, 211, 153, 0.4)',
                 borderRadius: 'var(--radius-sm)',
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
-                color: '#34d399',
-                fontSize: '0.85rem',
-                fontWeight: '700',
+                padding: '10px 14px',
+                marginBottom: '16px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px'
               }}>
-                <span>✅</span> Jugador Verificado: <span style={{ color: '#fff' }}>{playerNickname}</span>
+                <span style={{ fontSize: '1.1rem' }}>🎮</span>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cuenta Encontrada:</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#34d399' }}>{playerNickname}</div>
+                </div>
               </div>
             )}
-
             {validationError && (
-              <div style={{
-                marginTop: '10px',
-                padding: '8px 12px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#f87171',
-                fontSize: '0.8rem'
-              }}>
+              <div style={{ fontSize: '0.78rem', color: '#f87171', marginBottom: '14px' }}>
                 ⚠️ {validationError}
               </div>
             )}
@@ -506,7 +604,7 @@ export default function ProductDetail() {
             className="btn-cyan"
             style={{ width: '100%', padding: '14px', fontSize: '1rem', fontWeight: '800' }}
           >
-            {product.button_action_text || 'Comprar Ahora'} ➔
+            {product.button_action_text || 'Solicitar Recarga'} ➔
           </button>
         </div>
       </div>
@@ -522,7 +620,6 @@ export default function ProductDetail() {
           <span>⭐</span> Reseñas y Calificaciones de Clientes
         </h3>
 
-        {/* Leave a review form */}
         <form onSubmit={handleSubmitReview} style={{
           background: 'rgba(255, 255, 255, 0.02)',
           border: '1px solid var(--border-glass)',
@@ -530,7 +627,7 @@ export default function ProductDetail() {
           padding: '16px',
           marginBottom: '24px'
         }}>
-          <h4 style={{ fontSize: '0.9rem', marginBottom: '10px' }}>Deja tu comentario sobre este producto:</h4>
+          <h4 style={{ fontSize: '0.9rem', marginBottom: '10px' }}>Deja tu comentario sobre esta recarga:</h4>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Calificación:</span>
             <select
@@ -555,7 +652,7 @@ export default function ProductDetail() {
           <textarea
             rows="3"
             required
-            placeholder="Escribe tu experiencia con la recarga o servicio..."
+            placeholder="Escribe tu experiencia..."
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             style={{
@@ -574,7 +671,6 @@ export default function ProductDetail() {
           </button>
         </form>
 
-        {/* Reviews List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {reviews.map((r) => (
             <div key={r.id} style={{
@@ -597,13 +693,13 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      {/* Checkout Modal */}
+      {/* Checkout Modal (Triple Flow) */}
       {showCheckout && (
         <div style={{
           position: 'fixed',
           inset: 0,
           zIndex: 100,
-          backgroundColor: 'rgba(0,0,0,0.8)',
+          backgroundColor: 'rgba(0,0,0,0.85)',
           backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
@@ -613,7 +709,7 @@ export default function ProductDetail() {
           <div className="glass-panel animate-fade" style={{
             width: '100%',
             maxWidth: '520px',
-            maxHeight: '90vh',
+            maxHeight: '92vh',
             overflowY: 'auto',
             borderRadius: 'var(--radius-lg)',
             padding: '24px',
@@ -622,7 +718,7 @@ export default function ProductDetail() {
             {!orderSuccess ? (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ fontSize: '1.25rem' }}>Finalizar Compra</h3>
+                  <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Finalizar Compra</h3>
                   <button onClick={() => setShowCheckout(false)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
                 </div>
 
@@ -637,7 +733,7 @@ export default function ProductDetail() {
                   <div style={{ fontWeight: '700', fontSize: '0.95rem', marginBottom: '4px' }}>{product.name}</div>
                   {playerNickname && (
                     <div style={{ fontSize: '0.8rem', color: '#34d399', fontWeight: '600' }}>
-                      Nick: {playerNickname}
+                      Nick Verificado: {playerNickname}
                     </div>
                   )}
                   <div style={{ fontSize: '1.3rem', fontWeight: '900', color: 'var(--accent-cyan)', marginTop: '8px' }}>
@@ -680,10 +776,14 @@ export default function ProductDetail() {
                   )}
                 </div>
 
-                {/* Payment Method Selector */}
+                {/* Triple Payment Method Selector */}
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '700', display: 'block', marginBottom: '8px' }}>Selecciona Método de Pago:</label>
+                  <label style={{ fontSize: '0.8rem', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
+                    Selecciona Método de Pago:
+                  </label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                    
+                    {/* Flow A: Wallet */}
                     <div
                       onClick={() => setPaymentMethod('Wallet')}
                       style={{
@@ -697,9 +797,12 @@ export default function ProductDetail() {
                     >
                       <div style={{ fontSize: '1.2rem' }}>💎</div>
                       <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px' }}>Billetera Interna</div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Saldo: ${walletBalance.toFixed(2)}</div>
+                      <div style={{ fontSize: '0.68rem', color: hasSufficientBalance ? '#34d399' : '#f87171', fontWeight: '700' }}>
+                        Saldo: ${walletBalance.toFixed(2)}
+                      </div>
                     </div>
 
+                    {/* Flow C: Binance Pay */}
                     <div
                       onClick={() => setPaymentMethod('Binance')}
                       style={{
@@ -713,9 +816,10 @@ export default function ProductDetail() {
                     >
                       <div style={{ fontSize: '1.2rem' }}>🟡</div>
                       <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px', color: '#f0b90b' }}>Binance Pay</div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Auto QR / Instantáneo</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>QR Automático</div>
                     </div>
 
+                    {/* Flow B: Quetzales / Banrural */}
                     <div
                       onClick={() => setPaymentMethod('Manual')}
                       style={{
@@ -728,13 +832,40 @@ export default function ProductDetail() {
                       }}
                     >
                       <div style={{ fontSize: '1.2rem' }}>🏦</div>
-                      <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px' }}>Transferencia GTQ</div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Banrural / Quetzales</div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: '700', marginTop: '4px' }}>Quetzales (GTQ)</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Banrural / Comprobante</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Manual Bank Details (if manual transfer selected) */}
+                {/* FLOW A WARNING: Insufficient Balance Alert & Recharge Button */}
+                {paymentMethod === 'Wallet' && !hasSufficientBalance && (
+                  <div style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '14px',
+                    marginBottom: '16px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#f87171', marginBottom: '4px' }}>
+                      ⛔ Saldo Insuficiente en Billetera
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                      Tienes <strong>${walletBalance.toFixed(2)} USDT</strong> y el costo de este paquete es de <strong>${finalPriceUsdt.toFixed(2)} USDT</strong>.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/profile?tab=wallet')}
+                      className="btn-cyan"
+                      style={{ padding: '8px 16px', fontSize: '0.8rem' }}
+                    >
+                      ➕ Recargar Saldo de Billetera ➔
+                    </button>
+                  </div>
+                )}
+
+                {/* FLOW B: Bank Transfer Details and Receipt Upload */}
                 {paymentMethod === 'Manual' && (
                   <div style={{
                     background: 'rgba(255, 255, 255, 0.03)',
@@ -745,19 +876,19 @@ export default function ProductDetail() {
                     fontSize: '0.85rem'
                   }}>
                     <div style={{ fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '8px' }}>
-                      Datos Bancarios para Transferencia:
+                      Datos Bancarios para Transferencia en Quetzales:
                     </div>
                     <div><strong>Banco:</strong> {defaultBank.bank}</div>
                     <div><strong>No. Cuenta:</strong> {defaultBank.account_number}</div>
                     <div><strong>Tipo de Cuenta:</strong> {defaultBank.type}</div>
                     <div><strong>Titular:</strong> {defaultBank.name}</div>
-                    <div style={{ marginTop: '8px', color: '#fbbf24', fontSize: '0.8rem' }}>
-                      Monto a depositar: <strong>Q{finalPriceGtq} GTQ</strong>
+                    <div style={{ marginTop: '8px', color: '#fbbf24', fontSize: '0.82rem' }}>
+                      Monto a transferir: <strong>Q{finalPriceGtq} GTQ</strong>
                     </div>
 
                     <div style={{ marginTop: '12px' }}>
-                      <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '4px', color: 'var(--text-muted)' }}>
-                        Adjuntar Comprobante de Pago (Foto / Screenshot):
+                      <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '4px', color: 'var(--text-muted)', fontWeight: '700' }}>
+                        📎 Adjuntar Foto / Screenshot del Comprobante:
                       </label>
                       <input
                         type="file"
@@ -772,14 +903,14 @@ export default function ProductDetail() {
                 {/* Confirm Button */}
                 <button
                   onClick={handleProceedPayment}
-                  disabled={isProcessing || (paymentMethod === 'Wallet' && walletBalance < finalPriceUsdt)}
+                  disabled={isProcessing || uploadingReceipt || (paymentMethod === 'Wallet' && !hasSufficientBalance)}
                   className="btn-cyan"
-                  style={{ width: '100%', padding: '14px' }}
+                  style={{ width: '100%', padding: '14px', fontSize: '0.92rem' }}
                 >
-                  {isProcessing ? 'Procesando...' : (
-                    paymentMethod === 'Wallet' && walletBalance < finalPriceUsdt 
-                      ? 'Saldo insuficiente en Billetera' 
-                      : `Confirmar Pago (${paymentMethod === 'Wallet' ? `$${finalPriceUsdt.toFixed(2)} USDT` : `Q${finalPriceGtq} GTQ`})`
+                  {isProcessing || uploadingReceipt ? 'Procesando...' : (
+                    paymentMethod === 'Wallet' && !hasSufficientBalance 
+                      ? 'Saldo Insuficiente (Recarga Billetera)' 
+                      : `Confirmar Pago (${paymentMethod === 'Wallet' || paymentMethod === 'Binance' ? `$${finalPriceUsdt.toFixed(2)} USDT` : `Q${finalPriceGtq} GTQ`})`
                   )}
                 </button>
               </>
@@ -787,14 +918,13 @@ export default function ProductDetail() {
               /* Success Screen */
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
                 <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🎉</div>
-                <h3 style={{ fontSize: '1.4rem', color: 'var(--accent-cyan)', marginBottom: '8px' }}>¡Pedido Registrado con Éxito!</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '1.3rem', color: 'var(--accent-cyan)', marginBottom: '8px' }}>¡Pedido Registrado con Éxito!</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
                   {orderSuccess.status === 'Completed'
-                    ? 'Tu recarga ha sido procesada de inmediato.'
-                    : 'Tu pedido manual ha pasado a fase de verificación. Un asesor confirmará tu depósito en breve.'}
+                    ? 'Tu recarga ha sido procesada de inmediato por la API.'
+                    : 'Tu pedido en Quetzales ha pasado a fase de revisión. Al ser confirmado por el administrador, se enviará la recarga automáticamente.'}
                 </p>
 
-                {/* WhatsApp Notification Shortcut */}
                 {config.social_links?.whatsapp && (
                   <a
                     href={`https://wa.me/${config.social_links.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(
@@ -812,12 +942,12 @@ export default function ProductDetail() {
                 <button
                   onClick={() => {
                     setShowCheckout(false);
-                    navigate('/profile');
+                    navigate('/profile?tab=orders');
                   }}
                   className="btn-glass"
                   style={{ width: '100%' }}
                 >
-                  Ver Estado en Mi Perfil
+                  Ver Estado en Mi Historial de Pedidos
                 </button>
               </div>
             )}
@@ -835,7 +965,7 @@ export default function ProductDetail() {
         onPaymentSuccess={() => {
           if (createdOrderForBinance?.id) {
             processGameRecharge({
-              id: createdOrderForBinance.id,
+              order_id: createdOrderForBinance.id,
               uid: formData['ID de Jugador (UID)'] || formData.uid || '',
               nickname: playerNickname || '',
               product_name: product.name,

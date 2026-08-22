@@ -6,6 +6,7 @@ export default function AdminProducts() {
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncingCatalog, setSyncingCatalog] = useState(false);
 
   // Modal State for Products
   const [showProductModal, setShowProductModal] = useState(false);
@@ -22,6 +23,7 @@ export default function AdminProducts() {
   const [buttonText, setButtonText] = useState('Comprar');
   const [requiresValidation, setRequiresValidation] = useState(false);
   const [validationType, setValidationType] = useState('Free Fire');
+  const [isActive, setIsActive] = useState(true);
   const [dynamicFields, setDynamicFields] = useState(['ID de Jugador (UID)']);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -72,6 +74,20 @@ export default function AdminProducts() {
   // Update selected subcategories list when selected category changes
   const filteredSubcategories = subcategories.filter(s => s.category_id === selectedCat);
 
+  // Instant Availability Toggle Switch
+  const handleToggleProductActive = async (prodId, currentStatus) => {
+    const newStatus = !currentStatus;
+    // Optimistic UI update
+    setProducts(prev => prev.map(p => p.id === prodId ? { ...p, is_active: newStatus } : p));
+    try {
+      const { error } = await supabase.from('products').update({ is_active: newStatus }).eq('id', prodId);
+      if (error) throw error;
+    } catch (err) {
+      alert('Error cambiando disponibilidad: ' + err.message);
+      loadData();
+    }
+  };
+
   // Image Upload Helper
   const handleUploadFile = async (e, setImageTarget, setUploadingTarget) => {
     const file = e.target.files?.[0];
@@ -118,8 +134,7 @@ export default function AdminProducts() {
   };
 
   const handleRemoveField = (index) => {
-    const updated = dynamicFields.filter((_, idx) => idx !== index);
-    setDynamicFields(updated.length > 0 ? updated : ['ID de Jugador (UID)']);
+    setDynamicFields(dynamicFields.filter((_, i) => i !== index));
   };
 
   // Open Create Product Modal
@@ -136,6 +151,7 @@ export default function AdminProducts() {
     setImageUrl('');
     setButtonText('Comprar');
     setRequiresValidation(false);
+    setIsActive(true);
     setDynamicFields(['ID de Jugador (UID)']);
     setShowQuickCatForm(false);
     setShowQuickSubcatForm(false);
@@ -158,10 +174,10 @@ export default function AdminProducts() {
     setButtonText(prod.button_action_text || 'Comprar');
     setRequiresValidation(Boolean(prod.requires_validation));
     setValidationType(prod.validation_type || 'Free Fire');
+    setIsActive(prod.is_active !== false);
     setShowQuickCatForm(false);
     setShowQuickSubcatForm(false);
 
-    // Fetch dynamic fields for this product
     const { data: fields } = await supabase
       .from('product_fields')
       .select('field_name')
@@ -194,7 +210,6 @@ export default function AdminProducts() {
 
       if (error) throw error;
 
-      // Auto create a primary subcategory
       const subSlug = slug + '-sub';
       const { data: newSub } = await supabase.from('subcategories').insert({
         category_id: newCat.id,
@@ -219,7 +234,7 @@ export default function AdminProducts() {
     }
   };
 
-  // Quick Inline Subcategory Creation (e.g. 100+10, 310+31)
+  // Quick Inline Subcategory Creation
   const handleQuickCreateSubcategory = async (e) => {
     e.preventDefault();
     if (!selectedCat || !quickSubcatName.trim()) {
@@ -269,7 +284,6 @@ export default function AdminProducts() {
 
       if (error) throw error;
 
-      // Auto-create default subcategory
       const subSlug = slug + '-default';
       const { data: defaultSub } = await supabase.from('subcategories').insert({
         category_id: newCat.id,
@@ -300,7 +314,7 @@ export default function AdminProducts() {
       if (error) throw error;
       setCategories(categories.filter(c => c.id !== catId));
       setSubcategories(subcategories.filter(s => s.category_id !== catId));
-      if (activeCatForSubcats?.id === catId) setActiveCatForSubcats(null);
+      loadData();
     } catch (err) {
       alert('Error eliminando categoría: ' + err.message);
     }
@@ -359,21 +373,103 @@ export default function AdminProducts() {
     }
   };
 
+  // Sincronización Oficial del Catálogo de Free Fire (Directas Activas, Pines Ocultos)
+  const handleSyncFreeFireCatalog = async () => {
+    if (!confirm('¿Deseas sincronizar los 6 Paquetes Oficiales de Recargas Directas (Activos) y 6 Pines Digitales (Ocultos por defecto)?')) return;
+    setSyncingCatalog(true);
+
+    try {
+      // 1. Obtener o crear Categoría Diamantes Free Fire
+      let catId = categories.find(c => c.name.toLowerCase().includes('diamante') || c.name.toLowerCase().includes('free fire'))?.id;
+      if (!catId) {
+        const { data: newCat, error: catErr } = await supabase.from('categories').insert({
+          name: 'DIAMANTES 💎',
+          slug: 'diamantes-' + Date.now(),
+          icon: '💎'
+        }).select().single();
+        if (catErr) throw catErr;
+        catId = newCat.id;
+      }
+
+      // 2. Lista de paquetes
+      const catalogSeed = [
+        { name: '100 + 10 Diamantes Free Fire (Recarga Directa)', subcat: '100+10', price_public: 1.00, price_reseller: 0.85, cost: 0.71, is_active: true },
+        { name: '310 + 31 Diamantes Free Fire (Recarga Directa)', subcat: '310+31', price_public: 2.60, price_reseller: 2.30, cost: 2.14, is_active: true },
+        { name: '520 + 52 Diamantes Free Fire (Recarga Directa)', subcat: '520+52', price_public: 4.30, price_reseller: 3.80, cost: 3.62, is_active: true },
+        { name: '1060 + 106 Diamantes Free Fire (Recarga Directa)', subcat: '1060+106', price_public: 7.90, price_reseller: 7.00, cost: 6.71, is_active: true },
+        { name: '2180 + 218 Diamantes Free Fire (Recarga Directa)', subcat: '2180+218', price_public: 15.50, price_reseller: 14.00, cost: 13.32, is_active: true },
+        { name: '5600 + 560 Diamantes Free Fire (Recarga Directa)', subcat: '5600+560', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: true },
+        { name: 'Pin Digital Free Fire 100 Diamantes', subcat: 'Pin 100', price_public: 1.00, price_reseller: 0.85, cost: 0.71, is_active: false },
+        { name: 'Pin Digital Free Fire 310 Diamantes', subcat: 'Pin 310', price_public: 2.60, price_reseller: 2.30, cost: 2.14, is_active: false },
+        { name: 'Pin Digital Free Fire 520 Diamantes', subcat: 'Pin 520', price_public: 4.30, price_reseller: 3.80, cost: 3.62, is_active: false },
+        { name: 'Pin Digital Free Fire 1060 Diamantes', subcat: 'Pin 1060', price_public: 7.90, price_reseller: 7.00, cost: 6.71, is_active: false },
+        { name: 'Pin Digital Free Fire 2180 Diamantes', subcat: 'Pin 2180', price_public: 15.50, price_reseller: 14.00, cost: 13.32, is_active: false },
+        { name: 'Pin Digital Free Fire 5600 Diamantes', subcat: 'Pin 5600', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: false }
+      ];
+
+      for (const item of catalogSeed) {
+        // Crear subcategoría si no existe
+        let targetSubId = subcategories.find(s => s.name.toLowerCase() === item.subcat.toLowerCase() && s.category_id === catId)?.id;
+        if (!targetSubId) {
+          const { data: createdSub } = await supabase.from('subcategories').insert({
+            category_id: catId,
+            name: item.subcat,
+            slug: item.subcat.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now()
+          }).select().single();
+          if (createdSub) targetSubId = createdSub.id;
+        }
+
+        // Verificar si el producto ya existe
+        const existing = products.find(p => p.name.toLowerCase() === item.name.toLowerCase());
+        if (!existing) {
+          const { data: newP, error: pErr } = await supabase.from('products').insert({
+            subcategory_id: targetSubId || null,
+            name: item.name,
+            description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega automatizada e inmediata.',
+            price_public: item.price_public,
+            price_reseller: item.price_reseller,
+            cost: item.cost,
+            stock: 999,
+            is_active: item.is_active,
+            image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60',
+            requires_validation: true,
+            validation_type: 'Free Fire',
+            button_action_text: 'Solicitar'
+          }).select().single();
+
+          if (newP) {
+            await supabase.from('product_fields').insert({
+              product_id: newP.id,
+              field_name: 'ID de Jugador (UID)',
+              field_type: 'text',
+              is_required: true,
+              sort_order: 0
+            });
+          }
+        }
+      }
+
+      await loadData();
+      alert('¡Catálogo de Recargas Oficiales sincronizado con éxito!\n\n🟢 6 Paquetes de Recarga Directa Activos\n🔴 6 Pines Digitales Creados pero Desactivados (Listos para activar cuando gustes con el switch).');
+    } catch (err) {
+      alert('Error sincronizando catálogo: ' + err.message);
+    } finally {
+      setSyncingCatalog(false);
+    }
+  };
+
   // Save / Update Product
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     setSaving(true);
 
     try {
-      // Ensure target subcategory is valid
       let finalSubcatId = selectedSubcat;
       if (!finalSubcatId && selectedCat) {
-        // Find existing subcategory for this category
         const existingSub = subcategories.find(s => s.category_id === selectedCat);
         if (existingSub) {
           finalSubcatId = existingSub.id;
         } else {
-          // Create default subcategory
           const targetCat = categories.find(c => c.id === selectedCat);
           const slug = (targetCat?.name || 'subcat').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
           const { data: newSub } = await supabase.from('subcategories').insert({
@@ -397,6 +493,7 @@ export default function AdminProducts() {
         price_reseller: Number(priceReseller),
         cost: Number(cost),
         stock: Number(stock),
+        is_active: isActive,
         image_url: imageUrl.trim() || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60',
         button_action_text: buttonText,
         requires_validation: requiresValidation,
@@ -413,7 +510,6 @@ export default function AdminProducts() {
 
         if (updErr) throw updErr;
 
-        // Delete old fields to re-insert fresh dynamic fields
         await supabase.from('product_fields').delete().eq('product_id', editingProductId);
       } else {
         const { data: newProd, error: prodErr } = await supabase
@@ -426,7 +522,6 @@ export default function AdminProducts() {
         targetProdId = newProd.id;
       }
 
-      // Insert dynamic form fields
       for (let i = 0; i < dynamicFields.length; i++) {
         if (dynamicFields[i].trim()) {
           await supabase.from('product_fields').insert({
@@ -456,17 +551,25 @@ export default function AdminProducts() {
         <div>
           <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Catálogo de Productos & Precios</h3>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Organización por Categorías, Subcategorías, Imágenes Flexibles y 3 Niveles de Precio
+            Organización por Categorías, Subcategorías, Switch de Disponibilidad y Precios
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => setShowCategoryModal(true)} className="btn-glass" style={{ fontSize: '0.85rem' }}>
-            📁 Gestionar Categorías & Subcategorías ({categories.length})
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleSyncFreeFireCatalog}
+            disabled={syncingCatalog}
+            className="btn-cyan"
+            style={{ fontSize: '0.82rem', background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)' }}
+          >
+            {syncingCatalog ? 'Sincronizando...' : '⚡ Sincronizar Paquetes Free Fire'}
+          </button>
+          <button onClick={() => setShowCategoryModal(true)} className="btn-glass" style={{ fontSize: '0.82rem' }}>
+            📁 Categorías ({categories.length})
           </button>
           <button
             onClick={handleOpenCreateProduct}
             className="btn-cyan"
-            style={{ fontSize: '0.85rem' }}
+            style={{ fontSize: '0.82rem' }}
           >
             ➕ Crear Nuevo Producto
           </button>
@@ -480,19 +583,20 @@ export default function AdminProducts() {
             <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
               <th style={{ padding: '10px 8px' }}>Producto</th>
               <th style={{ padding: '10px 8px' }}>Categoría / Subcategoría</th>
-              <th style={{ padding: '10px 8px' }}>Precio Público</th>
-              <th style={{ padding: '10px 8px' }}>Precio Revendedor</th>
-              <th style={{ padding: '10px 8px' }}>Costo Proveedor</th>
+              <th style={{ padding: '10px 8px' }}>Público</th>
+              <th style={{ padding: '10px 8px' }}>Revendedor</th>
+              <th style={{ padding: '10px 8px' }}>Costo</th>
               <th style={{ padding: '10px 8px' }}>Ganancia</th>
               <th style={{ padding: '10px 8px' }}>Stock</th>
+              <th style={{ padding: '10px 8px', textAlign: 'center' }}>Visibilidad / Switch</th>
               <th style={{ padding: '10px 8px', textAlign: 'center' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {products.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                  No hay productos registrados aún. Haz clic en "Crear Nuevo Producto".
+                <td colSpan="9" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                  No hay productos registrados aún. Haz clic en "Sincronizar Paquetes Free Fire" o "Crear Nuevo Producto".
                 </td>
               </tr>
             ) : (
@@ -501,9 +605,10 @@ export default function AdminProducts() {
                 const catName = p.subcategories?.categories?.name || p.subcategories?.name;
                 const catIcon = p.subcategories?.categories?.icon || '📁';
                 const catImg = p.subcategories?.categories?.image_url;
+                const isProductActive = p.is_active !== false;
 
                 return (
-                  <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                  <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)', opacity: isProductActive ? 1 : 0.6 }}>
                     <td style={{ padding: '12px 8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{
@@ -550,18 +655,44 @@ export default function AdminProducts() {
                     </td>
 
                     <td style={{ padding: '12px 8px', color: 'var(--accent-cyan)', fontWeight: '800' }}>
-                      ${Number(p.price_public).toFixed(2)} USDT
+                      ${Number(p.price_public).toFixed(2)}
                     </td>
                     <td style={{ padding: '12px 8px', color: '#60a5fa', fontWeight: '700' }}>
-                      ${Number(p.price_reseller).toFixed(2)} USDT
+                      ${Number(p.price_reseller).toFixed(2)}
                     </td>
                     <td style={{ padding: '12px 8px', color: '#f87171' }}>
-                      ${Number(p.cost).toFixed(2)} USDT
+                      ${Number(p.cost).toFixed(2)}
                     </td>
                     <td style={{ padding: '12px 8px', color: '#34d399', fontWeight: '800' }}>
-                      +${margin} USDT
+                      +${margin}
                     </td>
                     <td style={{ padding: '12px 8px' }}>{p.stock} u.</td>
+
+                    {/* Quick Visibility Switch */}
+                    <td style={{ padding: '12px 8px', textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleProductActive(p.id, isProductActive)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          fontSize: '0.72rem',
+                          fontWeight: '800',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          background: isProductActive ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: isProductActive ? '#34d399' : '#f87171',
+                          border: isProductActive ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
+                          transition: 'all 0.2s ease'
+                        }}
+                        title={isProductActive ? 'Clic para ocultar del catálogo público' : 'Clic para hacer visible en el catálogo público'}
+                      >
+                        <span>{isProductActive ? '🟢' : '🔴'}</span>
+                        <span>{isProductActive ? 'Visible' : 'Oculto'}</span>
+                      </button>
+                    </td>
 
                     <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '8px' }}>
@@ -648,162 +779,129 @@ export default function AdminProducts() {
               flexDirection: 'column',
               gap: '10px'
             }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
-                ➕ Crear Nueva Categoría Principal:
-              </label>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 1fr', gap: '10px' }}>
-                <input
-                  type="text"
-                  placeholder="Ícono"
-                  value={newCatIcon}
-                  onChange={(e) => setNewCatIcon(e.target.value)}
-                  style={{ padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center', fontSize: '1.1rem' }}
-                />
-                <input
-                  type="text"
-                  required
-                  placeholder="Nombre (Ej. STREAMING 🎬)"
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  style={{ padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-                <input
-                  type="url"
-                  placeholder="URL Imagen (Opcional)"
-                  value={newCatImage}
-                  onChange={(e) => setNewCatImage(e.target.value)}
-                  style={{ padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                />
+              <div style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>
+                ➕ Crear Nueva Categoría Principal
               </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>O Subir Imagen:</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Icono</label>
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => handleUploadFile(e, setNewCatImage, setUploadingCatImg)}
-                    style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}
+                    type="text"
+                    value={newCatIcon}
+                    onChange={(e) => setNewCatIcon(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
                   />
-                  {uploadingCatImg && <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Subiendo...</span>}
                 </div>
-
-                <button type="submit" disabled={savingCat} className="btn-cyan" style={{ padding: '8px 18px', fontSize: '0.82rem' }}>
-                  {savingCat ? 'Guardando...' : 'Crear Categoría ➔'}
-                </button>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Nombre</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Streaming"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>URL Imagen (Opcional)</label>
+                  <input
+                    type="text"
+                    placeholder="https://..."
+                    value={newCatImage}
+                    onChange={(e) => setNewCatImage(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                  />
+                </div>
               </div>
+              <button type="submit" disabled={savingCat} className="btn-cyan" style={{ alignSelf: 'flex-start', padding: '8px 16px', fontSize: '0.8rem' }}>
+                {savingCat ? 'Creando...' : '➕ Guardar Categoría'}
+              </button>
             </form>
 
-            {/* Categories & Subcategories List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>
-                Categorías Existentes ({categories.length}):
-              </div>
-
-              {categories.map((c) => {
-                const subcats = subcategories.filter(s => s.category_id === c.id);
-                const isSelected = activeCatForSubcats?.id === c.id;
+            {/* List of Categories & Subcategories */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {categories.map((cat) => {
+                const subsForCat = subcategories.filter(s => s.category_id === cat.id);
+                const isSelectedForSub = activeCatForSubcats?.id === cat.id;
 
                 return (
-                  <div key={c.id} style={{
+                  <div key={cat.id} style={{
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--border-glass)',
                     borderRadius: 'var(--radius-md)',
-                    background: isSelected ? 'rgba(6, 182, 212, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                    border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-                    padding: '12px 14px'
+                    padding: '14px'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {c.image_url ? (
-                          <div style={{ width: '32px', height: '32px', borderRadius: '6px', overflow: 'hidden', background: '#0d111a', flexShrink: 0 }}>
-                            <img src={c.image_url} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: '1.2rem' }}>{c.icon || '💎'}</span>
-                        )}
-
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1.2rem' }}>{cat.icon || '📁'}</span>
                         <div>
-                          <span style={{ fontWeight: '800', color: '#fff', fontSize: '0.95rem' }}>{c.name}</span>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                            ({subcats.length} subcategorías)
+                          <strong style={{ color: '#fff' }}>{cat.name}</strong>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                            ({subsForCat.length} subcategorías)
                           </span>
                         </div>
                       </div>
-
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
                           type="button"
-                          onClick={() => setActiveCatForSubcats(isSelected ? null : c)}
-                          style={{
-                            background: isSelected ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.08)',
-                            color: isSelected ? '#000' : 'var(--text-main)',
-                            padding: '4px 10px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: '700',
-                            cursor: 'pointer'
-                          }}
+                          onClick={() => setActiveCatForSubcats(isSelectedForSub ? null : cat)}
+                          className="btn-glass"
+                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
                         >
-                          {isSelected ? 'Ocultar Subcategorías ▴' : 'Ver / Añadir Subcategorías ▾'}
+                          {isSelectedForSub ? 'Ocultar Subcategorías' : '➕ Gestionar Subcategorías'}
                         </button>
                         <button
-                          onClick={() => handleDeleteCategory(c.id)}
-                          style={{ background: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem' }}
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem' }}
                         >
                           🗑️
                         </button>
                       </div>
                     </div>
 
-                    {/* Subcategories Management Dropdown */}
-                    {isSelected && (
-                      <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                        {/* Subcategories List */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                          {subcats.map((s) => (
-                            <div key={s.id} style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              background: '#0d111a',
-                              border: '1px solid var(--border-glass)',
-                              fontSize: '0.78rem'
-                            }}>
-                              {s.image_url && <img src={s.image_url} alt="" style={{ width: '14px', height: '14px', borderRadius: '2px', objectFit: 'cover' }} />}
-                              <span>{s.name}</span>
-                              <button
-                                onClick={() => handleDeleteSubcategory(s.id)}
-                                style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.7rem' }}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Add Subcategory Form */}
-                        <form onSubmit={handleCreateSubcategory} style={{ display: 'flex', gap: '8px' }}>
+                    {/* Subcategories Editor Panel */}
+                    {isSelectedForSub && (
+                      <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-glass)' }}>
+                        <form onSubmit={handleCreateSubcategory} style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                           <input
                             type="text"
                             required
-                            placeholder={`Nueva subcategoría para ${c.name} (Ej. 100+10, Netflix...)`}
+                            placeholder="Nueva Subcategoría (ej. 100+10, Netflix)"
                             value={newSubcatName}
                             onChange={(e) => setNewSubcatName(e.target.value)}
-                            style={{ flex: 1, padding: '7px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                            style={{ flex: 1, padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
                           />
-                          <input
-                            type="url"
-                            placeholder="URL Imagen Subcat"
-                            value={newSubcatImage}
-                            onChange={(e) => setNewSubcatImage(e.target.value)}
-                            style={{ width: '140px', padding: '7px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.78rem' }}
-                          />
-                          <button type="submit" disabled={savingSubcat} className="btn-cyan" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
+                          <button type="submit" disabled={savingSubcat} className="btn-cyan" style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
                             {savingSubcat ? '...' : '➕ Añadir'}
                           </button>
                         </form>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {subsForCat.map((sub) => (
+                            <span key={sub.id} style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '4px 10px',
+                              borderRadius: '14px',
+                              background: 'rgba(6, 182, 212, 0.1)',
+                              border: '1px solid rgba(6, 182, 212, 0.3)',
+                              fontSize: '0.75rem',
+                              color: 'var(--accent-cyan)'
+                            }}>
+                              {sub.name}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSubcategory(sub.id)}
+                                style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.75rem' }}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -815,7 +913,7 @@ export default function AdminProducts() {
       )}
 
       {/* ========================================================================= */}
-      {/* CREATE / EDIT PRODUCT MODAL */}
+      {/* PRODUCT CREATE / EDIT MODAL */}
       {/* ========================================================================= */}
       {showProductModal && (
         <div style={{
@@ -831,7 +929,7 @@ export default function AdminProducts() {
         }}>
           <div className="glass-panel animate-fade" style={{
             width: '100%',
-            maxWidth: '640px',
+            maxWidth: '650px',
             maxHeight: '92vh',
             overflowY: 'auto',
             borderRadius: 'var(--radius-lg)',
@@ -839,331 +937,255 @@ export default function AdminProducts() {
             border: '1px solid var(--border-cyan)'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', margin: 0 }}>
-                  {editingProductId ? '✏️ Editar Producto' : '➕ Nuevo Producto / Recarga'}
-                </h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Configura categoría, subcategoría (ej. 100+10), imagen y 3 niveles de precio
-                </p>
-              </div>
+              <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#fff' }}>
+                {editingProductId ? '✏️ Editar Producto' : '➕ Crear Nuevo Producto'}
+              </h3>
               <button onClick={() => setShowProductModal(false)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
             <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               
-              {/* Category Selection + Quick Create Button */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>
-                    📁 Categoría de Destino *
-                  </label>
+              {/* Category and Subcategory Selector with Inline Quick Create Buttons */}
+              <div style={{ background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '4px' }}>
+                      📁 Categoría Principal *
+                    </label>
+                    <select
+                      value={selectedCat}
+                      onChange={(e) => {
+                        setSelectedCat(e.target.value);
+                        setSelectedSubcat('');
+                      }}
+                      style={{ width: '100%', padding: '9px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                    >
+                      <option value="">Selecciona Categoría...</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id}>{c.icon || '📁'} {c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '4px' }}>
+                      📂 Subcategoría (Paquete)
+                    </label>
+                    <select
+                      value={selectedSubcat}
+                      onChange={(e) => setSelectedSubcat(e.target.value)}
+                      style={{ width: '100%', padding: '9px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                    >
+                      <option value="">General / Misma Categoría</option>
+                      {filteredSubcategories.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     onClick={() => setShowQuickCatForm(!showQuickCatForm)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--accent-cyan)',
-                      fontSize: '0.75rem',
-                      fontWeight: '700',
-                      cursor: 'pointer'
-                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px', fontWeight: '700' }}
                   >
-                    {showQuickCatForm ? '✕ Cancelar' : '➕ Crear Nueva Categoría Aquí'}
+                    {showQuickCatForm ? '✕ Cancelar' : '➕ Crear Nueva Categoría'}
+                  </button>
+                  <span style={{ color: 'var(--border-glass)' }}>|</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickSubcatForm(!showQuickSubcatForm)}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px', fontWeight: '700' }}
+                  >
+                    {showQuickSubcatForm ? '✕ Cancelar' : '➕ Crear Nueva Subcategoría'}
                   </button>
                 </div>
 
-                {showQuickCatForm ? (
-                  <div style={{
-                    background: 'rgba(6, 182, 212, 0.08)',
-                    border: '1px solid var(--accent-cyan)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '10px',
-                    marginBottom: '10px',
-                    display: 'flex',
-                    gap: '8px'
-                  }}>
+                {/* Inline Quick Category Form */}
+                {showQuickCatForm && (
+                  <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
                     <input
                       type="text"
-                      placeholder="Icono"
+                      placeholder="Icono (💎)"
                       value={quickCatIcon}
                       onChange={(e) => setQuickCatIcon(e.target.value)}
-                      style={{ width: '55px', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
+                      style={{ width: '60px', padding: '6px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
                     />
                     <input
                       type="text"
-                      placeholder="Nombre (Ej. DIAMANTES 💎 o STREAMING)"
+                      placeholder="Nombre (ej. Cuentas Streaming)"
                       value={quickCatName}
                       onChange={(e) => setQuickCatName(e.target.value)}
-                      style={{ flex: 1, padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                      style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
                     />
-                    <button
-                      type="button"
-                      disabled={creatingQuickCat}
-                      onClick={handleQuickCreateCategory}
-                      className="btn-cyan"
-                      style={{ padding: '8px 14px', fontSize: '0.8rem' }}
-                    >
+                    <button type="button" onClick={handleQuickCreateCategory} disabled={creatingQuickCat} className="btn-cyan" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
                       {creatingQuickCat ? '...' : 'Guardar'}
                     </button>
                   </div>
-                ) : (
-                  <select
-                    required
-                    value={selectedCat}
-                    onChange={(e) => {
-                      setSelectedCat(e.target.value);
-                      setSelectedSubcat('');
-                    }}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-cyan)', color: '#fff', fontWeight: '700' }}
-                  >
-                    <option value="">-- Seleccionar Categoría --</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.icon || '💎'} {c.name}
-                      </option>
-                    ))}
-                  </select>
                 )}
-              </div>
 
-              {/* Subcategory Selection + Quick Create Button */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>
-                    🏷️ Subcategoría / Paquete (Ej. 100+10, 310+31, Netflix)
-                  </label>
-                  {selectedCat && (
-                    <button
-                      type="button"
-                      onClick={() => setShowQuickSubcatForm(!showQuickSubcatForm)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#60a5fa',
-                        fontSize: '0.75rem',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {showQuickSubcatForm ? '✕ Cancelar' : '➕ Crear Nueva Subcategoría'}
-                    </button>
-                  )}
-                </div>
-
-                {showQuickSubcatForm ? (
-                  <div style={{
-                    background: 'rgba(96, 165, 250, 0.08)',
-                    border: '1px solid #60a5fa',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '10px',
-                    marginBottom: '10px',
-                    display: 'flex',
-                    gap: '8px'
-                  }}>
+                {/* Inline Quick Subcategory Form */}
+                {showQuickSubcatForm && (
+                  <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
                     <input
                       type="text"
-                      placeholder="Nombre (Ej. 100+10 o 5600+560)"
+                      placeholder="Nombre Subcategoría (ej. 100+10 Diamantes)"
                       value={quickSubcatName}
                       onChange={(e) => setQuickSubcatName(e.target.value)}
-                      style={{ flex: 1, padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                      style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
                     />
-                    <button
-                      type="button"
-                      disabled={creatingQuickSubcat}
-                      onClick={handleQuickCreateSubcategory}
-                      className="btn-cyan"
-                      style={{ background: '#3b82f6', padding: '8px 14px', fontSize: '0.8rem' }}
-                    >
+                    <button type="button" onClick={handleQuickCreateSubcategory} disabled={creatingQuickSubcat} className="btn-cyan" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
                       {creatingQuickSubcat ? '...' : 'Guardar'}
                     </button>
                   </div>
-                ) : (
-                  <select
-                    value={selectedSubcat}
-                    onChange={(e) => setSelectedSubcat(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                  >
-                    <option value="">-- General / Sin Subcategoría Específica --</option>
-                    {filteredSubcategories.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
                 )}
               </div>
 
-              {/* Product Name */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Nombre del Producto *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. 100+10 Diamantes Free Fire o Recarga 5600 Diamantes"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-
-              {/* Product Image & Live Preview */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '6px' }}>
-                  🖼️ Imagen del Producto (Cualquier tamaño / Aspect Ratio)
-                </label>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '12px', alignItems: 'center' }}>
-                  <div style={{
-                    width: '100px',
-                    height: '80px',
-                    borderRadius: '6px',
-                    overflow: 'hidden',
-                    background: '#0d111a',
-                    border: '1px solid var(--border-cyan)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    {imageUrl ? (
-                      <img src={imageUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <span style={{ fontSize: '1.8rem' }}>🎮</span>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <input
-                      type="url"
-                      placeholder="Pegar URL de la imagen (Ej. https://...)"
-                      value={imageUrl}
-                      onChange={(e) => setImageUrl(e.target.value)}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>O Subir Archivo:</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleUploadFile(e, setImageUrl, setUploadingImage)}
-                        style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}
-                      />
-                      {uploadingImage && <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Subiendo...</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Descripción & Instrucciones</label>
-                <textarea
-                  rows="2"
-                  placeholder="Detalles de entrega, tiempos, etc..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-
-              {/* 3 Price Inputs in USDT */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              {/* Name & Button Action Text */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '4px' }}>1. Precio Público ($)</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Nombre del Producto *</label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     required
-                    placeholder="6.00"
-                    value={pricePublic}
-                    onChange={(e) => setPricePublic(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-cyan)', color: '#fff', fontWeight: '700' }}
+                    placeholder="Ej. 100 + 10 Diamantes Free Fire"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.7rem', color: '#60a5fa', fontWeight: '700', marginBottom: '4px' }}>2. Precio Revendedor ($)</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Texto Botón</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="5.00"
-                    value={priceReseller}
-                    onChange={(e) => setPriceReseller(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '700' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.7rem', color: '#f87171', fontWeight: '700', marginBottom: '4px' }}>3. Costo Proveedor ($)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="4.00"
-                    value={cost}
-                    onChange={(e) => setCost(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '700' }}
-                  />
-                </div>
-              </div>
-
-              {/* Action Button & Stock */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Texto del Botón</label>
-                  <select
+                    type="text"
                     value={buttonText}
                     onChange={(e) => setButtonText(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                  >
-                    <option value="Comprar">Comprar</option>
-                    <option value="Solicitar">Solicitar</option>
-                    <option value="Recargar">Recargar</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Stock Disponible</label>
-                  <input
-                    type="number"
-                    value={stock}
-                    onChange={(e) => setStock(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                    style={{ width: '100%', padding: '9px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
                   />
                 </div>
               </div>
 
-              {/* Form Builder for dynamic inputs */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
+              {/* Visibility Switch inside modal */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700', color: isActive ? '#34d399' : '#f87171' }}>
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={(e) => setIsActive(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: '#06b6d4' }}
+                  />
+                  <span>{isActive ? '🟢 Producto Visible para el Público' : '🔴 Producto Oculto (Desactivado)'}</span>
+                </label>
+              </div>
+
+              {/* 3 Price Levels & Stock */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-cyan)', marginBottom: '2px', fontWeight: '700' }}>Público ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="1.00"
+                    value={pricePublic}
+                    onChange={(e) => setPricePublic(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: '#60a5fa', marginBottom: '2px', fontWeight: '700' }}>Revendedor ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.85"
+                    value={priceReseller}
+                    onChange={(e) => setPriceReseller(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: '#f87171', marginBottom: '2px', fontWeight: '700' }}>Costo ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.71"
+                    value={cost}
+                    onChange={(e) => setCost(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Stock (u.)</label>
+                  <input
+                    type="number"
+                    required
+                    value={stock}
+                    onChange={(e) => setStock(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* Image Input & Upload */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Imagen del Producto</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="URL de imagen..."
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    style={{ flex: 1, padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                  />
+                  <label style={{
+                    padding: '8px 12px',
+                    borderRadius: '4px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid var(--border-glass)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer'
+                  }}>
+                    {uploadingImage ? 'Subiendo...' : '📁 Subir'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleUploadFile(e, setImageUrl, setUploadingImage)}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Dynamic Customer Fields (e.g. UID) */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: '700' }}>Campos requeridos al cliente (Form Builder):</label>
-                  <button type="button" onClick={handleAddDynamicField} className="btn-glass" style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>
+                    Campos que llena el cliente (Formulario):
+                  </label>
+                  <button type="button" onClick={handleAddDynamicField} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.75rem', cursor: 'pointer' }}>
                     ➕ Agregar Campo
                   </button>
                 </div>
                 {dynamicFields.map((field, idx) => (
-                  <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                  <div key={idx} style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
                     <input
                       type="text"
-                      placeholder="Ej. ID de Jugador (UID), Correo, WhatsApp..."
+                      placeholder="Ej. ID de Jugador (UID)"
                       value={field}
                       onChange={(e) => handleFieldChange(idx, e.target.value)}
-                      style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                      style={{ flex: 1, padding: '7px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
                     />
                     {dynamicFields.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveField(idx)}
-                        style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                      >
-                        🗑️
-                      </button>
+                      <button type="button" onClick={() => handleRemoveField(idx)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem' }}>✕</button>
                     )}
                   </div>
                 ))}
               </div>
 
-              <button type="submit" disabled={saving} className="btn-cyan" style={{ padding: '12px', marginTop: '6px' }}>
-                {saving ? 'Guardando...' : editingProductId ? '💾 Actualizar Producto ➔' : 'Guardar y Publicar en Catálogo ➔'}
+              <button type="submit" disabled={saving} className="btn-cyan" style={{ padding: '12px', fontSize: '0.9rem', marginTop: '6px' }}>
+                {saving ? 'Guardando...' : (editingProductId ? '💾 Guardar Cambios' : '🚀 Publicar Producto')}
               </button>
             </form>
           </div>
