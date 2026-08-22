@@ -323,7 +323,7 @@ export default function AdminOrders() {
         <div className="glass-panel" style={{ padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Facturado</div>
           <div style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--accent-cyan)', marginTop: '4px' }}>
-            ${totalFilteredSalesUsdt.toFixed(2)} <span style={{ fontSize: '0.8rem' }}>USDT</span>
+            ${(Number(totalSalesUsdt) || 0).toFixed(2)} <span style={{ fontSize: '0.8rem' }}>USDT</span>
           </div>
         </div>
 
