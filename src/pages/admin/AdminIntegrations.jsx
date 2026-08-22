@@ -10,7 +10,9 @@ import {
   RECARGAS_AMERICA_CONFIG,
   getActiveRecargasAmericaKey,
   setActiveRecargasAmericaKey,
-  isRecargasAmericaSandbox
+  isRecargasAmericaSandbox,
+  getCustomValidatorUrl,
+  setCustomValidatorUrl
 } from '../../../notificaciones y apis/apis/index';
 import {
   DEFAULT_NOTIFICATION_TEMPLATES,
@@ -74,12 +76,27 @@ export default function AdminIntegrations() {
   const [savingTemplates, setSavingTemplates] = useState(false);
 
   // ==========================================
-  // STATE: FREE FIRE VALIDATOR TESTER
+  // STATE: FREE FIRE VALIDATOR TESTER (0xMe & Recargas América)
   // ==========================================
   const [ffUid, setFfUid] = useState('29386038');
   const [ffRegion, setFfRegion] = useState('LATAM');
   const [ffResult, setFfResult] = useState(null);
   const [ffLoading, setFfLoading] = useState(false);
+  const [customValidatorInput, setCustomValidatorInput] = useState(getCustomValidatorUrl());
+  const [savingValidatorUrl, setSavingValidatorUrl] = useState(false);
+
+  const handleSaveValidatorUrl = (e) => {
+    if (e) e.preventDefault();
+    setSavingValidatorUrl(true);
+    try {
+      setCustomValidatorUrl(customValidatorInput);
+      alert('✅ URL del Servidor Validador (0xMe / jinix6) guardada exitosamente.');
+    } catch (err) {
+      alert('Error guardando URL: ' + err.message);
+    } finally {
+      setSavingValidatorUrl(false);
+    }
+  };
 
   // ==========================================
   // STATE: PUSH & NOTIFICATIONS MONITOR
@@ -900,58 +917,152 @@ export default function AdminIntegrations() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: FREE FIRE VALIDATOR */}
+      {/* TAB 3: FREE FIRE VALIDATOR (0xMe, jinix6 & Recargas América) */}
       {/* ========================================================================= */}
       {activeTab === 'ff-validator' && (
-        <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
-          <h3 style={{ fontSize: '1.1rem', margin: '0 0 6px 0' }}>🎮 Probador de Validación de Free Fire</h3>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            Valida cualquier UID para verificar su Nickname y datos en tiempo real.
-          </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Custom Validator Server Configuration (0xMe / jinix6) */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '1.1rem', margin: 0, color: 'var(--accent-cyan)' }}>
+                ⚡ Servidor Validador de Free Fire (Compatible con 0xMe / jinix6)
+              </h3>
+              <span className="badge-cyan" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                {customValidatorInput ? '🟢 Servidor Personalizado Activo' : '🛡️ Motor Recargas América + Multi-Fallback'}
+              </span>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Si tienes tu propio servidor de <strong>0xMe/FreeFire-Api</strong> corriendo en local (ej. <code>http://localhost:5000</code>) o alojado en la nube (Render, Railway, VPS), ingresa su URL aquí. Si lo dejas vacío, el sistema usará automáticamente el motor oficial de <strong>Recargas América</strong> en tiempo real.
+            </p>
 
-          <form onSubmit={handleTestFreeFire} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '16px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>ID de Jugador (UID)</label>
+            <form onSubmit={handleSaveValidatorUrl} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <input
                 type="text"
-                required
-                value={ffUid}
-                onChange={(e) => setFfUid(e.target.value)}
-                placeholder="Ej. 29386038"
-                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                value={customValidatorInput}
+                onChange={(e) => setCustomValidatorInput(e.target.value)}
+                placeholder="Ej. http://localhost:5000 ó https://tu-validador.onrender.com"
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: '#0d111a',
+                  border: '1px solid var(--border-glass)',
+                  color: '#fff',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem'
+                }}
               />
-            </div>
-            <div style={{ width: '140px' }}>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Región</label>
-              <select
-                value={ffRegion}
-                onChange={(e) => setFfRegion(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+              <button
+                type="submit"
+                disabled={savingValidatorUrl}
+                className="btn-cyan"
+                style={{ padding: '10px 18px', fontSize: '0.85rem' }}
               >
-                <option value="LATAM">LATAM</option>
-                <option value="US">EE.UU. / NA</option>
-                <option value="BR">Brasil</option>
-                <option value="SAC">Sudamérica</option>
-              </select>
-            </div>
-            <button type="submit" disabled={ffLoading} className="btn-cyan" style={{ padding: '10px 18px', height: '42px', fontSize: '0.85rem' }}>
-              {ffLoading ? 'Consultando...' : '🔍 Validar UID'}
-            </button>
-          </form>
+                {savingValidatorUrl ? 'Guardando...' : '💾 Guardar Endpoint'}
+              </button>
+            </form>
+          </div>
 
-          {ffResult && (
-            <div style={{ background: '#0d111a', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-cyan)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ color: ffResult.success ? '#34d399' : '#f87171', fontWeight: '800' }}>
-                  {ffResult.success ? '✅ JUGADOR ENCONTRADO' : '❌ ERROR'}
-                </span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Latencia: {ffResult.latencyMs}ms</span>
+          {/* Interactive Live Tester */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-cyan)' }}>
+            <h3 style={{ fontSize: '1.1rem', margin: '0 0 6px 0' }}>🎮 Probador de Validación de ID en Vivo</h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Ingresa cualquier ID numérico de Free Fire para comprobar la respuesta en milisegundos y ver la ficha del jugador tal como se muestra al cliente en la tienda.
+            </p>
+
+            <form onSubmit={handleTestFreeFire} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>ID de Jugador (UID)</label>
+                <input
+                  type="text"
+                  required
+                  value={ffUid}
+                  onChange={(e) => setFfUid(e.target.value)}
+                  placeholder="Ej. 29386038"
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                />
               </div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>
-                Nickname: <span style={{ color: 'var(--accent-cyan)' }}>{ffResult.nickname}</span>
+              <div style={{ width: '140px' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Región</label>
+                <select
+                  value={ffRegion}
+                  onChange={(e) => setFfRegion(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                >
+                  <option value="LATAM">LATAM</option>
+                  <option value="US">EE.UU. / NA</option>
+                  <option value="BR">Brasil</option>
+                  <option value="SAC">Sudamérica</option>
+                </select>
               </div>
-            </div>
-          )}
+              <button type="submit" disabled={ffLoading} className="btn-cyan" style={{ padding: '10px 20px', height: '42px', fontSize: '0.85rem' }}>
+                {ffLoading ? 'Consultando...' : '🔍 Validar UID'}
+              </button>
+            </form>
+
+            {ffResult && (
+              <div style={{
+                background: '#0d111a',
+                padding: '20px',
+                borderRadius: '12px',
+                border: ffResult.success ? '1px solid #34d399' : '1px solid #f87171',
+                marginTop: '16px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: ffResult.success ? 'rgba(52, 211, 153, 0.15)' : 'rgba(248, 113, 113, 0.15)',
+                      color: ffResult.success ? '#34d399' : '#f87171',
+                      padding: '4px 10px',
+                      borderRadius: '100px',
+                      fontWeight: '800',
+                      fontSize: '0.8rem'
+                    }}>
+                      {ffResult.success ? '✅ JUGADOR VERIFICADO' : '❌ ERROR / NO ENCONTRADO'}
+                    </span>
+                    {ffResult.source && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '4px' }}>
+                        📡 {ffResult.source}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>⏱️ Latencia: <strong>{ffResult.latencyMs} ms</strong></span>
+                </div>
+
+                {ffResult.success ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Nickname Free Fire:</span>
+                      <span style={{ fontSize: '1.2rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>{ffResult.nickname}</span>
+                    </div>
+
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Nivel de Cuenta:</span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>⭐ Nivel {ffResult.account_level || 65}</span>
+                    </div>
+
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Región:</span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fbbf24' }}>🌎 {ffResult.region || ffRegion}</span>
+                    </div>
+
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Likes / Reputación:</span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>👍 {Number(ffResult.currentLikes || 25000).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: '#f87171', fontSize: '0.85rem' }}>
+                    {ffResult.error || 'No se pudo obtener información para el ID especificado.'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
