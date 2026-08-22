@@ -14,10 +14,10 @@
 
 import { supabase } from '../../src/supabaseClient';
 
-// Configuración por defecto de Recargas América
+// Configuración oficial de Producción de Recargas América
 export const RECARGAS_AMERICA_CONFIG = {
   baseUrl: 'https://panel.recargasamerica.com/api/v1',
-  apiKey: 'ra_test_6izZgKsIyoD1nSF5J3HXVEZvubJEaBoC8i9coleg' // Sandbox por defecto
+  apiKey: 'ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb' // Producción LIVE
 };
 
 // Cache en memoria para respuestas ultra-rápidas
@@ -120,12 +120,23 @@ export async function getSupplierStreamingCatalog() {
 export function mapProductToSupplierId(productName = '', amount = 0) {
   const name = productName.toLowerCase();
   
-  if (name.includes('5600') || name.includes('5.600') || amount >= 30) return 344; // 5600+560
-  if (name.includes('2180') || name.includes('2.180') || amount >= 12) return 342; // 2180+218
-  if (name.includes('1060') || name.includes('1.060') || amount >= 6) return 341;  // 1060+106
-  if (name.includes('520') || amount >= 3) return 345;                           // 520+52
-  if (name.includes('310') || amount >= 1.8) return 343;                         // 310+31
-  return 340; // 100+10 Diamantes por defecto
+  // Si es Pin Digital
+  if (name.includes('pin')) {
+    if (name.includes('5600') || name.includes('5.600')) return 4;
+    if (name.includes('2180') || name.includes('2.180')) return 2;
+    if (name.includes('1060') || name.includes('1.060')) return 1;
+    if (name.includes('520')) return 6;
+    if (name.includes('310')) return 3;
+    return 5; // Pin 100
+  }
+
+  // Recarga Directa por UID (IDs oficiales del proveedor)
+  if (name.includes('5600') || name.includes('5.600') || amount >= 30) return 344; // 5600+560 ($33.88)
+  if (name.includes('2180') || name.includes('2.180') || amount >= 12) return 342; // 2180+218 ($13.32)
+  if (name.includes('1060') || name.includes('1.060') || amount >= 6) return 341;  // 1060+106 ($6.71)
+  if (name.includes('520') || amount >= 3) return 345;                           // 520+52 ($3.62)
+  if (name.includes('310') || amount >= 1.8) return 343;                         // 310+31 ($2.14)
+  return 340; // 100+10 ($0.71)
 }
 
 /**
