@@ -64,6 +64,10 @@ class SoundEffectsService {
     });
   }
 
+  playOrderSuccessSound() {
+    this.playOrderCompletedSound();
+  }
+
   /**
    * Tono 2: Nuevo Pedido Ingresado (Campana de Venta / Caja Registradora para Admin)
    */
