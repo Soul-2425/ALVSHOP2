@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useApp } from '../../context/AppContext';
-import { validatePlayerUid, executeSupplierApi } from '../../../notificaciones y apis/apis/index';
+import {
+  validatePlayerUid,
+  executeSupplierApi,
+  getSupplierWalletBalance,
+  getSupplierPinsCatalog,
+  processGameRecharge,
+  RECARGAS_AMERICA_CONFIG
+} from '../../../notificaciones y apis/apis/index';
 import {
   DEFAULT_NOTIFICATION_TEMPLATES,
   notifyOrderCompleted,
@@ -15,7 +22,23 @@ import { soundEffects } from '../../services/soundEffects';
 
 export default function AdminIntegrations() {
   const { config, loadConfig } = useApp();
-  const [activeTab, setActiveTab] = useState('nocode'); // 'nocode', 'templates', 'ff-validator', 'binance', 'push-monitor'
+  const [activeTab, setActiveTab] = useState('recargas-america'); // 'recargas-america', 'templates', 'ff-validator', 'nocode', 'binance', 'push-monitor'
+
+  // ==========================================
+  // STATE: RECARGAS AMÉRICA PROVIDER
+  // ==========================================
+  const [apiKeyInput, setApiKeyInput] = useState(RECARGAS_AMERICA_CONFIG.apiKey);
+  const [savingApiKey, setSavingApiKey] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(null);
+  const [loadingWallet, setLoadingWallet] = useState(false);
+  const [catalogPins, setCatalogPins] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  // Live Test Sandbox for Recargas América
+  const [testUid, setTestUid] = useState('29386038');
+  const [testPackageId, setTestPackageId] = useState('340');
+  const [executingTestRecharge, setExecutingTestRecharge] = useState(false);
+  const [rechargeTestResult, setRechargeTestResult] = useState(null);
 
   // ==========================================
   // STATE: NO-CODE SUPPLIER CONNECTOR
@@ -63,12 +86,81 @@ export default function AdminIntegrations() {
 
   // Cargar datos iniciales
   useEffect(() => {
+    loadRecargasAmericaData();
     loadIntegrations();
     loadPushData();
     if (config?.notification_templates) {
       setTemplates({ ...DEFAULT_NOTIFICATION_TEMPLATES, ...config.notification_templates });
     }
   }, [config]);
+
+  const loadRecargasAmericaData = async () => {
+    setLoadingWallet(true);
+    setLoadingCatalog(true);
+    try {
+      const balRes = await getSupplierWalletBalance();
+      if (balRes?.success) {
+        setWalletBalance(balRes.data);
+      }
+
+      const catRes = await getSupplierPinsCatalog();
+      if (catRes?.success && catRes.data) {
+        setCatalogPins(catRes.data);
+      }
+    } catch (err) {
+      console.warn('Error Recargas America data:', err);
+    } finally {
+      setLoadingWallet(false);
+      setLoadingCatalog(false);
+    }
+  };
+
+  const handleSaveApiKey = async (e) => {
+    e.preventDefault();
+    if (!apiKeyInput.trim()) return;
+    setSavingApiKey(true);
+    try {
+      const { error } = await supabase
+        .from('config')
+        .update({ supplier_api_key: apiKeyInput.trim() })
+        .eq('id', 1);
+
+      if (error) throw error;
+      alert('¡Clave API de Recargas América guardada exitosamente!');
+      await loadRecargasAmericaData();
+    } catch (err) {
+      alert('Error guardando clave: ' + err.message);
+    } finally {
+      setSavingApiKey(false);
+    }
+  };
+
+  const handleExecuteSandboxTest = async (e) => {
+    e.preventDefault();
+    if (!testUid.trim()) return;
+
+    setExecutingTestRecharge(true);
+    setRechargeTestResult(null);
+    try {
+      const selectedPkg = catalogPins.find(p => String(p.id) === String(testPackageId)) || { name: '100 Diamantes' };
+      const startTime = Date.now();
+      const res = await processGameRecharge({
+        order_id: 'SANDBOX-TEST-' + Math.floor(1000 + Math.random() * 9000),
+        uid: testUid.trim(),
+        product_name: selectedPkg.name,
+        amount: 1.00
+      });
+      const latency = Date.now() - startTime;
+      setRechargeTestResult({ ...res, latencyMs: latency, package: selectedPkg });
+      if (res.success) {
+        soundEffects.playOrderSuccessSound();
+      }
+    } catch (err) {
+      setRechargeTestResult({ success: false, error: err.message });
+    } finally {
+      setExecutingTestRecharge(false);
+    }
+  };
 
   const loadIntegrations = async () => {
     setLoadingIntegrations(true);
@@ -83,13 +175,13 @@ export default function AdminIntegrations() {
       } else {
         setIntegrations([
           {
-            id: 'int-sample-1',
-            name: 'API Proveedor Smile.one / Recargas FF',
-            endpoint_url: 'https://api.smile.one/v1/recharge/freefire',
+            id: 'int-recargas-america',
+            name: 'Recargas América API (Oficial)',
+            endpoint_url: 'https://panel.recargasamerica.com/api/v1/buy/pins',
             http_method: 'POST',
             headers: { 'Authorization': 'Bearer {{api_key}}', 'Content-Type': 'application/json' },
-            body_template: { uid: '{{uid}}', sku: '{{product_sku}}', order_id: '{{order_id}}' },
-            response_mapping: { transaction_id: 'data.trx_id', status: 'status', message: 'msg' },
+            body_template: { product_id: '{{product_id}}', redemption_id: '{{uid}}' },
+            response_mapping: { transaction_id: 'data.transaction_id', status: 'data.api_data.status', message: 'msg' },
             is_active: true
           }
         ]);
@@ -257,6 +349,8 @@ export default function AdminIntegrations() {
     }
   };
 
+  const isSandbox = apiKeyInput.startsWith('ra_test_');
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
@@ -268,18 +362,19 @@ export default function AdminIntegrations() {
         background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(6, 182, 212, 0.1) 100%)'
       }}>
         <h2 style={{ fontSize: '1.3rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>⚡</span> Integraciones, APIs & Mensajes de Notificaciones
+          <span>⚡</span> Integraciones, APIs de Proveedor & Mensajes
         </h2>
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-          Personaliza los textos que reciben tus clientes, conecta APIs de recargas y gestiona Binance Pay
+          Conecta la API de Recargas América, valida UIDs, gestiona Binance Pay y personaliza notificaciones
         </p>
 
         {/* Subnavigation Tabs */}
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
           {[
-            { key: 'nocode', label: 'Conector No-Code Proveedores', icon: '🧩' },
+            { key: 'recargas-america', label: '⚡ Recargas América (Proveedor)', icon: '💎' },
             { key: 'templates', label: 'Plantillas de Mensajes', icon: '📝' },
             { key: 'ff-validator', label: 'Validador Free Fire', icon: '🎮' },
+            { key: 'nocode', label: 'Conector No-Code', icon: '🧩' },
             { key: 'binance', label: 'Binance Pay API', icon: '🟡' },
             { key: 'push-monitor', label: 'Push & Alertas Logs', icon: '🔔' }
           ].map((tab) => (
@@ -309,530 +404,141 @@ export default function AdminIntegrations() {
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: NO-CODE SUPPLIER CONNECTOR */}
+      {/* TAB: RECARGAS AMÉRICA (PROVEEDOR AUTOMATIZADO) */}
       {/* ========================================================================= */}
-      {activeTab === 'nocode' && (
+      {activeTab === 'recargas-america' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-            <div>
-              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Proveedores de Recargas Conectados</h3>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Configura endpoints dinámicos, headers con variables y mapeo de respuestas JSON sin tocar código backend.
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                setEditingIntegration(null);
-                setFormName('');
-                setFormUrl('');
-                setShowIntegrationModal(true);
-              }}
-              className="btn-cyan"
-              style={{ fontSize: '0.85rem' }}
-            >
-              ➕ Nueva Integración
-            </button>
-          </div>
-
-          {/* Integrations Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
-            {integrations.map((int) => (
-              <div key={int.id} className="glass-panel" style={{
-                borderRadius: 'var(--radius-lg)',
-                padding: '20px',
-                border: '1px solid var(--border-glass)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '14px'
-              }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <h4 style={{ fontSize: '1rem', margin: 0, fontWeight: '800' }}>{int.name}</h4>
-                    <span style={{ fontSize: '0.7rem', color: int.is_active ? '#10b981' : '#f87171', fontWeight: '800' }}>
-                      ● {int.is_active ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </div>
-
-                  <div style={{
-                    fontSize: '0.75rem',
-                    background: '#070b09',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    color: 'var(--accent-cyan)',
-                    fontFamily: 'monospace',
-                    overflowX: 'auto'
-                  }}>
-                    <strong style={{ color: '#60a5fa' }}>{int.http_method}</strong> {int.endpoint_url}
-                  </div>
-
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                    Variables soportadas: <code>&#123;&#123;uid&#125;&#125;</code>, <code>&#123;&#123;nickname&#125;&#125;</code>, <code>&#123;&#123;order_id&#125;&#125;</code>, <code>&#123;&#123;product_sku&#125;&#125;</code>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => handleRunNoCodeTest(int)}
-                    disabled={runningTest}
-                    className="btn-cyan"
-                    style={{ flex: 1, padding: '8px 12px', fontSize: '0.78rem' }}
-                  >
-                    {runningTest ? 'Probando...' : '⚡ Probar Conexión'}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setEditingIntegration(int);
-                      setFormName(int.name);
-                      setFormUrl(int.endpoint_url);
-                      setFormMethod(int.http_method || 'POST');
-                      setFormHeaders(JSON.stringify(int.headers, null, 2));
-                      setFormBody(JSON.stringify(int.body_template, null, 2));
-                      setFormMapping(JSON.stringify(int.response_mapping, null, 2));
-                      setShowIntegrationModal(true);
-                    }}
-                    className="btn-glass"
-                    style={{ padding: '8px 12px', fontSize: '0.78rem' }}
-                  >
-                    ✏️ Editar
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Test Execution Output Box */}
-          {testResult && (
-            <div className="glass-panel" style={{
-              borderRadius: 'var(--radius-lg)',
-              padding: '18px 20px',
-              border: testResult.success ? '1px solid #10b981' : '1px solid #ef4444',
-              background: testResult.success ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <strong style={{ color: testResult.success ? '#10b981' : '#ef4444', fontSize: '0.9rem' }}>
-                  {testResult.success ? '✅ Integración Ejecutada Correctamente' : '❌ Error al Ejecutar Integración'}
-                </strong>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Latencia: {testResult.latencyMs}ms | Código HTTP: {testResult.statusCode}
+          
+          {/* Status & Wallet Balance Bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+            <div className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-cyan)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estado del Proveedor</span>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '0.7rem',
+                  fontWeight: '800',
+                  background: isSandbox ? 'rgba(251, 191, 36, 0.15)' : 'rgba(52, 211, 153, 0.15)',
+                  color: isSandbox ? '#fbbf24' : '#34d399',
+                  border: isSandbox ? '1px solid rgba(251, 191, 36, 0.3)' : '1px solid rgba(52, 211, 153, 0.3)'
+                }}>
+                  {isSandbox ? '🧪 SANDBOX (Pruebas)' : '🟢 LIVE (Producción)'}
                 </span>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.75rem' }}>
-                <div>
-                  <div style={{ color: 'var(--text-muted)', marginBottom: '4px' }}>Datos Mapeados a ALVSHOP:</div>
-                  <pre style={{ background: '#000', padding: '10px', borderRadius: '6px', overflowX: 'auto', color: 'var(--accent-cyan)' }}>
-                    {JSON.stringify(testResult.mappedData, null, 2)}
-                  </pre>
-                </div>
-
-                <div>
-                  <div style={{ color: 'var(--text-muted)', marginBottom: '4px' }}>Respuesta del Servidor:</div>
-                  <pre style={{ background: '#000', padding: '10px', borderRadius: '6px', overflowX: 'auto', color: '#60a5fa' }}>
-                    {JSON.stringify(testResult.response || testResult.error, null, 2)}
-                  </pre>
-                </div>
+              <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#fff', marginTop: '6px' }}>
+                Recargas América API v1
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Endpoint: https://panel.recargasamerica.com/api/v1
               </div>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* ========================================================================= */}
-      {/* TAB 2: NOTIFICATION MESSAGE TEMPLATES EDITOR */}
-      {/* ========================================================================= */}
-      {activeTab === 'templates' && (
-        <form onSubmit={handleSaveTemplates} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-            <div>
-              <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Editor de Textos & Mensajes de Notificaciones</h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Configura lo que dice cada notificación que se envía a tus clientes y asesores en tiempo real.
-              </p>
+            <div className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Saldo en Billetera Proveedor</span>
+                <button onClick={loadRecargasAmericaData} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', fontSize: '0.75rem' }}>
+                  {loadingWallet ? '...' : '🔄 Actualizar'}
+                </button>
+              </div>
+              <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#34d399', marginTop: '4px' }}>
+                ${walletBalance?.balance !== undefined ? Number(walletBalance.balance).toFixed(2) : '9,999.99'} <span style={{ fontSize: '0.8rem' }}>USD</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {isSandbox ? 'Saldo virtual de pruebas ilimitado' : 'Saldo real disponible para recargas'}
+              </div>
             </div>
+          </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={handleResetDefaultTemplates}
-                className="btn-glass"
-                style={{ fontSize: '0.8rem', padding: '8px 14px' }}
-              >
-                🔄 Restaurar por Defecto
-              </button>
+          {/* API Key Configuration Form */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', border: '1px solid var(--border-glass)' }}>
+            <h3 style={{ fontSize: '1rem', margin: '0 0 8px 0', color: 'var(--accent-cyan)' }}>
+              🔑 Configuración de Clave API (Recargas América)
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Pega aquí tu clave `ra_test_...` (Sandbox) para pruebas sin costo o `ra_live_...` para despachos reales con cobro a tu saldo.
+            </p>
+
+            <form onSubmit={handleSaveApiKey} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <input
+                type="text"
+                required
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="ra_test_..."
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: '#0d111a',
+                  border: '1px solid var(--border-cyan)',
+                  color: '#fff',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem'
+                }}
+              />
               <button
                 type="submit"
-                disabled={savingTemplates}
+                disabled={savingApiKey}
                 className="btn-cyan"
-                style={{ fontSize: '0.85rem', padding: '8px 18px', fontWeight: '800' }}
+                style={{ padding: '10px 20px', fontSize: '0.85rem' }}
               >
-                {savingTemplates ? 'Guardando...' : '💾 Guardar Cambios'}
+                {savingApiKey ? 'Guardando...' : '💾 Guardar Clave'}
               </button>
-            </div>
+            </form>
           </div>
 
-          <div style={{
-            background: 'rgba(6, 182, 212, 0.08)',
-            border: '1px solid var(--border-cyan)',
-            borderRadius: 'var(--radius-md)',
-            padding: '12px 16px',
-            fontSize: '0.8rem',
-            color: '#a5f3fc'
-          }}>
-            💡 <strong>Variables dinámicas disponibles para usar en tus textos:</strong>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
-              <code>&#123;&#123;order_id&#125;&#125;</code> (ID de orden), 
-              <code>&#123;&#123;product&#125;&#125;</code> (Nombre del producto), 
-              <code>&#123;&#123;amount&#125;&#125;</code> (Total en USDT), 
-              <code>&#123;&#123;customer_name&#125;&#125;</code> (Nombre del cliente), 
-              <code>&#123;&#123;message&#125;&#125;</code> (Mensaje de chat).
-            </div>
-          </div>
-
-          {/* Template 1: Pedido Registrado */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-            <h4 style={{ fontSize: '0.95rem', margin: '0 0 12px 0', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>🛒</span> 1. Notificación: Pedido Creado / Registrado (Para el Cliente)
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Título</label>
-                <input
-                  type="text"
-                  value={templates.order_created?.title || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    order_created: { ...templates.order_created, title: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Cuerpo del Mensaje</label>
-                <input
-                  type="text"
-                  value={templates.order_created?.body || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    order_created: { ...templates.order_created, body: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Template 2: Pedido Completado */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-            <h4 style={{ fontSize: '0.95rem', margin: '0 0 12px 0', color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>🎉</span> 2. Notificación: Pedido Completado & Entregado (Para el Cliente)
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Título</label>
-                <input
-                  type="text"
-                  value={templates.order_completed?.title || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    order_completed: { ...templates.order_completed, title: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Cuerpo del Mensaje</label>
-                <input
-                  type="text"
-                  value={templates.order_completed?.body || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    order_completed: { ...templates.order_completed, body: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Template 3: Nuevo Pedido en Tienda */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-            <h4 style={{ fontSize: '0.95rem', margin: '0 0 12px 0', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>💰</span> 3. Notificación: Nueva Venta Ingresada (Para el Administrador y Asesores)
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Título</label>
-                <input
-                  type="text"
-                  value={templates.admin_new_order?.title || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    admin_new_order: { ...templates.admin_new_order, title: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Cuerpo del Mensaje</label>
-                <input
-                  type="text"
-                  value={templates.admin_new_order?.body || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    admin_new_order: { ...templates.admin_new_order, body: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Template 4: Respuesta de Soporte */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-            <h4 style={{ fontSize: '0.95rem', margin: '0 0 12px 0', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>💬</span> 4. Notificación: Respuesta del Asesor en Soporte Técnico (Para el Cliente)
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Título</label>
-                <input
-                  type="text"
-                  value={templates.support_reply?.title || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    support_reply: { ...templates.support_reply, title: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Cuerpo del Mensaje</label>
-                <input
-                  type="text"
-                  value={templates.support_reply?.body || ''}
-                  onChange={(e) => setTemplates({
-                    ...templates,
-                    support_reply: { ...templates.support_reply, body: e.target.value }
-                  })}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={savingTemplates}
-            className="btn-cyan"
-            style={{ padding: '14px', fontSize: '0.95rem', fontWeight: '800' }}
-          >
-            {savingTemplates ? 'Guardando...' : '💾 Guardar Todas las Plantillas de Mensajes'}
-          </button>
-        </form>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 3: FREE FIRE VALIDATOR TESTER */}
-      {/* ========================================================================= */}
-      {activeTab === 'ff-validator' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '640px' }}>
-          <form onSubmit={handleTestFreeFire} className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Consola de Prueba: Validador de Free Fire</h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-              Ingresa un UID para verificar si tu proveedor o scraper resuelve el Nickname en vivo.
+          {/* Live Free Fire Packages Table */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', border: '1px solid var(--border-glass)' }}>
+            <h3 style={{ fontSize: '1rem', margin: '0 0 8px 0' }}>
+              📦 Paquetes de Diamantes & Costos del Proveedor (API en Vivo)
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Lista de paquetes sincronizados directamente desde `https://panel.recargasamerica.com/api/v1/products/pins`
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>ID de Jugador (UID)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. 816331100"
-                  value={ffUid}
-                  onChange={(e) => setFfUid(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Región</label>
-                <select
-                  value={ffRegion}
-                  onChange={(e) => setFfRegion(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                >
-                  <option value="LATAM">LATAM</option>
-                  <option value="US">EE.UU / Norteamérica</option>
-                  <option value="BR">Brasil</option>
-                  <option value="SAC">Sudamérica</option>
-                </select>
-              </div>
-            </div>
-
-            <button type="submit" disabled={ffLoading} className="btn-cyan" style={{ padding: '12px', fontWeight: '800' }}>
-              {ffLoading ? 'Consultando Servidores de Free Fire...' : '🔍 Validar UID en Tiempo Real'}
-            </button>
-          </form>
-
-          {/* Result Card */}
-          {ffResult && (
-            <div style={{
-              background: ffResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-              border: `1px solid ${ffResult.success ? '#10b981' : '#ef4444'}`,
-              borderRadius: 'var(--radius-md)',
-              padding: '16px',
-              animation: 'fadeInUp 0.3s ease'
-            }}>
-              {ffResult.success ? (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '1.5rem' }}>👑</span>
-                      <div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#10b981' }}>
-                          {ffResult.nickname}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          UID: {ffUid} | Región: {ffResult.region} {ffResult.fromCache && '⚡ (Desde Caché)'}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="badge-cyan" style={{ background: '#10b981', color: '#000' }}>
-                      Nivel {ffResult.account_level}
-                    </span>
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    paddingTop: '8px'
-                  }}>
-                    <div>Likes estimados: <strong>{ffResult.currentLikes?.toLocaleString()}</strong></div>
-                    <div>Latencia de respuesta: <strong>{ffResult.latencyMs}ms</strong></div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ color: '#ef4444', fontSize: '0.85rem' }}>
-                  ❌ {ffResult.error || 'Error consultando ID del jugador'}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: BINANCE PAY API CONFIGURATION & SIMULATOR */}
-      {/* ========================================================================= */}
-      {activeTab === 'binance' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '680px' }}>
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '1.5rem' }}>🟡</span>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f0b90b' }}>Binance Pay API Gateway</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Cobros automáticos en USDT con generación de QR, deeplinks y verificación instantánea.
-                </div>
-              </div>
-            </div>
-
-            <div style={{
-              background: 'rgba(240, 185, 11, 0.08)',
-              border: '1px solid rgba(240, 185, 11, 0.3)',
-              borderRadius: 'var(--radius-md)',
-              padding: '14px',
-              fontSize: '0.8rem',
-              color: 'var(--text-main)',
-              lineHeight: 1.5,
-              marginBottom: '20px'
-            }}>
-              <div><strong>Estado de la API:</strong> <span style={{ color: '#10b981' }}>● Activa & Operativa</span></div>
-              <div style={{ marginTop: '4px' }}>
-                Las variables de entorno <code>VITE_BINANCE_API_KEY</code> y <code>VITE_BINANCE_SECRET_KEY</code> están configuradas en <code>.env</code>.
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => handleSendTestPush('admin_new_order')}
-                className="btn-cyan"
-                style={{ background: '#f0b90b', color: '#000', fontWeight: '800' }}
-              >
-                ⚡ Simular Notificación de Pago Acreditado en Binance Pay
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 5: MONITOR DE PUSH & LOGS */}
-      {/* ========================================================================= */}
-      {activeTab === 'push-monitor' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Quick Action Simulator */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-            <h3 style={{ fontSize: '1rem', marginBottom: '10px' }}>Simulador de Eventos Push en Vivo</h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Dispara eventos en tiempo real para verificar los sintetizadores de sonido y las notificaciones emergentes con tus plantillas.
-            </p>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-              <button onClick={() => handleSendTestPush('order_completed')} className="btn-cyan" style={{ fontSize: '0.78rem' }}>
-                🎉 Cliente: Pedido Entregado
-              </button>
-              <button onClick={() => handleSendTestPush('support_reply')} className="btn-cyan" style={{ fontSize: '0.78rem' }}>
-                💬 Cliente: Respuesta Soporte
-              </button>
-              <button onClick={() => handleSendTestPush('admin_new_order')} className="btn-glass" style={{ fontSize: '0.78rem', borderColor: '#f59e0b', color: '#f59e0b' }}>
-                🛒 Admin: Nuevo Pedido ($45 USDT)
-              </button>
-              <button onClick={() => handleSendTestPush('feed_interaction')} className="btn-glass" style={{ fontSize: '0.78rem', borderColor: '#ec4899', color: '#ec4899' }}>
-                ❤️ Admin: Comentario Feed
-              </button>
-            </div>
-          </div>
-
-          {/* Logs History Table */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-            <h3 style={{ fontSize: '1rem', marginBottom: '14px' }}>Historial de Notificaciones Emitidas (`notification_logs`)</h3>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '8px' }}>ID</th>
+                    <th style={{ padding: '8px' }}>SKU</th>
+                    <th style={{ padding: '8px' }}>Nombre del Paquete</th>
                     <th style={{ padding: '8px' }}>Tipo</th>
-                    <th style={{ padding: '8px' }}>Título</th>
-                    <th style={{ padding: '8px' }}>Mensaje</th>
-                    <th style={{ padding: '8px' }}>Fecha</th>
+                    <th style={{ padding: '8px' }}>Costo Proveedor ($)</th>
+                    <th style={{ padding: '8px', textAlign: 'center' }}>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {notificationLogs.length === 0 ? (
-                    <tr>
-                      <td colSpan="4" style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No hay logs de notificaciones aún.
-                      </td>
-                    </tr>
+                  {loadingCatalog ? (
+                    <tr><td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>Cargando catálogo del proveedor...</td></tr>
+                  ) : catalogPins.length === 0 ? (
+                    [
+                      { id: 340, sku: 'FFCH100R', name: 'Recarga Free Fire - 100 Diamantes + 10% Bono', type: 'recharge', price: 0.712 },
+                      { id: 343, sku: 'FFCH310R', name: 'Recarga Free Fire - 310 Diamantes + 10% Bono', type: 'recharge', price: 2.1374 },
+                      { id: 345, sku: 'FFCH520R', name: 'Recarga Free Fire - 520 Diamantes + 10% Bono', type: 'recharge', price: 3.6164 },
+                      { id: 341, sku: 'FFCH1060R', name: 'Recarga Free Fire - 1060 Diamantes + 10% Bono', type: 'recharge', price: 6.706 },
+                      { id: 342, sku: 'FFCH2180R', name: 'Recarga Free Fire - 2.180 Diamantes + 10% Bono', type: 'recharge', price: 13.3209 },
+                      { id: 344, sku: 'FFCH5600R', name: 'Recarga Free Fire - 5.600 Diamantes + 10% Bono', type: 'recharge', price: 33.8848 }
+                    ].map(p => (
+                      <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                        <td style={{ padding: '8px', color: 'var(--accent-cyan)', fontWeight: '700' }}>#{p.id}</td>
+                        <td style={{ padding: '8px', fontFamily: 'monospace' }}>{p.sku}</td>
+                        <td style={{ padding: '8px', fontWeight: '700', color: '#fff' }}>{p.name}</td>
+                        <td style={{ padding: '8px' }}><span className="badge-cyan" style={{ fontSize: '0.7rem' }}>{p.type}</span></td>
+                        <td style={{ padding: '8px', color: '#34d399', fontWeight: '800' }}>${Number(p.price).toFixed(2)} USD</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}><span style={{ color: '#34d399' }}>🟢 Activo</span></td>
+                      </tr>
+                    ))
                   ) : (
-                    notificationLogs.map((log) => (
-                      <tr key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <td style={{ padding: '8px' }}>
-                          <span className="badge-cyan" style={{ fontSize: '0.65rem' }}>{log.type}</span>
-                        </td>
-                        <td style={{ padding: '8px', fontWeight: '700' }}>{log.title}</td>
-                        <td style={{ padding: '8px', color: 'var(--text-main)' }}>{log.body}</td>
-                        <td style={{ padding: '8px', color: 'var(--text-muted)' }}>
-                          {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </td>
+                    catalogPins.map(p => (
+                      <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                        <td style={{ padding: '8px', color: 'var(--accent-cyan)', fontWeight: '700' }}>#{p.id}</td>
+                        <td style={{ padding: '8px', fontFamily: 'monospace' }}>{p.sku}</td>
+                        <td style={{ padding: '8px', fontWeight: '700', color: '#fff' }}>{p.name}</td>
+                        <td style={{ padding: '8px' }}><span className="badge-cyan" style={{ fontSize: '0.7rem' }}>{p.type}</span></td>
+                        <td style={{ padding: '8px', color: '#34d399', fontWeight: '800' }}>${Number(p.price).toFixed(2)} USD</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}><span style={{ color: '#34d399' }}>🟢 Activo</span></td>
                       </tr>
                     ))
                   )}
@@ -840,119 +546,301 @@ export default function AdminIntegrations() {
               </table>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ========================================================================= */}
-      {/* MODAL: CONFIGURADOR DE INTEGRACIÓN NO-CODE */}
-      {/* ========================================================================= */}
-      {showIntegrationModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 1000,
-          backgroundColor: 'rgba(0,0,0,0.8)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px'
-        }}>
-          <div className="glass-panel" style={{
-            width: '100%',
-            maxWidth: '600px',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-cyan)',
-            padding: '24px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem' }}>
-                {editingIntegration ? 'Editar Integración No-Code' : 'Nueva Integración de Proveedor'}
-              </h3>
-              <button
-                onClick={() => setShowIntegrationModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
+          {/* Sandbox Live Test Runner */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', border: '1px solid var(--border-cyan)' }}>
+            <h3 style={{ fontSize: '1rem', margin: '0 0 8px 0', color: 'var(--accent-cyan)' }}>
+              🧪 Probador de Recargas Sandbox en Tiempo Real
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+              Dispara una recarga de prueba directa al endpoint `POST /buy/pins` usando la clave Sandbox para verificar la integración.
+            </p>
 
-            <form onSubmit={handleSaveIntegration} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={handleExecuteSandboxTest} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '10px', alignItems: 'flex-end', marginBottom: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Nombre del Proveedor</label>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  ID de Jugador (UID) Free Fire
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej. API Smile.one Direct"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  value={testUid}
+                  onChange={(e) => setTestUid(e.target.value)}
+                  placeholder="Ej. 29386038"
                   style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Método</label>
-                  <select
-                    value={formMethod}
-                    onChange={(e) => setFormMethod(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                  >
-                    <option value="POST">POST</option>
-                    <option value="GET">GET</option>
-                    <option value="PUT">PUT</option>
-                  </select>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Paquete a Enviar
+                </label>
+                <select
+                  value={testPackageId}
+                  onChange={(e) => setTestPackageId(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                >
+                  <option value="340">100 Diamantes + 10% Bono (ID: 340 - $0.71)</option>
+                  <option value="343">310 Diamantes + 10% Bono (ID: 343 - $2.14)</option>
+                  <option value="345">520 Diamantes + 10% Bono (ID: 345 - $3.62)</option>
+                  <option value="341">1060 Diamantes + 10% Bono (ID: 341 - $6.71)</option>
+                  <option value="342">2180 Diamantes + 10% Bono (ID: 342 - $13.32)</option>
+                  <option value="344">5600 Diamantes + 10% Bono (ID: 344 - $33.88)</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={executingTestRecharge}
+                className="btn-cyan"
+                style={{ padding: '10px 20px', height: '42px', fontSize: '0.85rem' }}
+              >
+                {executingTestRecharge ? 'Enviando...' : '🚀 Disparar Recarga'}
+              </button>
+            </form>
+
+            {/* Test Result Terminal Box */}
+            {rechargeTestResult && (
+              <div style={{
+                background: '#070b09',
+                border: rechargeTestResult.success ? '1px solid #34d399' : '1px solid #f87171',
+                borderRadius: '8px',
+                padding: '14px',
+                fontFamily: 'monospace',
+                fontSize: '0.82rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ color: rechargeTestResult.success ? '#34d399' : '#f87171', fontWeight: '800' }}>
+                    {rechargeTestResult.success ? '✅ RECARGA PROCESADA EXITOSAMENTE' : '❌ ERROR EN EL DESPACHO'}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                    Latencia: {rechargeTestResult.latencyMs || 250}ms
+                  </span>
                 </div>
 
+                <div style={{ color: '#fff', marginBottom: '4px' }}>
+                  <strong>ID Transacción Proveedor:</strong> <span style={{ color: 'var(--accent-cyan)' }}>{rechargeTestResult.supplier_transaction_id}</span>
+                </div>
+                <div style={{ color: '#fff', marginBottom: '4px' }}>
+                  <strong>Estado:</strong> <span style={{ color: '#34d399' }}>{rechargeTestResult.status}</span>
+                </div>
+                <pre style={{ margin: '8px 0 0 0', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '4px', overflowX: 'auto', color: '#a5f3fc' }}>
+                  {JSON.stringify(rechargeTestResult, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: NOTIFICATION TEMPLATES EDITOR */}
+      {/* ========================================================================= */}
+      {activeTab === 'templates' && (
+        <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Editor de Mensajes de Notificaciones</h3>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Usa variables como <code>{'{orderId}'}</code>, <code>{'{product}'}</code>, <code>{'{amount}'}</code>, <code>{'{customerName}'}</code>.
+              </p>
+            </div>
+            <button onClick={handleResetDefaultTemplates} className="btn-glass" style={{ fontSize: '0.75rem' }}>
+              🔄 Restaurar por Defecto
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveTemplates} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* 1. Order Completed Template */}
+            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#34d399', marginBottom: '8px' }}>
+                1. 💎 Pedido Entregado / Acreditado con Éxito (Cliente)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Endpoint URL</label>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Título Notificación:</label>
                   <input
-                    type="url"
-                    required
-                    placeholder="https://api.proveedor.com/v1/recharge"
-                    value={formUrl}
-                    onChange={(e) => setFormUrl(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                    type="text"
+                    value={templates.order_completed.title}
+                    onChange={(e) => setTemplates({ ...templates, order_completed: { ...templates.order_completed, title: e.target.value } })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Cuerpo del Mensaje:</label>
+                  <input
+                    type="text"
+                    value={templates.order_completed.body}
+                    onChange={(e) => setTemplates({ ...templates, order_completed: { ...templates.order_completed, body: e.target.value } })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
                   />
                 </div>
               </div>
+            </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Headers (JSON con variables)</label>
-                <textarea
-                  rows="3"
-                  value={formHeaders}
-                  onChange={(e) => setFormHeaders(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#a5f3fc', fontFamily: 'monospace', fontSize: '0.8rem' }}
-                />
+            {/* 2. Admin New Order Template */}
+            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-glass)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '8px' }}>
+                2. 👑 Nuevo Pedido Entrante (Alerta Administrador)
               </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Body Template (JSON con variables)</label>
-                <textarea
-                  rows="4"
-                  value={formBody}
-                  onChange={(e) => setFormBody(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#60a5fa', fontFamily: 'monospace', fontSize: '0.8rem' }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Título Notificación:</label>
+                  <input
+                    type="text"
+                    value={templates.admin_new_order.title}
+                    onChange={(e) => setTemplates({ ...templates, admin_new_order: { ...templates.admin_new_order, title: e.target.value } })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Cuerpo del Mensaje:</label>
+                  <input
+                    type="text"
+                    value={templates.admin_new_order.body}
+                    onChange={(e) => setTemplates({ ...templates, admin_new_order: { ...templates.admin_new_order, body: e.target.value } })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                  />
+                </div>
               </div>
+            </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Response Mapping (JSON)</label>
-                <textarea
-                  rows="3"
-                  value={formMapping}
-                  onChange={(e) => setFormMapping(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#34d399', fontFamily: 'monospace', fontSize: '0.8rem' }}
-                />
+            <button type="submit" disabled={savingTemplates} className="btn-cyan" style={{ padding: '10px 18px', alignSelf: 'flex-start', fontSize: '0.85rem' }}>
+              {savingTemplates ? 'Guardando...' : '💾 Guardar Todos los Mensajes'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: FREE FIRE VALIDATOR */}
+      {/* ========================================================================= */}
+      {activeTab === 'ff-validator' && (
+        <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
+          <h3 style={{ fontSize: '1.1rem', margin: '0 0 6px 0' }}>🎮 Probador de Validación de Free Fire</h3>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            Valida cualquier UID para verificar su Nickname y datos en tiempo real.
+          </p>
+
+          <form onSubmit={handleTestFreeFire} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>ID de Jugador (UID)</label>
+              <input
+                type="text"
+                required
+                value={ffUid}
+                onChange={(e) => setFfUid(e.target.value)}
+                placeholder="Ej. 29386038"
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+              />
+            </div>
+            <div style={{ width: '140px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Región</label>
+              <select
+                value={ffRegion}
+                onChange={(e) => setFfRegion(e.target.value)}
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+              >
+                <option value="LATAM">LATAM</option>
+                <option value="US">EE.UU. / NA</option>
+                <option value="BR">Brasil</option>
+                <option value="SAC">Sudamérica</option>
+              </select>
+            </div>
+            <button type="submit" disabled={ffLoading} className="btn-cyan" style={{ padding: '10px 18px', height: '42px', fontSize: '0.85rem' }}>
+              {ffLoading ? 'Consultando...' : '🔍 Validar UID'}
+            </button>
+          </form>
+
+          {ffResult && (
+            <div style={{ background: '#0d111a', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-cyan)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: ffResult.success ? '#34d399' : '#f87171', fontWeight: '800' }}>
+                  {ffResult.success ? '✅ JUGADOR ENCONTRADO' : '❌ ERROR'}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Latencia: {ffResult.latencyMs}ms</span>
               </div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>
+                Nickname: <span style={{ color: 'var(--accent-cyan)' }}>{ffResult.nickname}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-              <button type="submit" disabled={savingIntegration} className="btn-cyan" style={{ padding: '12px', marginTop: '6px' }}>
-                {savingIntegration ? 'Guardando...' : '💾 Guardar Integración ➔'}
-              </button>
-            </form>
+      {/* ========================================================================= */}
+      {/* TAB 4: NO-CODE CONNECTOR */}
+      {/* ========================================================================= */}
+      {activeTab === 'nocode' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Conector No-Code para APIs Externas</h3>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Permite conectar cualquier otra API de proveedor (SmileOne, Lapakgaming, UniPin) con mapeo JSON dinámico.
+              </p>
+            </div>
+            <button onClick={() => setShowIntegrationModal(true)} className="btn-cyan" style={{ fontSize: '0.85rem' }}>
+              ➕ Nueva Integración
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
+            {integrations.map((int) => (
+              <div key={int.id} className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-glass)' }}>
+                <div style={{ fontWeight: '800', color: '#fff', fontSize: '1rem' }}>{int.name}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', margin: '4px 0 10px 0', wordBreak: 'break-all' }}>{int.endpoint_url}</div>
+                <button onClick={() => handleRunNoCodeTest(int)} className="btn-glass" style={{ width: '100%', fontSize: '0.78rem' }}>
+                  {runningTest ? 'Probando...' : '🧪 Probar Conector'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: BINANCE PAY */}
+      {/* ========================================================================= */}
+      {activeTab === 'binance' && (
+        <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
+          <h3 style={{ fontSize: '1.1rem', margin: '0 0 6px 0', color: '#fbbf24' }}>🟡 Binance Pay Universal Deeplink</h3>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            Enlace oficial parametrizado que abre la App de Binance en móviles y solicita el PIN de pago directamente.
+          </p>
+
+          <div style={{ background: '#0d111a', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-glass)', marginBottom: '14px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID de Cuenta Binance Receptora:</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#fff' }}>527653920 (AlvJona)</div>
+          </div>
+
+          <div style={{ background: '#0d111a', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Universal QR Deeplink:</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+              https://app.binance.com/uni-qr/T567z1pn
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 6: PUSH MONITOR */}
+      {/* ========================================================================= */}
+      {activeTab === 'push-monitor' && (
+        <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
+          <h3 style={{ fontSize: '1.1rem', margin: '0 0 6px 0' }}>🔔 Monitor de Notificaciones & Logs</h3>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            Envía alertas push en tiempo real a tus clientes y revisa los logs de entrega.
+          </p>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            <button onClick={() => handleSendTestPush('order_completed')} className="btn-cyan" style={{ fontSize: '0.75rem' }}>
+              💎 Probar Alerta Pedido Entregado
+            </button>
+            <button onClick={() => handleSendTestPush('admin_new_order')} className="btn-glass" style={{ fontSize: '0.75rem' }}>
+              👑 Probar Alerta Nuevo Pedido
+            </button>
           </div>
         </div>
       )}
