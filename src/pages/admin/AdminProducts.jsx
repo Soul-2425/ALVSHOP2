@@ -453,36 +453,86 @@ export default function AdminProducts() {
     }
   };
 
-  // Sincronización Manual de Paquetes
+  // Sincronización & Limpieza de Duplicados
   const handleSyncFreeFireCatalog = async () => {
     setSyncingCatalog(true);
     try {
-      let catId = categories.find(c => c.name.toLowerCase().includes('diamante') || c.name.toLowerCase().includes('free fire'))?.id;
+      // 1. Obtener o crear Categoría Principal
+      let { data: catList } = await supabase.from('categories').select('*');
+      let catId = catList?.find(c => c.name.toLowerCase().includes('diamante') || c.name.toLowerCase().includes('free fire'))?.id;
+      
       if (!catId) {
         const { data: newCat, error: catErr } = await supabase.from('categories').insert({
-          name: 'DIAMANTES 💎',
-          slug: 'diamantes-' + Date.now(),
+          name: 'Free Fire',
+          slug: 'free-fire',
           icon: '💎'
         }).select().single();
         if (catErr) throw catErr;
         catId = newCat.id;
       }
 
-      for (const item of OFFICIAL_FF_CATALOG) {
-        let targetSubId = subcategories.find(s => s.name.toLowerCase() === item.subcat.toLowerCase() && s.category_id === catId)?.id;
-        if (!targetSubId) {
+      // 2. Limpiar Subcategorías Duplicadas (Dejar exactamente 1 por cada nombre oficial)
+      const { data: existingSubs } = await supabase.from('subcategories').select('*');
+      const uniqueSubNames = ['100+10', '310+31', '520+52', '1060+106', '2180+218', '5600+560'];
+      const subMap = {};
+
+      for (const sName of uniqueSubNames) {
+        const matches = (existingSubs || []).filter(s => s.name.trim().toLowerCase() === sName.toLowerCase());
+        if (matches.length > 0) {
+          // Mantener la primera
+          subMap[sName] = matches[0].id;
+          // Eliminar duplicadas si hay más de 1
+          if (matches.length > 1) {
+            const duplicateIds = matches.slice(1).map(m => m.id);
+            await supabase.from('subcategories').delete().in('id', duplicateIds);
+          }
+        } else {
+          // Crear nueva limpia
           const { data: createdSub } = await supabase.from('subcategories').insert({
             category_id: catId,
-            name: item.subcat,
-            slug: item.subcat.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now()
+            name: sName,
+            slug: 'ff-' + sName.replace('+', '-')
           }).select().single();
-          if (createdSub) targetSubId = createdSub.id;
+          if (createdSub) subMap[sName] = createdSub.id;
         }
+      }
 
-        const existing = products.find(p => p.name.toLowerCase() === item.name.toLowerCase());
-        if (!existing) {
+      // Eliminar subcategorías de Pines o huérfanas que no sean las 6 oficiales
+      const invalidSubs = (existingSubs || []).filter(s => !uniqueSubNames.some(u => u.toLowerCase() === s.name.trim().toLowerCase()));
+      if (invalidSubs.length > 0) {
+        await supabase.from('subcategories').delete().in('id', invalidSubs.map(i => i.id));
+      }
+
+      // 3. Crear o Actualizar los 6 Productos Oficiales de Recarga Directa (Activos)
+      const { data: currentProds } = await supabase.from('products').select('*');
+
+      for (const item of OFFICIAL_FF_CATALOG) {
+        const matches = (currentProds || []).filter(p => p.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+        const correctSubId = subMap[item.subcat] || null;
+
+        if (matches.length > 0) {
+          // Actualizar producto principal a Activo con su subcategoría correcta
+          const primaryProd = matches[0];
+          await supabase.from('products').update({
+            subcategory_id: correctSubId,
+            is_active: item.is_active,
+            price_public: item.price_public,
+            price_reseller: item.price_reseller,
+            cost: item.cost,
+            requires_validation: true,
+            validation_type: 'Free Fire',
+            button_action_text: 'Solicitar'
+          }).eq('id', primaryProd.id);
+
+          // Eliminar productos duplicados si hay más de 1 con el mismo nombre
+          if (matches.length > 1) {
+            const dupProdIds = matches.slice(1).map(m => m.id);
+            await supabase.from('products').delete().in('id', dupProdIds);
+          }
+        } else {
+          // Insertar nuevo producto
           const { data: newP } = await supabase.from('products').insert({
-            subcategory_id: targetSubId || null,
+            subcategory_id: correctSubId,
             name: item.name,
             description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega automatizada e inmediata.',
             price_public: item.price_public,
@@ -511,9 +561,9 @@ export default function AdminProducts() {
       }
 
       await loadData();
-      alert('¡Catálogo de Recargas Oficiales sincronizado exitosamente!\n\n🟢 6 Paquetes de Recarga Directa Activos\n🔴 6 Pines Digitales Creados (Desactivados por defecto)');
+      alert('✅ ¡Catálogo Reparado y Duplicados Eliminados con Éxito!\n\n💎 6 Paquetes Únicos de Recarga Directa Activos y Visibles en la Tienda.\n🧹 Subcategorías duplicadas depuradas.');
     } catch (err) {
-      alert('Error sincronizando catálogo: ' + err.message);
+      alert('Error reparando catálogo: ' + err.message);
     } finally {
       setSyncingCatalog(false);
     }

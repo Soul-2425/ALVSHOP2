@@ -17,57 +17,123 @@ export default function Home() {
 
   const ITEMS_PER_PAGE = 6; // Strict 2 columns x 3 rows
 
-  // Fetch Categories and Subcategories from Supabase
+  // Fetch only categories and subcategories that have ACTIVE products
   useEffect(() => {
-    async function loadTaxonomy() {
-      const { data: catData } = await supabase.from('categories').select('*').order('name');
-      const { data: subcatData } = await supabase.from('subcategories').select('*').order('name');
-      if (catData) setCategories(catData);
-      if (subcatData) setSubcategories(subcatData);
+    async function loadActiveTaxonomy() {
+      try {
+        // 1. Fetch all active products with their category & subcategory info
+        const { data: activeProds, error } = await supabase
+          .from('products')
+          .select('subcategory_id, subcategories(id, name, category_id, categories(id, name, icon, image_url))')
+          .eq('is_active', true);
+
+        if (error || !activeProds) {
+          // Fallback query
+          const { data: catData } = await supabase.from('categories').select('*').order('name');
+          const { data: subcatData } = await supabase.from('subcategories').select('*').order('name');
+          if (catData) setCategories(catData);
+          if (subcatData) setSubcategories(subcatData);
+          return;
+        }
+
+        // 2. Extract unique categories that actually have active products
+        const catMap = new Map();
+        const subcatMap = new Map();
+
+        activeProds.forEach((p) => {
+          const sub = p.subcategories;
+          const cat = sub?.categories;
+
+          if (cat && cat.id) {
+            if (!catMap.has(cat.id)) {
+              catMap.set(cat.id, cat);
+            }
+          }
+
+          if (sub && sub.id && sub.name) {
+            // Group and deduplicate subcategories by clean name
+            const cleanSubName = sub.name.trim();
+            if (!subcatMap.has(cleanSubName)) {
+              subcatMap.set(cleanSubName, {
+                id: sub.id,
+                name: cleanSubName,
+                category_id: sub.category_id,
+                image_url: sub.image_url,
+                all_ids: [sub.id]
+              });
+            } else {
+              subcatMap.get(cleanSubName).all_ids.push(sub.id);
+            }
+          }
+        });
+
+        // If no categories found from products, load all
+        if (catMap.size === 0) {
+          const { data: catData } = await supabase.from('categories').select('*').order('name');
+          if (catData) setCategories(catData);
+        } else {
+          setCategories(Array.from(catMap.values()));
+        }
+
+        setSubcategories(Array.from(subcatMap.values()));
+      } catch (err) {
+        console.warn('Error loading taxonomy:', err);
+      }
     }
-    loadTaxonomy();
+
+    loadActiveTaxonomy();
   }, []);
 
-  // Filtered subcategories for current active category
-  const activeSubcategories = subcategories.filter(s => s.category_id === selectedCategory);
+  // Filtered subcategories for current active category (only unique and active)
+  const activeSubcategories = selectedCategory === 'all'
+    ? []
+    : subcategories.filter(s => s.category_id === selectedCategory);
 
-  // Fetch Products with Strict Category & Subcategory Filtering
+  // Fetch Products with Strict Filtering
   useEffect(() => {
     async function loadProducts() {
       setLoading(true);
       const from = (currentPage - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
-      let query = supabase
-        .from('products')
-        .select('*, subcategories(id, name, category_id, categories(id, name, icon, image_url))', { count: 'exact' })
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      try {
+        let query = supabase
+          .from('products')
+          .select('*, subcategories(id, name, category_id, categories(id, name, icon, image_url))', { count: 'exact' })
+          .eq('is_active', true)
+          .order('price_public', { ascending: true })
+          .range(from, to);
 
-      if (selectedCategory !== 'all') {
-        const matchingSubcats = subcategories.filter(s => s.category_id === selectedCategory);
-        const subcatIds = matchingSubcats.map(s => s.id);
+        if (selectedCategory !== 'all') {
+          const targetSubcatObj = subcategories.find(s => s.name === selectedSubcategory || s.id === selectedSubcategory);
 
-        if (selectedSubcategory !== 'all') {
-          query = query.eq('subcategory_id', selectedSubcategory);
-        } else if (subcatIds.length > 0) {
-          query = query.in('subcategory_id', subcatIds);
-        } else {
-          // If category has no subcategories, strictly return 0 products to prevent cross-category leak
-          query = query.eq('subcategory_id', '00000000-0000-0000-0000-000000000000');
+          if (selectedSubcategory !== 'all' && targetSubcatObj) {
+            // Match all subcategory IDs with this name
+            query = query.in('subcategory_id', targetSubcatObj.all_ids || [targetSubcatObj.id]);
+          } else {
+            const matchingSubcats = subcategories.filter(s => s.category_id === selectedCategory);
+            const allSubIds = matchingSubcats.flatMap(s => s.all_ids || [s.id]);
+
+            if (allSubIds.length > 0) {
+              query = query.in('subcategory_id', allSubIds);
+            }
+          }
         }
-      }
 
-      const { data, count, error } = await query;
-      if (data && !error) {
-        setProducts(data);
-        setTotalCount(count || 0);
-      } else {
+        const { data, count, error } = await query;
+        if (data && !error) {
+          setProducts(data);
+          setTotalCount(count || 0);
+        } else {
+          setProducts([]);
+          setTotalCount(0);
+        }
+      } catch (err) {
+        console.warn('Error fetching products:', err);
         setProducts([]);
-        setTotalCount(0);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     loadProducts();
@@ -99,23 +165,18 @@ export default function Home() {
         boxShadow: '0 16px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(6, 182, 212, 0.15)',
         position: 'relative',
         overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         textAlign: 'center'
       }}>
-        {/* Top Cyber Accent Glow */}
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: '15%',
-          right: '15%',
-          height: '2px',
-          background: 'linear-gradient(90deg, transparent, var(--accent-cyan), transparent)',
-          boxShadow: '0 0 16px var(--accent-cyan)'
-        }} />
-
-        {/* Dynamic Store Title */}
+          fontSize: '0.85rem',
+          letterSpacing: '0.2em',
+          textTransform: 'uppercase',
+          color: 'var(--accent-cyan)',
+          fontWeight: '900',
+          marginBottom: '8px'
+        }}>
+          ⚡ RECARGAS & ENTREGAS OFICIALES AUTOMATIZADAS
+        </div>
         <h1 style={{
           fontSize: 'clamp(2rem, 7vw, 3.2rem)',
           fontWeight: '900',
@@ -133,14 +194,14 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* Main Category Filter Bar with Responsive Images & Icons */}
+      {/* Main Category Filter Bar */}
       <div id="catalogo" style={{ marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             <span>🎮</span> Catálogo Oficial
           </h3>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Mostrando {products.length} productos
+            Mostrando {products.length} de {totalCount} productos
           </span>
         </div>
 
@@ -198,7 +259,6 @@ export default function Home() {
                   boxShadow: isSelected ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none'
                 }}
               >
-                {/* Responsive Category Image with fallback */}
                 {cat.image_url ? (
                   <img
                     src={cat.image_url}
@@ -220,7 +280,7 @@ export default function Home() {
           })}
         </div>
 
-        {/* Secondary Subcategory Filter (If active category has multiple subcategories) */}
+        {/* Clean Subcategory Filter (Only unique active subcategories) */}
         {selectedCategory !== 'all' && activeSubcategories.length > 1 && (
           <div style={{
             display: 'flex',
@@ -233,12 +293,12 @@ export default function Home() {
             <button
               onClick={() => { setSelectedSubcategory('all'); setCurrentPage(1); }}
               style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                fontSize: '0.75rem',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
                 fontWeight: '700',
                 cursor: 'pointer',
-                background: selectedSubcategory === 'all' ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                background: selectedSubcategory === 'all' ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.03)',
                 color: selectedSubcategory === 'all' ? 'var(--accent-cyan)' : 'var(--text-muted)',
                 border: selectedSubcategory === 'all' ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)'
               }}
@@ -247,21 +307,21 @@ export default function Home() {
             </button>
 
             {activeSubcategories.map((sub) => {
-              const isSubSelected = selectedSubcategory === sub.id;
+              const isSubSelected = selectedSubcategory === sub.name || selectedSubcategory === sub.id;
               return (
                 <button
-                  key={sub.id}
-                  onClick={() => { setSelectedSubcategory(sub.id); setCurrentPage(1); }}
+                  key={sub.name}
+                  onClick={() => { setSelectedSubcategory(sub.name); setCurrentPage(1); }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    fontSize: '0.75rem',
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
                     fontWeight: '700',
                     cursor: 'pointer',
-                    background: isSubSelected ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                    background: isSubSelected ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.03)',
                     color: isSubSelected ? 'var(--accent-cyan)' : 'var(--text-muted)',
                     border: isSubSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)'
                   }}
@@ -278,29 +338,30 @@ export default function Home() {
       {/* Strict 2x3 Grid (6 items) */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
-          <div className="spinner" style={{ margin: '0 auto 12px auto' }} />
-          Cargando productos de la categoría...
+          <div className="spinner-large" style={{ margin: '0 auto 16px auto' }} />
+          Cargando productos oficiales...
         </div>
       ) : products.length === 0 ? (
         <div className="glass-panel" style={{
-          padding: '40px 20px',
           textAlign: 'center',
+          padding: '60px 20px',
           borderRadius: 'var(--radius-lg)',
-          margin: '20px 0'
+          margin: '20px 0',
+          border: '1px solid var(--border-glass)'
         }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🛍️</div>
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>No hay productos disponibles por el momento</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '440px', margin: '0 auto 16px auto' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🛍️</div>
+          <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No hay productos disponibles por el momento</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '400px', margin: '0 auto' }}>
             Estamos preparando nuevas ofertas y paquetes para esta sección. ¡Vuelve a consultar pronto!
           </p>
-          {(profile?.role === 'admin' || profile?.is_admin) && (
-            <Link to="/admin/products" className="btn-glass" style={{ fontSize: '0.85rem' }}>
-              👑 Ir al Gestor de Productos (Admin)
-            </Link>
-          )}
         </div>
       ) : (
-        <div className="store-grid-2x3">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '16px',
+          marginBottom: '32px'
+        }}>
           {products.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
@@ -314,29 +375,35 @@ export default function Home() {
           justifyContent: 'center',
           alignItems: 'center',
           gap: '8px',
-          marginTop: '32px',
-          marginBottom: '20px'
+          marginTop: '20px',
+          marginBottom: '40px'
         }}>
           <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            onClick={() => {
+              setCurrentPage(p => Math.max(1, p - 1));
+              document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
+            }}
             disabled={currentPage === 1}
             className="btn-glass"
-            style={{ padding: '8px 14px', fontSize: '0.85rem', opacity: currentPage === 1 ? 0.4 : 1 }}
+            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
           >
-            ◀ Anterior
+            ← Anterior
           </button>
 
-          <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>
-            Página {currentPage} de {totalPages}
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 8px' }}>
+            Página <strong style={{ color: '#fff' }}>{currentPage}</strong> de {totalPages}
           </span>
 
           <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => {
+              setCurrentPage(p => Math.min(totalPages, p + 1));
+              document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
+            }}
             disabled={currentPage === totalPages}
             className="btn-glass"
-            style={{ padding: '8px 14px', fontSize: '0.85rem', opacity: currentPage === totalPages ? 0.4 : 1 }}
+            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
           >
-            Siguiente ▶
+            Siguiente →
           </button>
         </div>
       )}
