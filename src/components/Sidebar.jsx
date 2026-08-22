@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 
 export default function Sidebar({ isOpen, onClose }) {
-  const { user, profile, role } = useApp();
+  const { user, profile, role, isMuted, toggleMute } = useApp();
   const location = useLocation();
 
   const handleLogout = async () => {
@@ -16,6 +16,8 @@ export default function Sidebar({ isOpen, onClose }) {
     { label: '🛍️ Catálogo de Productos', path: '/' },
     { label: '👤 Mi Perfil & Billetera', path: '/profile' },
     { label: '🌐 Comunidad & Feed', path: '/feed' },
+    { label: '📜 Términos y Condiciones', path: '/terms' },
+    { label: '🔒 Políticas de Privacidad', path: '/privacy' },
   ];
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
@@ -30,7 +32,7 @@ export default function Sidebar({ isOpen, onClose }) {
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
             backdropFilter: 'blur(6px)',
             zIndex: 50,
             transition: 'opacity 0.3s ease'
@@ -58,7 +60,7 @@ export default function Sidebar({ isOpen, onClose }) {
       }}>
         {/* Sidebar Header */}
         <div style={{
-          padding: '24px 20px',
+          padding: '20px 18px',
           borderBottom: '1px solid var(--border-glass)',
           background: 'linear-gradient(180deg, rgba(30, 58, 138, 0.3) 0%, transparent 100%)',
           display: 'flex',
@@ -104,8 +106,45 @@ export default function Sidebar({ isOpen, onClose }) {
           </button>
         </div>
 
+        {/* Sound Effects Switch inside Hamburger Menu */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-glass)' }}>
+          <button
+            onClick={toggleMute}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              background: isMuted ? 'rgba(255, 255, 255, 0.03)' : 'rgba(6, 182, 212, 0.12)',
+              border: isMuted ? '1px solid var(--border-glass)' : '1px solid var(--border-cyan)',
+              color: isMuted ? 'var(--text-muted)' : '#fff',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: '700',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.1rem' }}>{isMuted ? '🔇' : '🔊'}</span>
+              <span>Efectos de Sonido</span>
+            </div>
+            <span style={{
+              fontSize: '0.72rem',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+              color: isMuted ? '#f87171' : '#34d399',
+              fontWeight: '800'
+            }}>
+              {isMuted ? 'Silenciado' : 'Activado'}
+            </span>
+          </button>
+        </div>
+
         {/* Main Navigation List */}
-        <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <nav style={{ padding: '14px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {mainNavLinks.map((item) => {
             const isActive = location.pathname === item.path;
             return (
@@ -116,9 +155,9 @@ export default function Sidebar({ isOpen, onClose }) {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  padding: '12px 16px',
+                  padding: '12px 14px',
                   borderRadius: 'var(--radius-md)',
-                  fontSize: '0.92rem',
+                  fontSize: '0.88rem',
                   fontWeight: '600',
                   color: isActive ? 'var(--accent-cyan)' : 'var(--text-main)',
                   backgroundColor: isActive ? 'rgba(6, 182, 212, 0.1)' : 'transparent',
@@ -133,8 +172,8 @@ export default function Sidebar({ isOpen, onClose }) {
 
           {/* Admin Backoffice Section */}
           {isAdminOrAdvisor && (
-            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-glass)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', paddingLeft: '16px', marginBottom: '6px', fontWeight: '800', letterSpacing: '0.05em' }}>
+            <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', paddingLeft: '14px', marginBottom: '6px', fontWeight: '800', letterSpacing: '0.05em' }}>
                 ADMINISTRACIÓN
               </div>
               <Link
@@ -144,9 +183,9 @@ export default function Sidebar({ isOpen, onClose }) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  padding: '12px 16px',
+                  padding: '12px 14px',
                   borderRadius: 'var(--radius-md)',
-                  fontSize: '0.9rem',
+                  fontSize: '0.88rem',
                   fontWeight: '700',
                   color: '#fff',
                   background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.6) 0%, rgba(6, 182, 212, 0.3) 100%)',

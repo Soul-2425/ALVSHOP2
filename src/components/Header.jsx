@@ -13,9 +13,7 @@ export default function Header({ onToggleSidebar }) {
     role,
     notifications,
     unreadCount,
-    clearAllNotifications,
-    isMuted,
-    toggleMute
+    clearAllNotifications
   } = useApp();
 
   const [showWalletModal, setShowWalletModal] = useState(false);
@@ -47,33 +45,37 @@ export default function Header({ onToggleSidebar }) {
         position: 'sticky',
         top: 0,
         zIndex: 40,
-        backgroundColor: 'rgba(10, 13, 20, 0.88)',
+        backgroundColor: 'rgba(10, 13, 20, 0.94)',
         backdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border-glass)'
       }}>
-        <div className="container" style={{
+        <div style={{
+          maxWidth: '1240px',
+          margin: '0 auto',
+          padding: '0 12px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          height: '68px',
-          gap: '12px'
+          height: '62px',
+          gap: '8px'
         }}>
           {/* Left: Hamburger & Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
             <button
               onClick={onToggleSidebar}
               style={{
                 background: 'rgba(255, 255, 255, 0.06)',
                 border: '1px solid var(--border-glass)',
                 color: 'var(--text-main)',
-                width: '42px',
-                height: '42px',
+                width: '38px',
+                height: '38px',
                 borderRadius: 'var(--radius-md)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '1.25rem',
+                fontSize: '1.2rem',
+                flexShrink: 0,
                 transition: 'all 0.2s ease'
               }}
               title="Abrir Menú"
@@ -81,16 +83,16 @@ export default function Header({ onToggleSidebar }) {
               ☰
             </button>
 
-            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
               {config.logo_url ? (
                 <img 
                   src={config.logo_url} 
                   alt={config.site_title} 
-                  style={{ height: '38px', objectFit: 'contain' }} 
+                  style={{ height: '32px', objectFit: 'contain' }} 
                 />
               ) : (
                 <div style={{
-                  fontSize: '1.4rem',
+                  fontSize: '1.25rem',
                   fontWeight: '900',
                   letterSpacing: '-0.03em',
                   background: 'linear-gradient(135deg, #fff 40%, var(--accent-cyan) 100%)',
@@ -98,7 +100,8 @@ export default function Header({ onToggleSidebar }) {
                   WebkitTextFillColor: 'transparent',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '4px',
+                  whiteSpace: 'nowrap'
                 }}>
                   <span style={{ color: 'var(--accent-cyan)', WebkitTextFillColor: 'var(--accent-cyan)' }}>ALV</span>SHOP
                 </div>
@@ -106,29 +109,8 @@ export default function Header({ onToggleSidebar }) {
             </Link>
           </div>
 
-          {/* Right: Sound, Notifications, Currency Toggle & Wallet */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            
-            {/* Audio Mute/Unmute Toggle */}
-            <button
-              onClick={toggleMute}
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid var(--border-glass)',
-                borderRadius: '50%',
-                width: '36px',
-                height: '36px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                color: isMuted ? 'var(--text-muted)' : 'var(--accent-cyan)'
-              }}
-              title={isMuted ? 'Activar Sonidos de Alerta' : 'Silenciar Sonidos'}
-            >
-              {isMuted ? '🔇' : '🔊'}
-            </button>
+          {/* Right: Notifications, Currency Toggle & Wallet */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
 
             {/* Notification Bell with Badge */}
             <div style={{ position: 'relative' }}>
@@ -138,13 +120,13 @@ export default function Header({ onToggleSidebar }) {
                   background: unreadCount > 0 ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                   border: unreadCount > 0 ? '1px solid var(--border-cyan)' : '1px solid var(--border-glass)',
                   borderRadius: '50%',
-                  width: '36px',
-                  height: '36px',
+                  width: '34px',
+                  height: '34px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  fontSize: '0.95rem',
+                  fontSize: '0.9rem',
                   position: 'relative'
                 }}
                 title="Notificaciones en Tiempo Real"
@@ -158,10 +140,10 @@ export default function Header({ onToggleSidebar }) {
                     background: '#f87171',
                     color: '#fff',
                     borderRadius: '50%',
-                    fontSize: '0.65rem',
+                    fontSize: '0.6rem',
                     fontWeight: '800',
-                    width: '18px',
-                    height: '18px',
+                    width: '16px',
+                    height: '16px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -175,37 +157,34 @@ export default function Header({ onToggleSidebar }) {
               {/* Responsive Notifications Dropdown with Backdrop */}
               {showNotificationsDrawer && (
                 <>
-                  {/* Backdrop Click Outside */}
                   <div
                     onClick={() => setShowNotificationsDrawer(false)}
                     style={{
                       position: 'fixed',
                       inset: 0,
                       zIndex: 90,
-                      background: 'rgba(0,0,0,0.3)'
+                      background: 'rgba(0,0,0,0.4)'
                     }}
                   />
 
-                  {/* Dropdown Panel */}
                   <div className="glass-panel animate-fade" style={{
                     position: 'absolute',
-                    top: '46px',
+                    top: '44px',
                     right: 0,
-                    width: 'min(360px, 92vw)',
-                    maxHeight: '480px',
+                    width: 'min(340px, 90vw)',
+                    maxHeight: '460px',
                     display: 'flex',
                     flexDirection: 'column',
                     borderRadius: 'var(--radius-lg)',
                     border: '1px solid var(--border-cyan)',
-                    boxShadow: '0 12px 35px rgba(0,0,0,0.75)',
+                    boxShadow: '0 12px 35px rgba(0,0,0,0.8)',
                     padding: '16px',
                     zIndex: 100,
-                    background: 'rgba(13, 17, 26, 0.96)',
+                    background: 'rgba(13, 17, 26, 0.97)',
                     backdropFilter: 'blur(20px)'
                   }}>
-                    {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
-                      <div style={{ fontWeight: '800', fontSize: '0.9rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ fontWeight: '800', fontSize: '0.88rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span>🔔</span> Notificaciones & Alertas
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -226,32 +205,23 @@ export default function Header({ onToggleSidebar }) {
                       </div>
                     </div>
 
-                    {/* Notifications List */}
-                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '2px' }}>
+                    <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, paddingRight: '4px' }}>
                       {notifications.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>📭</div>
-                          No tienes notificaciones pendientes.
+                        <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--text-muted)' }}>
+                          <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>🔕</div>
+                          <div style={{ fontSize: '0.82rem' }}>No tienes notificaciones pendientes</div>
                         </div>
                       ) : (
-                        notifications.map((n) => {
-                          const badge = getTypeBadge(n.type);
+                        notifications.map((notif) => {
+                          const badge = getTypeBadge(notif.type);
                           return (
                             <div
-                              key={n.id}
-                              onClick={() => {
-                                if (n.metadata?.url) {
-                                  navigate(n.metadata.url);
-                                  setShowNotificationsDrawer(false);
-                                }
-                              }}
+                              key={notif.id}
                               style={{
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                borderRadius: 'var(--radius-md)',
                                 padding: '10px 12px',
-                                cursor: n.metadata?.url ? 'pointer' : 'default',
-                                border: '1px solid var(--border-glass)',
-                                transition: 'all 0.2s ease',
+                                borderRadius: 'var(--radius-md)',
+                                background: notif.is_read ? 'rgba(255, 255, 255, 0.02)' : 'rgba(6, 182, 212, 0.08)',
+                                border: notif.is_read ? '1px solid var(--border-glass)' : '1px solid var(--border-cyan)',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '4px'
@@ -261,72 +231,56 @@ export default function Header({ onToggleSidebar }) {
                                 <span style={{
                                   fontSize: '0.65rem',
                                   fontWeight: '800',
+                                  color: badge.color,
+                                  background: badge.bg,
                                   padding: '2px 6px',
                                   borderRadius: '4px',
-                                  background: badge.bg,
-                                  color: badge.color
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
                                 }}>
-                                  {badge.icon} {badge.label}
+                                  <span>{badge.icon}</span> {badge.label}
                                 </span>
                                 <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                                  {new Date(n.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
 
-                              <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#fff', marginTop: '2px' }}>
-                                {n.title}
+                              <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#fff' }}>
+                                {notif.title}
                               </div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                                {n.body}
+                                {notif.body}
                               </div>
-
-                              {n.metadata?.url && (
-                                <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: '700', marginTop: '4px', textAlign: 'right' }}>
-                                  Ver detalle ➔
-                                </div>
-                              )}
                             </div>
                           );
                         })
                       )}
                     </div>
-
-                    {/* Footer link to Profile Notifications */}
-                    <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '10px', marginTop: '8px', textAlign: 'center' }}>
-                      <Link
-                        to="/profile?tab=notifications"
-                        onClick={() => setShowNotificationsDrawer(false)}
-                        style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', textDecoration: 'none', fontWeight: '700' }}
-                      >
-                        Ver todas mis notificaciones ➔
-                      </Link>
-                    </div>
                   </div>
                 </>
               )}
             </div>
-            
-            {/* Currency Selector (Toggle USDT / GTQ) */}
+
+            {/* Currency Pill Switcher */}
             <div
               onClick={toggleCurrency}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                background: 'rgba(17, 24, 39, 0.9)',
-                border: '1px solid var(--border-glass)',
+                background: 'rgba(255, 255, 255, 0.06)',
                 borderRadius: 'var(--radius-full)',
-                padding: '3px',
+                padding: '2px',
+                border: '1px solid var(--border-glass)',
                 cursor: 'pointer',
-                userSelect: 'none',
-                transition: 'all 0.25s ease'
+                fontSize: '0.68rem'
               }}
-              title="Cambiar moneda de visualización"
+              title="Cambiar moneda (USDT / GTQ Quetzales)"
             >
               <div style={{
-                padding: '4px 10px',
+                padding: '3px 7px',
                 borderRadius: 'var(--radius-full)',
-                fontSize: '0.75rem',
-                fontWeight: '700',
+                fontWeight: '800',
                 background: currency === 'USDT' ? 'var(--accent-cyan)' : 'transparent',
                 color: currency === 'USDT' ? '#000' : 'var(--text-muted)',
                 transition: 'all 0.2s ease'
@@ -334,10 +288,9 @@ export default function Header({ onToggleSidebar }) {
                 USDT
               </div>
               <div style={{
-                padding: '4px 10px',
+                padding: '3px 7px',
                 borderRadius: 'var(--radius-full)',
-                fontSize: '0.75rem',
-                fontWeight: '700',
+                fontWeight: '800',
                 background: currency === 'GTQ' ? 'var(--accent-cyan)' : 'transparent',
                 color: currency === 'GTQ' ? '#000' : 'var(--text-muted)',
                 transition: 'all 0.2s ease'
@@ -346,37 +299,36 @@ export default function Header({ onToggleSidebar }) {
               </div>
             </div>
 
-            {/* Permanent Wallet Balance Indicator */}
+            {/* Permanent Wallet Balance Indicator (Responsive Compact) */}
             <button
               onClick={() => user ? setShowWalletModal(true) : navigate('/profile')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4) 0%, rgba(6, 182, 212, 0.15) 100%)',
+                gap: '5px',
+                background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.5) 0%, rgba(6, 182, 212, 0.2) 100%)',
                 border: '1px solid var(--border-cyan)',
                 borderRadius: 'var(--radius-full)',
-                padding: '6px 14px',
+                padding: '5px 10px',
                 cursor: 'pointer',
                 color: 'var(--text-main)',
                 transition: 'all 0.2s ease',
-                boxShadow: '0 0 10px rgba(6, 182, 212, 0.15)'
+                boxShadow: '0 0 10px rgba(6, 182, 212, 0.15)',
+                whiteSpace: 'nowrap'
               }}
-              title="Saldo de tu Billetera - Haz clic para ver pedidos y recargas"
+              title="Saldo de tu Billetera"
             >
-              <span style={{ fontSize: '1rem' }}>💎</span>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '600', lineHeight: 1 }}>SALDO</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--accent-cyan)', lineHeight: 1.2 }}>
-                  ${walletBalance.toFixed(2)} <span style={{ fontSize: '0.7rem' }}>USDT</span>
-                </div>
-              </div>
+              <span style={{ fontSize: '0.9rem' }}>💎</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+                ${walletBalance.toFixed(2)}
+              </span>
             </button>
+
           </div>
         </div>
       </header>
 
-      {/* Wallet Info / Order History Modal */}
+      {/* Wallet Info Modal */}
       {showWalletModal && (
         <div style={{
           position: 'fixed',
@@ -391,7 +343,7 @@ export default function Header({ onToggleSidebar }) {
         }}>
           <div className="glass-panel animate-fade" style={{
             width: '100%',
-            maxWidth: '440px',
+            maxWidth: '420px',
             borderRadius: 'var(--radius-lg)',
             padding: '24px',
             border: '1px solid var(--border-cyan)'
