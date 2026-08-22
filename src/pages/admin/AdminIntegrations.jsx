@@ -7,7 +7,10 @@ import {
   getSupplierWalletBalance,
   getSupplierPinsCatalog,
   processGameRecharge,
-  RECARGAS_AMERICA_CONFIG
+  RECARGAS_AMERICA_CONFIG,
+  getActiveRecargasAmericaKey,
+  setActiveRecargasAmericaKey,
+  isRecargasAmericaSandbox
 } from '../../../notificaciones y apis/apis/index';
 import {
   DEFAULT_NOTIFICATION_TEMPLATES,
@@ -28,12 +31,14 @@ export default function AdminIntegrations() {
   // ==========================================
   // STATE: RECARGAS AMÉRICA PROVIDER
   // ==========================================
-  const [apiKeyInput, setApiKeyInput] = useState(RECARGAS_AMERICA_CONFIG.apiKey);
+  const [apiKeyInput, setApiKeyInput] = useState(getActiveRecargasAmericaKey());
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [walletBalance, setWalletBalance] = useState(null);
   const [loadingWallet, setLoadingWallet] = useState(false);
   const [catalogPins, setCatalogPins] = useState([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  const isSandbox = apiKeyInput.startsWith('ra_test_');
 
   // Live Test Sandbox for Recargas América
   const [testUid, setTestUid] = useState('29386038');
@@ -117,23 +122,52 @@ export default function AdminIntegrations() {
   };
 
   const handleSaveApiKey = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!apiKeyInput.trim()) return;
     setSavingApiKey(true);
     try {
-      const { error } = await supabase
-        .from('config')
-        .update({ supplier_api_key: apiKeyInput.trim() })
-        .eq('id', 1);
+      setActiveRecargasAmericaKey(apiKeyInput.trim());
 
-      if (error) throw error;
-      alert('¡Clave API de Recargas América guardada exitosamente!');
+      try {
+        await supabase
+          .from('config')
+          .update({ supplier_api_key: apiKeyInput.trim() })
+          .eq('id', 1);
+      } catch (dbErr) {
+        console.warn('Config table update warning:', dbErr);
+      }
+
+      alert(
+        apiKeyInput.trim().startsWith('ra_test_')
+          ? '🧪 Modo PRUEBAS (Sandbox) Activado.'
+          : '🟢 ¡MODO PRODUCCIÓN (LIVE) ACTIVADO CON ÉXITO!\n\nTodas las compras enviarán recargas reales en vivo a Free Fire y descontarán saldo de tu cuenta de Recargas América.'
+      );
       await loadRecargasAmericaData();
     } catch (err) {
       alert('Error guardando clave: ' + err.message);
     } finally {
       setSavingApiKey(false);
     }
+  };
+
+  const handleSetProductionKeyPrompt = () => {
+    const key = prompt('Ingresa tu Clave API Real de Producción de Recargas América (la que obtienes en tu panel oficial):', apiKeyInput.startsWith('ra_test_') ? '' : apiKeyInput);
+    if (key && key.trim()) {
+      setApiKeyInput(key.trim());
+      setActiveRecargasAmericaKey(key.trim());
+      supabase.from('config').update({ supplier_api_key: key.trim() }).eq('id', 1).then(() => {});
+      alert('🟢 ¡MODO PRODUCCIÓN (LIVE) ACTIVADO!\n\nClave guardada: ' + key.trim().slice(0, 10) + '...');
+      loadRecargasAmericaData();
+    }
+  };
+
+  const handleSetSandboxMode = () => {
+    const sandboxKey = 'ra_test_6izZgKsIyoD1nSF5J3HXVEZvubJEaBoC8i9coleg';
+    setApiKeyInput(sandboxKey);
+    setActiveRecargasAmericaKey(sandboxKey);
+    supabase.from('config').update({ supplier_api_key: sandboxKey }).eq('id', 1).then(() => {});
+    alert('🧪 Modo PRUEBAS (Sandbox) restaurado.');
+    loadRecargasAmericaData();
   };
 
   const handleExecuteSandboxTest = async (e) => {
@@ -350,8 +384,6 @@ export default function AdminIntegrations() {
     }
   };
 
-  const isSandbox = apiKeyInput.startsWith('ra_test_');
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
@@ -454,11 +486,52 @@ export default function AdminIntegrations() {
 
           {/* API Key Configuration Form */}
           <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', border: '1px solid var(--border-glass)' }}>
-            <h3 style={{ fontSize: '1rem', margin: '0 0 8px 0', color: 'var(--accent-cyan)' }}>
-              🔑 Configuración de Clave API (Recargas América)
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '1rem', margin: 0, color: 'var(--accent-cyan)' }}>
+                🔑 Configuración de Clave API (Recargas América)
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={handleSetProductionKeyPrompt}
+                  style={{
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    border: '1px solid rgba(52, 211, 153, 0.4)',
+                    color: '#34d399',
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.78rem',
+                    fontWeight: '800',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🟢 Pasar a Modo Producción (LIVE)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSetSandboxMode}
+                  style={{
+                    background: 'rgba(251, 191, 36, 0.15)',
+                    border: '1px solid rgba(251, 191, 36, 0.4)',
+                    color: '#fbbf24',
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🧪 Modo Pruebas (Sandbox)
+                </button>
+              </div>
+            </div>
+
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Pega aquí tu clave `ra_test_...` (Sandbox) para pruebas sin costo o `ra_live_...` para despachos reales con cobro a tu saldo.
+              {isSandbox ? (
+                <span>⚠️ <strong>Estás en Modo Sandbox (Pruebas).</strong> Pega tu clave real de producción de Recargas América abajo o haz clic en "🟢 Pasar a Modo Producción" para que las recargas descuenten saldo real y entreguen diamantes de verdad.</span>
+              ) : (
+                <span>✅ <strong>¡Estás en MODO PRODUCCIÓN (LIVE)!</strong> Todas las órdenes aprobadas enviarán diamantes reales a Free Fire en tiempo real.</span>
+              )}
             </p>
 
             <form onSubmit={handleSaveApiKey} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -467,13 +540,13 @@ export default function AdminIntegrations() {
                 required
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="ra_test_..."
+                placeholder="Pega tu clave API aquí..."
                 style={{
                   flex: 1,
                   padding: '10px 14px',
                   borderRadius: 'var(--radius-sm)',
                   background: '#0d111a',
-                  border: '1px solid var(--border-cyan)',
+                  border: isSandbox ? '1px solid var(--border-cyan)' : '1px solid rgba(52, 211, 153, 0.6)',
                   color: '#fff',
                   fontFamily: 'monospace',
                   fontSize: '0.85rem'

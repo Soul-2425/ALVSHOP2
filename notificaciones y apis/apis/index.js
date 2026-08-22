@@ -23,18 +23,40 @@ export const RECARGAS_AMERICA_CONFIG = {
 // Cache en memoria para respuestas ultra-rápidas
 const uidCache = new Map();
 
+export function getActiveRecargasAmericaKey() {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('alv_supplier_api_key');
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return RECARGAS_AMERICA_CONFIG.apiKey;
+}
+
+export function setActiveRecargasAmericaKey(newKey) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('alv_supplier_api_key', newKey.trim());
+  }
+  RECARGAS_AMERICA_CONFIG.apiKey = newKey.trim();
+}
+
+export function isRecargasAmericaSandbox() {
+  const key = getActiveRecargasAmericaKey();
+  return key.startsWith('ra_test_');
+}
+
 /**
  * Obtiene los headers de autenticación para Recargas América
  */
-async function getRecargasAmericaHeaders() {
-  let activeKey = RECARGAS_AMERICA_CONFIG.apiKey;
+export async function getRecargasAmericaHeaders() {
+  let activeKey = getActiveRecargasAmericaKey();
+
   try {
     const { data: configRow } = await supabase.from('config').select('supplier_api_key').single();
-    if (configRow?.supplier_api_key) {
-      activeKey = configRow.supplier_api_key;
+    if (configRow?.supplier_api_key && configRow.supplier_api_key.trim()) {
+      activeKey = configRow.supplier_api_key.trim();
+      setActiveRecargasAmericaKey(activeKey);
     }
   } catch (e) {
-    // Usar default
+    // Usar local / default
   }
 
   return {
