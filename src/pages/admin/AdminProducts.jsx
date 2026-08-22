@@ -1,12 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
+// Definición oficial de paquetes de Recargas América
+const OFFICIAL_FF_CATALOG = [
+  { name: '100 + 10 Diamantes Free Fire (Recarga Directa)', subcat: '100+10', price_public: 1.00, price_reseller: 0.85, cost: 0.71, is_active: true, type: 'direct' },
+  { name: '310 + 31 Diamantes Free Fire (Recarga Directa)', subcat: '310+31', price_public: 2.60, price_reseller: 2.30, cost: 2.14, is_active: true, type: 'direct' },
+  { name: '520 + 52 Diamantes Free Fire (Recarga Directa)', subcat: '520+52', price_public: 4.30, price_reseller: 3.80, cost: 3.62, is_active: true, type: 'direct' },
+  { name: '1060 + 106 Diamantes Free Fire (Recarga Directa)', subcat: '1060+106', price_public: 7.90, price_reseller: 7.00, cost: 6.71, is_active: true, type: 'direct' },
+  { name: '2180 + 218 Diamantes Free Fire (Recarga Directa)', subcat: '2180+218', price_public: 15.50, price_reseller: 14.00, cost: 13.32, is_active: true, type: 'direct' },
+  { name: '5600 + 560 Diamantes Free Fire (Recarga Directa)', subcat: '5600+560', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: true, type: 'direct' },
+  { name: 'Pin Digital Free Fire 100 Diamantes', subcat: 'Pin 100', price_public: 1.00, price_reseller: 0.85, cost: 0.71, is_active: false, type: 'pin' },
+  { name: 'Pin Digital Free Fire 310 Diamantes', subcat: 'Pin 310', price_public: 2.60, price_reseller: 2.30, cost: 2.14, is_active: false, type: 'pin' },
+  { name: 'Pin Digital Free Fire 520 Diamantes', subcat: 'Pin 520', price_public: 4.30, price_reseller: 3.80, cost: 3.62, is_active: false, type: 'pin' },
+  { name: 'Pin Digital Free Fire 1060 Diamantes', subcat: 'Pin 1060', price_public: 7.90, price_reseller: 7.00, cost: 6.71, is_active: false, type: 'pin' },
+  { name: 'Pin Digital Free Fire 2180 Diamantes', subcat: 'Pin 2180', price_public: 15.50, price_reseller: 14.00, cost: 13.32, is_active: false, type: 'pin' },
+  { name: 'Pin Digital Free Fire 5600 Diamantes', subcat: 'Pin 5600', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: false, type: 'pin' }
+];
+
 export default function AdminProducts() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncingCatalog, setSyncingCatalog] = useState(false);
+  const [filterType, setFilterType] = useState('all'); // 'all', 'direct', 'pin', 'other'
 
   // Modal State for Products
   const [showProductModal, setShowProductModal] = useState(false);
@@ -54,30 +71,94 @@ export default function AdminProducts() {
 
   const loadData = async () => {
     setLoading(true);
-    const { data: catData } = await supabase.from('categories').select('*').order('name');
-    const { data: subcatData } = await supabase.from('subcategories').select('*').order('name');
-    const { data: prodData } = await supabase
-      .from('products')
-      .select('*, subcategories(id, name, category_id, categories(id, name, icon, image_url))')
-      .order('created_at', { ascending: false });
+    try {
+      const { data: catData } = await supabase.from('categories').select('*').order('name');
+      const { data: subcatData } = await supabase.from('subcategories').select('*').order('name');
+      const { data: prodData } = await supabase
+        .from('products')
+        .select('*, subcategories(id, name, category_id, categories(id, name, icon, image_url))')
+        .order('created_at', { ascending: false });
 
-    if (catData) setCategories(catData);
-    if (subcatData) setSubcategories(subcatData);
-    if (prodData) setProducts(prodData);
-    setLoading(false);
+      if (catData) setCategories(catData);
+      if (subcatData) setSubcategories(subcatData);
+      if (prodData) setProducts(prodData);
+
+      // Auto-populate packages if fewer than 6 packages exist
+      if (prodData && prodData.length < 8 && catData) {
+        autoSeedCatalogIfMissing(catData, subcatData || [], prodData);
+      }
+    } catch (err) {
+      console.warn('Error loading products:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-seed missing official Free Fire packages
+  const autoSeedCatalogIfMissing = async (cats, subs, currentProds) => {
+    let catId = cats.find(c => c.name.toLowerCase().includes('diamante') || c.name.toLowerCase().includes('free fire'))?.id;
+    if (!catId && cats.length > 0) catId = cats[0].id;
+    if (!catId) return;
+
+    for (const item of OFFICIAL_FF_CATALOG) {
+      const exists = currentProds.some(p => p.name.toLowerCase().includes(item.subcat.toLowerCase()) || p.name.toLowerCase() === item.name.toLowerCase());
+      if (!exists) {
+        try {
+          // Subcategory
+          let targetSubId = subs.find(s => s.name.toLowerCase() === item.subcat.toLowerCase())?.id;
+          if (!targetSubId) {
+            const { data: newSub } = await supabase.from('subcategories').insert({
+              category_id: catId,
+              name: item.subcat,
+              slug: item.subcat.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now()
+            }).select().single();
+            if (newSub) targetSubId = newSub.id;
+          }
+
+          // Product
+          const { data: newProd } = await supabase.from('products').insert({
+            subcategory_id: targetSubId || null,
+            name: item.name,
+            description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega automatizada e inmediata.',
+            price_public: item.price_public,
+            price_reseller: item.price_reseller,
+            cost: item.cost,
+            stock: 999,
+            is_active: item.is_active,
+            image_url: item.type === 'direct' 
+              ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60'
+              : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60',
+            requires_validation: true,
+            validation_type: 'Free Fire',
+            button_action_text: 'Solicitar'
+          }).select().single();
+
+          if (newProd) {
+            await supabase.from('product_fields').insert({
+              product_id: newProd.id,
+              field_name: 'ID de Jugador (UID)',
+              field_type: 'text',
+              is_required: true,
+              sort_order: 0
+            });
+            setProducts(prev => [newProd, ...prev]);
+          }
+        } catch (e) {
+          console.warn('Auto-seed item error:', e);
+        }
+      }
+    }
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  // Update selected subcategories list when selected category changes
   const filteredSubcategories = subcategories.filter(s => s.category_id === selectedCat);
 
   // Instant Availability Toggle Switch
   const handleToggleProductActive = async (prodId, currentStatus) => {
     const newStatus = !currentStatus;
-    // Optimistic UI update
     setProducts(prev => prev.map(p => p.id === prodId ? { ...p, is_active: newStatus } : p));
     try {
       const { error } = await supabase.from('products').update({ is_active: newStatus }).eq('id', prodId);
@@ -104,7 +185,6 @@ export default function AdminProducts() {
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
-        // Fallback to Data URL if storage bucket fails
         const reader = new FileReader();
         reader.onload = () => {
           setImageTarget(reader.result);
@@ -373,13 +453,10 @@ export default function AdminProducts() {
     }
   };
 
-  // Sincronización Oficial del Catálogo de Free Fire (Directas Activas, Pines Ocultos)
+  // Sincronización Manual de Paquetes
   const handleSyncFreeFireCatalog = async () => {
-    if (!confirm('¿Deseas sincronizar los 6 Paquetes Oficiales de Recargas Directas (Activos) y 6 Pines Digitales (Ocultos por defecto)?')) return;
     setSyncingCatalog(true);
-
     try {
-      // 1. Obtener o crear Categoría Diamantes Free Fire
       let catId = categories.find(c => c.name.toLowerCase().includes('diamante') || c.name.toLowerCase().includes('free fire'))?.id;
       if (!catId) {
         const { data: newCat, error: catErr } = await supabase.from('categories').insert({
@@ -391,24 +468,7 @@ export default function AdminProducts() {
         catId = newCat.id;
       }
 
-      // 2. Lista de paquetes
-      const catalogSeed = [
-        { name: '100 + 10 Diamantes Free Fire (Recarga Directa)', subcat: '100+10', price_public: 1.00, price_reseller: 0.85, cost: 0.71, is_active: true },
-        { name: '310 + 31 Diamantes Free Fire (Recarga Directa)', subcat: '310+31', price_public: 2.60, price_reseller: 2.30, cost: 2.14, is_active: true },
-        { name: '520 + 52 Diamantes Free Fire (Recarga Directa)', subcat: '520+52', price_public: 4.30, price_reseller: 3.80, cost: 3.62, is_active: true },
-        { name: '1060 + 106 Diamantes Free Fire (Recarga Directa)', subcat: '1060+106', price_public: 7.90, price_reseller: 7.00, cost: 6.71, is_active: true },
-        { name: '2180 + 218 Diamantes Free Fire (Recarga Directa)', subcat: '2180+218', price_public: 15.50, price_reseller: 14.00, cost: 13.32, is_active: true },
-        { name: '5600 + 560 Diamantes Free Fire (Recarga Directa)', subcat: '5600+560', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: true },
-        { name: 'Pin Digital Free Fire 100 Diamantes', subcat: 'Pin 100', price_public: 1.00, price_reseller: 0.85, cost: 0.71, is_active: false },
-        { name: 'Pin Digital Free Fire 310 Diamantes', subcat: 'Pin 310', price_public: 2.60, price_reseller: 2.30, cost: 2.14, is_active: false },
-        { name: 'Pin Digital Free Fire 520 Diamantes', subcat: 'Pin 520', price_public: 4.30, price_reseller: 3.80, cost: 3.62, is_active: false },
-        { name: 'Pin Digital Free Fire 1060 Diamantes', subcat: 'Pin 1060', price_public: 7.90, price_reseller: 7.00, cost: 6.71, is_active: false },
-        { name: 'Pin Digital Free Fire 2180 Diamantes', subcat: 'Pin 2180', price_public: 15.50, price_reseller: 14.00, cost: 13.32, is_active: false },
-        { name: 'Pin Digital Free Fire 5600 Diamantes', subcat: 'Pin 5600', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: false }
-      ];
-
-      for (const item of catalogSeed) {
-        // Crear subcategoría si no existe
+      for (const item of OFFICIAL_FF_CATALOG) {
         let targetSubId = subcategories.find(s => s.name.toLowerCase() === item.subcat.toLowerCase() && s.category_id === catId)?.id;
         if (!targetSubId) {
           const { data: createdSub } = await supabase.from('subcategories').insert({
@@ -419,10 +479,9 @@ export default function AdminProducts() {
           if (createdSub) targetSubId = createdSub.id;
         }
 
-        // Verificar si el producto ya existe
         const existing = products.find(p => p.name.toLowerCase() === item.name.toLowerCase());
         if (!existing) {
-          const { data: newP, error: pErr } = await supabase.from('products').insert({
+          const { data: newP } = await supabase.from('products').insert({
             subcategory_id: targetSubId || null,
             name: item.name,
             description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega automatizada e inmediata.',
@@ -431,7 +490,9 @@ export default function AdminProducts() {
             cost: item.cost,
             stock: 999,
             is_active: item.is_active,
-            image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60',
+            image_url: item.type === 'direct'
+              ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60'
+              : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60',
             requires_validation: true,
             validation_type: 'Free Fire',
             button_action_text: 'Solicitar'
@@ -450,7 +511,7 @@ export default function AdminProducts() {
       }
 
       await loadData();
-      alert('¡Catálogo de Recargas Oficiales sincronizado con éxito!\n\n🟢 6 Paquetes de Recarga Directa Activos\n🔴 6 Pines Digitales Creados pero Desactivados (Listos para activar cuando gustes con el switch).');
+      alert('¡Catálogo de Recargas Oficiales sincronizado exitosamente!\n\n🟢 6 Paquetes de Recarga Directa Activos\n🔴 6 Pines Digitales Creados (Desactivados por defecto)');
     } catch (err) {
       alert('Error sincronizando catálogo: ' + err.message);
     } finally {
@@ -536,7 +597,7 @@ export default function AdminProducts() {
 
       await loadData();
       setShowProductModal(false);
-      alert(editingProductId ? '¡Producto actualizado con éxito!' : '¡Producto publicado exitosamente en su categoría correspondiente!');
+      alert(editingProductId ? '¡Producto actualizado con éxito!' : '¡Producto publicado exitosamente!');
     } catch (err) {
       alert('Error guardando producto: ' + err.message);
     } finally {
@@ -544,14 +605,31 @@ export default function AdminProducts() {
     }
   };
 
+  // Filtered Products for the table
+  const displayedProducts = products.filter(p => {
+    const isDirect = p.name.toLowerCase().includes('directa') || (p.name.toLowerCase().includes('diamante') && !p.name.toLowerCase().includes('pin'));
+    const isPin = p.name.toLowerCase().includes('pin');
+
+    if (filterType === 'direct') return isDirect;
+    if (filterType === 'pin') return isPin;
+    if (filterType === 'other') return !isDirect && !isPin;
+    return true;
+  });
+
+  const directCount = products.filter(p => p.name.toLowerCase().includes('directa') || (p.name.toLowerCase().includes('diamante') && !p.name.toLowerCase().includes('pin'))).length;
+  const pinCount = products.filter(p => p.name.toLowerCase().includes('pin')).length;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      
       {/* Header Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Catálogo de Productos & Precios</h3>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Organización por Categorías, Subcategorías, Switch de Disponibilidad y Precios
+          <h3 style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🛍️</span> Catálogo de Productos & Recargas América
+          </h3>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+            Gestiona la visibilidad pública con el switch, edita precios de venta y ajusta paquetes
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -561,7 +639,7 @@ export default function AdminProducts() {
             className="btn-cyan"
             style={{ fontSize: '0.82rem', background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)' }}
           >
-            {syncingCatalog ? 'Sincronizando...' : '⚡ Sincronizar Paquetes Free Fire'}
+            {syncingCatalog ? 'Sincronizando...' : '⚡ Sincronizar Paquetes de Recargas'}
           </button>
           <button onClick={() => setShowCategoryModal(true)} className="btn-glass" style={{ fontSize: '0.82rem' }}>
             📁 Categorías ({categories.length})
@@ -576,31 +654,98 @@ export default function AdminProducts() {
         </div>
       </div>
 
+      {/* Recargas América Status Highlight Banner */}
+      <div className="glass-panel" style={{
+        borderRadius: 'var(--radius-md)',
+        padding: '16px 20px',
+        border: '1px solid var(--border-cyan)',
+        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(30, 58, 138, 0.3) 100%)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '1.8rem' }}>💎</span>
+          <div>
+            <div style={{ fontWeight: '800', color: '#fff', fontSize: '0.95rem' }}>
+              Integración Oficial: Recargas América (API Conectada)
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              🟢 <strong>Recargas Directas:</strong> Activas y visibles para comprar por UID. | 🔴 <strong>Pines Digitales:</strong> Ocultos por defecto (actívalos con el switch cuando gustes).
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', fontSize: '0.75rem', fontWeight: '800' }}>
+            6 Directas ({directCount})
+          </span>
+          <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: '0.75rem', fontWeight: '800' }}>
+            6 Pines ({pinCount})
+          </span>
+        </div>
+      </div>
+
+      {/* Filter Tabs for Easy Management */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {[
+          { key: 'all', label: `Todos los Productos (${products.length})`, icon: '🌐' },
+          { key: 'direct', label: `💎 Recargas Directas (${directCount})`, icon: '💎' },
+          { key: 'pin', label: `📦 Pines Digitales (${pinCount})`, icon: '📦' },
+          { key: 'other', label: `📁 Otras Categorías (${products.length - directCount - pinCount})`, icon: '📁' }
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setFilterType(tab.key)}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 'var(--radius-full)',
+              fontSize: '0.8rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              background: filterType === tab.key ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
+              color: filterType === tab.key ? '#000' : 'var(--text-main)',
+              border: filterType === tab.key ? 'none' : '1px solid var(--border-glass)'
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Products Table */}
       <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
               <th style={{ padding: '10px 8px' }}>Producto</th>
-              <th style={{ padding: '10px 8px' }}>Categoría / Subcategoría</th>
-              <th style={{ padding: '10px 8px' }}>Público</th>
-              <th style={{ padding: '10px 8px' }}>Revendedor</th>
-              <th style={{ padding: '10px 8px' }}>Costo</th>
-              <th style={{ padding: '10px 8px' }}>Ganancia</th>
+              <th style={{ padding: '10px 8px' }}>Categoría / Paquete</th>
+              <th style={{ padding: '10px 8px' }}>Precio Público</th>
+              <th style={{ padding: '10px 8px' }}>Precio Revendedor</th>
+              <th style={{ padding: '10px 8px' }}>Costo Proveedor</th>
+              <th style={{ padding: '10px 8px' }}>Tu Ganancia</th>
               <th style={{ padding: '10px 8px' }}>Stock</th>
-              <th style={{ padding: '10px 8px', textAlign: 'center' }}>Visibilidad / Switch</th>
+              <th style={{ padding: '10px 8px', textAlign: 'center' }}>Visibilidad en Catálogo</th>
               <th style={{ padding: '10px 8px', textAlign: 'center' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {products.length === 0 ? (
+            {loading ? (
               <tr>
                 <td colSpan="9" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                  No hay productos registrados aún. Haz clic en "Sincronizar Paquetes Free Fire" o "Crear Nuevo Producto".
+                  Cargando catálogo...
+                </td>
+              </tr>
+            ) : displayedProducts.length === 0 ? (
+              <tr>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                  No se encontraron productos en esta vista. Haz clic en "⚡ Sincronizar Paquetes de Recargas".
                 </td>
               </tr>
             ) : (
-              products.map((p) => {
+              displayedProducts.map((p) => {
                 const margin = (Number(p.price_public) - Number(p.cost)).toFixed(2);
                 const catName = p.subcategories?.categories?.name || p.subcategories?.name;
                 const catIcon = p.subcategories?.categories?.icon || '📁';
@@ -608,7 +753,7 @@ export default function AdminProducts() {
                 const isProductActive = p.is_active !== false;
 
                 return (
-                  <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)', opacity: isProductActive ? 1 : 0.6 }}>
+                  <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)', opacity: isProductActive ? 1 : 0.65 }}>
                     <td style={{ padding: '12px 8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{
@@ -649,7 +794,7 @@ export default function AdminProducts() {
                         </div>
                       ) : (
                         <span style={{ fontSize: '0.75rem', color: '#f87171', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-                          ⚠️ Sin Categoría (Clic en Editar)
+                          ⚠️ Sin Categoría
                         </span>
                       )}
                     </td>
@@ -668,20 +813,20 @@ export default function AdminProducts() {
                     </td>
                     <td style={{ padding: '12px 8px' }}>{p.stock} u.</td>
 
-                    {/* Quick Visibility Switch */}
+                    {/* Quick Visibility Switch Button */}
                     <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                       <button
                         type="button"
                         onClick={() => handleToggleProductActive(p.id, isProductActive)}
                         style={{
-                          padding: '4px 10px',
+                          padding: '5px 12px',
                           borderRadius: '20px',
-                          fontSize: '0.72rem',
+                          fontSize: '0.75rem',
                           fontWeight: '800',
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '5px',
+                          gap: '6px',
                           background: isProductActive ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                           color: isProductActive ? '#34d399' : '#f87171',
                           border: isProductActive ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(239, 68, 68, 0.4)',
@@ -690,10 +835,11 @@ export default function AdminProducts() {
                         title={isProductActive ? 'Clic para ocultar del catálogo público' : 'Clic para hacer visible en el catálogo público'}
                       >
                         <span>{isProductActive ? '🟢' : '🔴'}</span>
-                        <span>{isProductActive ? 'Visible' : 'Oculto'}</span>
+                        <span>{isProductActive ? 'Visible al Público' : 'Oculto'}</span>
                       </button>
                     </td>
 
+                    {/* Actions: Edit & Delete */}
                     <td style={{ padding: '12px 8px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '8px' }}>
                         <button
@@ -702,10 +848,11 @@ export default function AdminProducts() {
                             background: 'rgba(59, 130, 246, 0.15)',
                             border: '1px solid rgba(59, 130, 246, 0.3)',
                             color: '#60a5fa',
-                            padding: '4px 8px',
+                            padding: '5px 10px',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '0.75rem'
+                            fontSize: '0.78rem',
+                            fontWeight: '700'
                           }}
                         >
                           ✏️ Editar
@@ -716,10 +863,10 @@ export default function AdminProducts() {
                             background: 'rgba(239, 68, 68, 0.15)',
                             border: '1px solid rgba(239, 68, 68, 0.3)',
                             color: '#f87171',
-                            padding: '4px 8px',
+                            padding: '5px 8px',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '0.75rem'
+                            fontSize: '0.78rem'
                           }}
                         >
                           🗑️
@@ -768,7 +915,6 @@ export default function AdminProducts() {
               <button onClick={() => setShowCategoryModal(false)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
-            {/* Create Category Form */}
             <form onSubmit={handleCreateCategory} style={{
               background: 'rgba(255, 255, 255, 0.02)',
               border: '1px solid var(--border-glass)',
@@ -819,7 +965,6 @@ export default function AdminProducts() {
               </button>
             </form>
 
-            {/* List of Categories & Subcategories */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {categories.map((cat) => {
                 const subsForCat = subcategories.filter(s => s.category_id === cat.id);
@@ -849,7 +994,7 @@ export default function AdminProducts() {
                           className="btn-glass"
                           style={{ padding: '4px 10px', fontSize: '0.75rem' }}
                         >
-                          {isSelectedForSub ? 'Ocultar Subcategorías' : '➕ Gestionar Subcategorías'}
+                          {isSelectedForSub ? 'Ocultar' : '➕ Subcategorías'}
                         </button>
                         <button
                           type="button"
@@ -861,7 +1006,6 @@ export default function AdminProducts() {
                       </div>
                     </div>
 
-                    {/* Subcategories Editor Panel */}
                     {isSelectedForSub && (
                       <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-glass)' }}>
                         <form onSubmit={handleCreateSubcategory} style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
@@ -938,14 +1082,14 @@ export default function AdminProducts() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#fff' }}>
-                {editingProductId ? '✏️ Editar Producto' : '➕ Crear Nuevo Producto'}
+                {editingProductId ? '✏️ Editar Producto & Precio' : '➕ Crear Nuevo Producto'}
               </h3>
               <button onClick={() => setShowProductModal(false)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
             <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               
-              {/* Category and Subcategory Selector with Inline Quick Create Buttons */}
+              {/* Category and Subcategory Selector */}
               <div style={{ background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
                   <div>
@@ -1002,7 +1146,6 @@ export default function AdminProducts() {
                   </button>
                 </div>
 
-                {/* Inline Quick Category Form */}
                 {showQuickCatForm && (
                   <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
                     <input
@@ -1025,7 +1168,6 @@ export default function AdminProducts() {
                   </div>
                 )}
 
-                {/* Inline Quick Subcategory Form */}
                 {showQuickSubcatForm && (
                   <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
                     <input
@@ -1067,15 +1209,15 @@ export default function AdminProducts() {
               </div>
 
               {/* Visibility Switch inside modal */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700', color: isActive ? '#34d399' : '#f87171' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '6px', background: isActive ? 'rgba(52, 211, 153, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: isActive ? '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '800', color: isActive ? '#34d399' : '#f87171' }}>
                   <input
                     type="checkbox"
                     checked={isActive}
                     onChange={(e) => setIsActive(e.target.checked)}
-                    style={{ width: '16px', height: '16px', accentColor: '#06b6d4' }}
+                    style={{ width: '18px', height: '18px', accentColor: '#06b6d4' }}
                   />
-                  <span>{isActive ? '🟢 Producto Visible para el Público' : '🔴 Producto Oculto (Desactivado)'}</span>
+                  <span>{isActive ? '🟢 Producto Visible para el Público en el Catálogo' : '🔴 Producto Oculto (Desactivado para el Público)'}</span>
                 </label>
               </div>
 
