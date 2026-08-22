@@ -81,72 +81,34 @@ export default function AdminProducts() {
 
       if (catData) setCategories(catData);
       if (subcatData) setSubcategories(subcatData);
-      if (prodData) setProducts(prodData);
 
-      // Auto-populate packages if fewer than 6 packages exist
-      if (prodData && prodData.length < 8 && catData) {
-        autoSeedCatalogIfMissing(catData, subcatData || [], prodData);
+      if (prodData) {
+        // Deduplicate in memory by product name so each item appears EXACTLY ONCE
+        const uniqueMap = new Map();
+        const duplicatesToDelete = [];
+
+        prodData.forEach(p => {
+          const cleanName = p.name.trim().toLowerCase();
+          if (!uniqueMap.has(cleanName)) {
+            uniqueMap.set(cleanName, p);
+          } else {
+            duplicatesToDelete.push(p.id);
+          }
+        });
+
+        // Automatically delete duplicate entries from Supabase in the background
+        if (duplicatesToDelete.length > 0) {
+          supabase.from('products').delete().in('id', duplicatesToDelete).then(() => {
+            console.log('Duplicados de productos depurados en base de datos:', duplicatesToDelete.length);
+          });
+        }
+
+        setProducts(Array.from(uniqueMap.values()));
       }
     } catch (err) {
       console.warn('Error loading products:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Auto-seed missing official Free Fire packages
-  const autoSeedCatalogIfMissing = async (cats, subs, currentProds) => {
-    let catId = cats.find(c => c.name.toLowerCase().includes('diamante') || c.name.toLowerCase().includes('free fire'))?.id;
-    if (!catId && cats.length > 0) catId = cats[0].id;
-    if (!catId) return;
-
-    for (const item of OFFICIAL_FF_CATALOG) {
-      const exists = currentProds.some(p => p.name.toLowerCase().includes(item.subcat.toLowerCase()) || p.name.toLowerCase() === item.name.toLowerCase());
-      if (!exists) {
-        try {
-          // Subcategory
-          let targetSubId = subs.find(s => s.name.toLowerCase() === item.subcat.toLowerCase())?.id;
-          if (!targetSubId) {
-            const { data: newSub } = await supabase.from('subcategories').insert({
-              category_id: catId,
-              name: item.subcat,
-              slug: item.subcat.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now()
-            }).select().single();
-            if (newSub) targetSubId = newSub.id;
-          }
-
-          // Product
-          const { data: newProd } = await supabase.from('products').insert({
-            subcategory_id: targetSubId || null,
-            name: item.name,
-            description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega automatizada e inmediata.',
-            price_public: item.price_public,
-            price_reseller: item.price_reseller,
-            cost: item.cost,
-            stock: 999,
-            is_active: item.is_active,
-            image_url: item.type === 'direct' 
-              ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500&auto=format&fit=crop&q=60'
-              : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60',
-            requires_validation: true,
-            validation_type: 'Free Fire',
-            button_action_text: 'Solicitar'
-          }).select().single();
-
-          if (newProd) {
-            await supabase.from('product_fields').insert({
-              product_id: newProd.id,
-              field_name: 'ID de Jugador (UID)',
-              field_type: 'text',
-              is_required: true,
-              sort_order: 0
-            });
-            setProducts(prev => [newProd, ...prev]);
-          }
-        } catch (e) {
-          console.warn('Auto-seed item error:', e);
-        }
-      }
     }
   };
 
