@@ -123,7 +123,6 @@ export default function BinancePayModal({
 
     // 2. Si no es depósito simple de billetera, disparar API de recarga con el proveedor y descontar stock
     if (!isWalletDeposit && finalOrderId) {
-      // Descontar stock
       try {
         const { data: orderItems } = await supabase.from('order_items').select('product_id, quantity').eq('order_id', finalOrderId);
         if (orderItems) {
@@ -156,7 +155,6 @@ export default function BinancePayModal({
 
       setRechargeStatus(rechargeResult);
 
-      // Guardar ID de transacción del proveedor en el pedido
       if (rechargeResult?.mappedData?.supplier_transaction_id) {
         await supabase
           .from('orders')
@@ -166,7 +164,6 @@ export default function BinancePayModal({
           .eq('id', finalOrderId);
       }
 
-      // Notificación instantánea de entrega al cliente
       if (user?.id) {
         notifyOrderCompleted({
           orderId: finalOrderId,
@@ -176,7 +173,6 @@ export default function BinancePayModal({
         });
       }
 
-      // Notificación al Administrador
       notifyAdminNewOrder({
         orderId: finalOrderId,
         amount: amountUsdt,
@@ -229,24 +225,24 @@ export default function BinancePayModal({
       position: 'fixed',
       inset: 0,
       zIndex: 1000,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
-      backdropFilter: 'blur(10px)',
+      backgroundColor: 'rgba(3, 7, 18, 0.88)',
+      backdropFilter: 'blur(12px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '16px'
     }}>
-      <div className="glass-panel" style={{
+      <div className="glass-panel animate-fade" style={{
         width: '100%',
-        maxWidth: '480px',
-        maxHeight: '94vh',
+        maxWidth: '440px',
+        maxHeight: '95vh',
         overflowY: 'auto',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid #f0b90b',
-        boxShadow: '0 0 35px rgba(240, 185, 11, 0.25)',
-        padding: '24px',
-        position: 'relative',
-        animation: 'fadeInUp 0.3s ease'
+        borderRadius: '24px',
+        border: '1px solid rgba(6, 182, 212, 0.4)',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 35px rgba(6, 182, 212, 0.2)',
+        background: 'linear-gradient(180deg, #0d1322 0%, #080c16 100%)',
+        padding: '24px 20px',
+        position: 'relative'
       }}>
         {/* Close Button */}
         <button
@@ -255,37 +251,52 @@ export default function BinancePayModal({
             position: 'absolute',
             top: '16px',
             right: '16px',
-            background: 'none',
-            border: 'none',
+            background: 'rgba(255, 255, 255, 0.06)',
+            border: '1px solid var(--border-glass)',
             color: 'var(--text-muted)',
-            fontSize: '1.2rem',
-            cursor: 'pointer'
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1rem',
+            cursor: 'pointer',
+            zIndex: 10
           }}
         >
           ✕
         </button>
 
-        {/* Modal Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+        {/* Top Official Brand Header */}
+        <div style={{ textAlign: 'center', marginBottom: '18px', paddingTop: '4px' }}>
           <div style={{
-            background: '#f0b90b',
-            color: '#000',
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontWeight: '900',
-            fontSize: '1.1rem'
+            gap: '8px',
+            marginBottom: '4px'
           }}>
-            B
+            {/* Binance Official Diamond Icon */}
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+              <path d="M16 0L20.8 4.8L8 17.6L3.2 12.8L16 0Z" fill="#F0B90B" />
+              <path d="M28.8 12.8L32 16L27.2 20.8L24 17.6L28.8 12.8Z" fill="#F0B90B" />
+              <path d="M16 9.6L20.8 14.4L16 19.2L11.2 14.4L16 9.6Z" fill="#F0B90B" />
+              <path d="M3.2 19.2L8 24L20.8 11.2L25.6 16L16 25.6L3.2 12.8" fill="#F0B90B" />
+              <path d="M16 22.4L20.8 27.2L16 32L11.2 27.2L16 22.4Z" fill="#F0B90B" />
+            </svg>
+            <span style={{
+              fontSize: '1.4rem',
+              fontWeight: '900',
+              letterSpacing: '0.12em',
+              color: '#F0B90B',
+              textTransform: 'uppercase'
+            }}>
+              BINANCE
+            </span>
           </div>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#f0b90b' }}>Pasarela Binance Pay</h3>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Pago 100% Directo a Cuenta Oficial ALVSHOP
-            </div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', fontWeight: '700', letterSpacing: '0.04em' }}>
+            PASARELA OFICIAL DE PAGO ALVSHOP
           </div>
         </div>
 
@@ -340,22 +351,99 @@ export default function BinancePayModal({
           </div>
         ) : (
           <div>
-            {/* Exact Amount Banner with 1-Click Copy */}
+            
+            {/* Main Cyber Scan Card (Layout matching Binance QR) */}
             <div style={{
-              background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.15) 0%, rgba(30, 58, 138, 0.2) 100%)',
-              border: '1px solid rgba(240, 185, 11, 0.35)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 16px',
+              background: 'rgba(15, 23, 42, 0.75)',
+              border: '1px solid rgba(6, 182, 212, 0.3)',
+              borderRadius: '18px',
+              padding: '20px 16px',
+              marginBottom: '16px',
+              textAlign: 'center',
+              boxShadow: 'inset 0 0 20px rgba(6, 182, 212, 0.05)'
+            }}>
+              <h4 style={{
+                fontSize: '0.92rem',
+                fontWeight: '700',
+                color: '#ffffff',
+                marginBottom: '14px',
+                letterSpacing: '0.01em'
+              }}>
+                Escanea con la app de Binance para pagar
+              </h4>
+
+              {/* White QR Code Container with Center Binance Logo */}
+              <div style={{
+                display: 'inline-block',
+                background: '#ffffff',
+                padding: '10px',
+                borderRadius: '16px',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.7)',
+                position: 'relative',
+                marginBottom: '12px'
+              }}>
+                <img
+                  src={binanceQr}
+                  alt="Código QR Oficial Binance Pay"
+                  style={{
+                    width: '185px',
+                    height: '185px',
+                    objectFit: 'contain',
+                    display: 'block',
+                    borderRadius: '8px'
+                  }}
+                />
+              </div>
+
+              {/* Account Receiver Name */}
+              <div style={{
+                fontSize: '1.05rem',
+                fontWeight: '900',
+                color: '#ffffff',
+                letterSpacing: '0.04em'
+              }}>
+                {binanceName}
+              </div>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: '4px',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                background: 'rgba(240, 185, 11, 0.12)',
+                border: '1px solid rgba(240, 185, 11, 0.3)',
+                fontSize: '0.72rem',
+                color: '#F0B90B',
+                fontWeight: '800'
+              }}>
+                <span>ID: {binancePayId}</span>
+                <button
+                  type="button"
+                  onClick={copyPayId}
+                  style={{ background: 'none', border: 'none', color: copiedId ? '#10b981' : '#F0B90B', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '800' }}
+                >
+                  {copiedId ? '✓ Copiado' : '📋 Copiar'}
+                </button>
+              </div>
+            </div>
+
+            {/* Exact Locked Amount Banner with 1-Click Copy */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(240, 185, 11, 0.1) 100%)',
+              border: '1px solid rgba(6, 182, 212, 0.35)',
+              borderRadius: '14px',
+              padding: '12px 14px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '10px'
+              marginBottom: '12px'
             }}>
               <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Monto Exacto a Transferir:</div>
-                <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#f0b90b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Monto Exacto Bloqueado:</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span>${Number(amountUsdt).toFixed(2)}</span>
-                  <span style={{ fontSize: '0.85rem' }}>USDT</span>
+                  <span style={{ fontSize: '0.8rem', color: '#F0B90B' }}>USDT</span>
                 </div>
               </div>
 
@@ -364,148 +452,97 @@ export default function BinancePayModal({
                   type="button"
                   onClick={copyAmount}
                   style={{
-                    background: copiedAmount ? '#10b981' : 'rgba(240, 185, 11, 0.2)',
-                    color: copiedAmount ? '#fff' : '#f0b90b',
-                    border: '1px solid rgba(240, 185, 11, 0.4)',
+                    background: copiedAmount ? '#10b981' : 'rgba(6, 182, 212, 0.2)',
+                    color: copiedAmount ? '#fff' : 'var(--accent-cyan)',
+                    border: '1px solid var(--accent-cyan)',
                     padding: '5px 10px',
-                    borderRadius: '4px',
+                    borderRadius: '6px',
                     fontSize: '0.75rem',
-                    fontWeight: '700',
-                    cursor: 'pointer'
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
                 >
-                  {copiedAmount ? '✅ Monto Copiado' : '📋 Copiar Monto'}
+                  {copiedAmount ? '✅ Copiado' : '📋 Copiar Monto'}
                 </button>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  ⏱️ {formatMinutes(timeLeft)}
+                  ⏱️ Expira en {formatMinutes(timeLeft)}
                 </div>
-              </div>
-            </div>
-
-            {/* Anti-Fraud / Price Lock Notice */}
-            <div style={{
-              background: 'rgba(59, 130, 246, 0.08)',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '8px 12px',
-              marginBottom: '14px',
-              fontSize: '0.73rem',
-              color: '#93c5fd',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <span>🔒</span>
-              <span>
-                <strong>Monto bloqueado por la tienda:</strong> La recarga solo se despacha si el importe transferido coincide exactamente con <strong>${Number(amountUsdt).toFixed(2)} USDT</strong>.
-              </span>
-            </div>
-
-            {/* Official Binance Pay ID Box */}
-            <div style={{
-              background: 'rgba(240, 185, 11, 0.06)',
-              border: '1px solid rgba(240, 185, 11, 0.25)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 14px',
-              marginBottom: '14px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: '10px'
-            }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Binance Pay ID (Receptor):</div>
-                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#f0b90b', letterSpacing: '0.05em' }}>
-                  {binancePayId}
-                </div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Titular: <strong style={{ color: '#fff' }}>{binanceName}</strong>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={copyPayId}
-                className="btn-cyan"
-                style={{
-                  background: copiedId ? '#10b981' : '#f0b90b',
-                  color: '#000',
-                  padding: '8px 14px',
-                  fontSize: '0.78rem',
-                  fontWeight: '800',
-                  border: 'none'
-                }}
-              >
-                {copiedId ? '✅ ¡Copiado!' : '📋 Copiar Pay ID'}
-              </button>
-            </div>
-
-            {/* QR Code */}
-            <div style={{ textAlign: 'center', marginBottom: '14px' }}>
-              <div style={{
-                display: 'inline-block',
-                background: '#0d111a',
-                border: '1px solid rgba(240, 185, 11, 0.4)',
-                padding: '8px',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
-                marginBottom: '8px'
-              }}>
-                <img
-                  src={binanceQr}
-                  alt="Código QR de Binance Pay"
-                  style={{
-                    width: '200px',
-                    height: '200px',
-                    objectFit: 'contain',
-                    display: 'block',
-                    borderRadius: '6px'
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Escanea con la app de Binance para transferir <strong>${Number(amountUsdt).toFixed(2)} USDT</strong> a <strong>{binanceName}</strong>
               </div>
             </div>
 
             {/* Direct Open in App Button & Deeplink */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
-              <a
-                href={dynamicDeeplink}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  background: '#f0b90b',
-                  color: '#000',
-                  padding: '12px 16px',
-                  borderRadius: 'var(--radius-md)',
-                  fontWeight: '900',
-                  fontSize: '0.88rem',
-                  textDecoration: 'none',
-                  textAlign: 'center',
-                  boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)'
-                }}
-              >
-                <span>🟡</span> Abrir en App de Binance (${Number(amountUsdt).toFixed(2)} USDT) ➔
-              </a>
+            <a
+              href={dynamicDeeplink}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                background: 'linear-gradient(135deg, #F0B90B 0%, #d97706 100%)',
+                color: '#000',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                fontWeight: '900',
+                fontSize: '0.88rem',
+                textDecoration: 'none',
+                textAlign: 'center',
+                boxShadow: '0 0 20px rgba(240, 185, 11, 0.35)',
+                marginBottom: '14px'
+              }}
+            >
+              <span>🟡</span> Abrir App de Binance (${Number(amountUsdt).toFixed(2)} USDT) ➔
+            </a>
+
+            {/* Bottom Card Footer Matching Binance Visual */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid var(--border-glass)',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '14px'
+            }}>
+              <div style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '8px',
+                background: '#0d111a',
+                border: '1px solid rgba(6, 182, 212, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.1rem',
+                flexShrink: 0
+              }}>
+                📱
+              </div>
+              <div>
+                <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#fff' }}>
+                  Paga en cualquier lugar
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Abre tu cámara o app de Binance para escanear y pagar al instante
+                </div>
+              </div>
             </div>
 
             {/* Customer Manual Confirm Form */}
             <form onSubmit={handleManualCustomerConfirm} style={{
               background: 'rgba(255, 255, 255, 0.02)',
               border: '1px solid var(--border-glass)',
-              borderRadius: 'var(--radius-md)',
+              borderRadius: '12px',
               padding: '12px',
               display: 'flex',
               flexDirection: 'column',
               gap: '8px'
             }}>
               <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                ¿Ya enviaste los USDT? Ingresa tu ID de Orden o Pay ID (Opcional):
+                ¿Ya completaste la transferencia? Ingresa tu TxID o Pay ID (Opcional):
               </label>
               <input
                 type="text"
@@ -515,7 +552,7 @@ export default function BinancePayModal({
                 style={{
                   width: '100%',
                   padding: '8px 10px',
-                  borderRadius: '4px',
+                  borderRadius: '6px',
                   background: '#0d111a',
                   border: '1px solid var(--border-glass)',
                   color: '#fff',
@@ -532,36 +569,39 @@ export default function BinancePayModal({
                   fontWeight: '800',
                   background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
                   border: 'none',
-                  color: '#000'
+                  color: '#000',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
                 }}
               >
                 {isManualConfirming ? 'Verificando...' : '✅ Ya Realicé el Pago en Binance ➔'}
               </button>
             </form>
 
-            {/* Trade Info */}
+            {/* Trade Reference Footer */}
             <div style={{
-              fontSize: '0.72rem',
+              fontSize: '0.7rem',
               color: 'var(--text-muted)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               marginTop: '10px',
               paddingTop: '8px',
-              borderTop: '1px solid var(--border-glass)'
+              borderTop: '1px solid rgba(255, 255, 255, 0.05)'
             }}>
-              <div>Ref: <span style={{ color: 'var(--text-main)' }}>{payOrder?.merchantTradeNo || orderData?.id}</span></div>
+              <div>Ref: <span style={{ color: 'var(--accent-cyan)' }}>{payOrder?.merchantTradeNo || orderData?.id}</span></div>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(payOrder?.merchantTradeNo || orderData?.id || '');
                   setCopiedRef(true);
                   setTimeout(() => setCopiedRef(false), 2000);
                 }}
-                style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', fontSize: '0.72rem' }}
+                style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', fontSize: '0.7rem' }}
               >
                 {copiedRef ? '✓ Copiado' : 'Copiar Ref'}
               </button>
             </div>
+
           </div>
         )}
       </div>
