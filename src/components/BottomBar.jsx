@@ -122,6 +122,9 @@ export default function BottomBar() {
             <NavLink
               key={item.id}
               to={item.to}
+              onClick={() => {
+                window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+              }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',

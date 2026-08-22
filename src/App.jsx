@@ -7,6 +7,7 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Footer from './components/Footer';
 import BottomBar from './components/BottomBar';
+import ScrollToTop from './components/ScrollToTop';
 import Home from './pages/Home';
 import ProductDetail from './pages/ProductDetail';
 import Likes from './pages/Likes';
@@ -37,6 +38,9 @@ export default function App() {
   return (
     <AppProvider>
       <Router>
+        {/* Automatic Scroll To Top on every route & navigation click */}
+        <ScrollToTop />
+
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
           {/* Push Permission Prompt Banner */}
           <PushPermissionBanner />
