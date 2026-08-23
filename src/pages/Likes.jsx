@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { validatePlayerUid } from '../../notificaciones y apis/apis/index';
 import { supabase } from '../supabaseClient';
@@ -24,8 +24,7 @@ export default function Likes() {
       likesLabel: '2,000 LIKES',
       priceUsdt: 1.50,
       deliveryDays: '1-2 Días',
-      badge: 'POPULAR 🔥',
-      gradient: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(30, 58, 138, 0.4) 100%)'
+      badge: 'POPULAR 🔥'
     },
     {
       id: '4k',
@@ -34,8 +33,7 @@ export default function Likes() {
       likesLabel: '4,000 LIKES',
       priceUsdt: 2.80,
       deliveryDays: '2-3 Días',
-      badge: 'MEJOR VALOR ⭐',
-      gradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(30, 58, 138, 0.4) 100%)'
+      badge: 'MEJOR VALOR ⭐'
     },
     {
       id: '10k',
@@ -44,8 +42,7 @@ export default function Likes() {
       likesLabel: '10,000 LIKES',
       priceUsdt: 6.00,
       deliveryDays: '4-5 Días',
-      badge: 'PAQUETE PRO 👑',
-      gradient: 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(217, 119, 6, 0.4) 100%)'
+      badge: 'PAQUETE PRO 👑'
     }
   ];
 
@@ -74,7 +71,7 @@ export default function Likes() {
   const currentPriceGtq = (currentPriceUsdt * exchangeRate).toFixed(2);
   const hasSufficientBalance = walletBalance >= currentPriceUsdt;
 
-  // Validate UID
+  // Real Validation using official API
   const handleValidateUid = async (uidToValidate) => {
     const cleanUid = (uidToValidate || targetUid).trim().replace(/\D/g, '');
     if (!cleanUid || cleanUid.length < 5) {
@@ -87,61 +84,25 @@ export default function Likes() {
     setValidationError('');
 
     try {
-      // 1. Try local python microservice if available for full stats
-      let fullStats = null;
-      try {
-        const pyRes = await fetch(`http://localhost:5000/api/v1/account?uid=${cleanUid}&server=LATAM`);
-        if (pyRes.ok) {
-          const json = await pyRes.json();
-          if (json?.basicInfo) {
-            fullStats = {
-              nickname: json.basicInfo.nickname || `Player_${cleanUid.slice(-4)}`,
-              level: json.basicInfo.level || 65,
-              liked: json.basicInfo.liked || 15400,
-              rankName: json.basicInfo.rankName || 'Heroico ⭐',
-              region: json.basicInfo.region || 'LATAM',
-              avatarUrl: json.profileInfo?.avatarUrl || 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
-            };
-          }
-        }
-      } catch (e) {}
+      // Direct call to official validator API (Garena / Recargas América)
+      const res = await validatePlayerUid(cleanUid, 'Free Fire');
 
-      // 2. Fallback to official Recargas America validation
-      if (!fullStats) {
-        const res = await validatePlayerUid(cleanUid, 'Free Fire');
-        const seed = parseInt(cleanUid) || 12345;
-        if (res && res.success) {
-          fullStats = {
-            nickname: res.nickname || `Player_${cleanUid.slice(-4)}`,
-            level: 55 + (seed % 25),
-            liked: res.currentLikes || (4500 + (seed % 35000)),
-            rankName: ['Platino IV', 'Diamante II', 'Heroico ⭐', 'Maestro 👑'][seed % 4],
-            region: res.region || 'LATAM',
-            avatarUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
-          };
-        } else {
-          fullStats = {
-            nickname: `Jugador_${cleanUid.slice(-4)}`,
-            level: 50 + (seed % 20),
-            liked: 3200 + (seed % 25000),
-            rankName: 'Heroico ⭐',
-            region: 'LATAM',
-            avatarUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
-          };
-        }
+      if (res && res.success && res.nickname) {
+        setPlayerData({
+          nickname: res.nickname,
+          region: res.region || 'LATAM',
+          isVerified: true,
+          source: res.source || 'Garena / Recargas América Oficial'
+        });
+        setValidationError('');
+      } else {
+        setPlayerData(null);
+        setValidationError(res?.error || 'ID incorrecta. Por favor, verifica el ID ingresado.');
       }
-
-      setPlayerData(fullStats);
     } catch (err) {
       console.warn('Error validando UID:', err);
-      setPlayerData({
-        nickname: `Jugador_${cleanUid.slice(-4)}`,
-        level: 60,
-        liked: 12500,
-        rankName: 'Heroico ⭐',
-        region: 'LATAM',
-        avatarUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
-      });
+      setPlayerData(null);
+      setValidationError('ID incorrecta o no encontrada en los servidores de Free Fire.');
     } finally {
       setIsValidating(false);
     }
@@ -160,6 +121,11 @@ export default function Likes() {
       return;
     }
 
+    if (!playerData || !playerData.nickname) {
+      alert('Por favor valida primero el ID de jugador antes de continuar.');
+      return;
+    }
+
     if (!hasSufficientBalance) {
       alert('Saldo insuficiente en tu billetera. Por favor recarga saldo antes de continuar.');
       navigate('/profile?tab=wallet');
@@ -171,8 +137,7 @@ export default function Likes() {
     try {
       const likesToAdd = activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays);
       const deliveryTime = activeTab === 'fixed' ? selectedPackage.deliveryDays : `${autoDays} Días`;
-      const playerNick = playerData?.nickname || `Jugador_${targetUid.slice(-4)}`;
-      const currentLikesBefore = playerData?.liked || 0;
+      const playerNick = playerData.nickname;
 
       // 1. Deduct user wallet balance immediately
       const newBalance = Math.max(0, walletBalance - currentPriceUsdt);
@@ -188,8 +153,7 @@ export default function Likes() {
             orderId: `LIKES-${Date.now()}`,
             uid: targetUid.trim(),
             likesToAdd: likesToAdd,
-            nickname: playerNick,
-            currentLikes: currentLikesBefore
+            nickname: playerNick
           })
         });
         if (dispRes.ok) {
@@ -215,18 +179,15 @@ export default function Likes() {
           mode: activeTab,
           target_uid: targetUid.trim(),
           player_nickname: playerNick,
-          player_level: playerData?.level || 65,
-          player_rank: playerData?.rankName || 'Heroico ⭐',
-          likes_before: currentLikesBefore,
+          region: playerData.region || 'LATAM',
           likes_to_add: likesToAdd,
-          target_likes_final: currentLikesBefore + likesToAdd,
           delivery_estimated: deliveryTime,
           dispatch_mode: dispatchResult.mode || 'MANUAL',
           scheduled_hour: activeTab === 'scheduled' ? `${autoHour}:${autoMinute}` : 'Inmediato'
         })
       };
 
-      const { data: createdOrder, error: orderErr } = await supabase
+      const { data: createdOrder } = await supabase
         .from('orders')
         .insert(orderPayload)
         .select()
@@ -255,8 +216,6 @@ export default function Likes() {
         likesToAdd,
         playerNick,
         targetUid: targetUid.trim(),
-        likesBefore: currentLikesBefore,
-        targetLikesFinal: currentLikesBefore + likesToAdd,
         priceUsdt: currentPriceUsdt,
         deliveryTime,
         isAutoDispatched
@@ -300,7 +259,7 @@ export default function Likes() {
           Aumenta tus Likes en Free Fire
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '540px', margin: '8px auto 0 auto' }}>
-          Entrega 100% segura por UID oficial. Consulta tu perfil en tiempo real y recibe tus likes con total garantía.
+          Entrega 100% segura por UID oficial. Validación directa de cuenta y entrega garantizada.
         </p>
       </div>
 
@@ -338,27 +297,23 @@ export default function Likes() {
             fontSize: '0.88rem'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Jugador:</span>
+              <span style={{ color: 'var(--text-muted)' }}>Jugador Verificado:</span>
               <strong style={{ color: '#fff' }}>{orderSuccess.playerNick}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>ID / UID:</span>
+              <span style={{ color: 'var(--text-muted)' }}>ID / UID Oficial:</span>
               <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{orderSuccess.targetUid}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Likes Antes:</span>
-              <span>{orderSuccess.likesBefore.toLocaleString()} ❤️</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Likes Añadidos:</span>
               <strong style={{ color: '#34d399' }}>+{orderSuccess.likesToAdd.toLocaleString()} LIKES</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Meta Final:</span>
-              <strong style={{ color: '#fbbf24' }}>{orderSuccess.targetLikesFinal.toLocaleString()} LIKES</strong>
+              <span style={{ color: 'var(--text-muted)' }}>Total Cobrado:</span>
+              <strong style={{ color: '#fbbf24' }}>${orderSuccess.priceUsdt.toFixed(2)} USDT</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Tiempo de Entrega:</span>
+              <span style={{ color: 'var(--text-muted)' }}>Tiempo Estimado de Entrega:</span>
               <span style={{ color: '#fff', fontWeight: 'bold' }}>{orderSuccess.deliveryTime}</span>
             </div>
           </div>
@@ -574,7 +529,7 @@ export default function Likes() {
             <div style={{ display: 'flex', gap: '10px' }}>
               <input
                 type="text"
-                placeholder="Ej. 29386038"
+                placeholder="Ej. 816331100"
                 value={targetUid}
                 onChange={(e) => {
                   setTargetUid(e.target.value);
@@ -582,6 +537,12 @@ export default function Likes() {
                 }}
                 onBlur={() => {
                   if (targetUid.trim().length >= 5) handleValidateUid();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleValidateUid();
+                  }
                 }}
                 style={{
                   flex: 1,
@@ -602,7 +563,7 @@ export default function Likes() {
                 className="btn-cyan"
                 style={{ padding: '0 24px', fontSize: '0.9rem', whiteSpace: 'nowrap' }}
               >
-                {isValidating ? 'Consultando...' : '🔍 Consultar'}
+                {isValidating ? 'Validando...' : '🔍 Validar ID'}
               </button>
             </div>
 
@@ -613,18 +574,18 @@ export default function Likes() {
             )}
           </div>
 
-          {/* PASO 3: TARJETA DE PERFIL OFICIAL */}
+          {/* PASO 3: TARJETA DE PERFIL OFICIAL (100% REAL DE LA API) */}
           {isValidating && (
             <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
               <div className="spinner-medium" style={{ margin: '0 auto 12px auto' }} />
-              Cargando tarjeta de perfil oficial de Free Fire...
+              Consultando cuenta oficial de Free Fire en Garena...
             </div>
           )}
 
           {playerData && !isValidating && (
             <div style={{ marginBottom: '28px' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#34d399', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>✅</span> PERFIL DEL JUGADOR VERIFICADO
+                <span>✅</span> CUENTA OFICIAL VERIFICADA EN GARENA
               </div>
 
               <div style={{
@@ -637,28 +598,28 @@ export default function Likes() {
               }}>
                 {/* Header Banner */}
                 <div style={{
-                  height: '80px',
+                  height: '70px',
                   background: 'linear-gradient(90deg, #1e3a8a 0%, #06b6d4 100%)',
                   position: 'relative',
-                  padding: '14px 20px',
+                  padding: '12px 20px',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'flex-start'
                 }}>
-                  <span style={{ fontSize: '0.72rem', background: 'rgba(0, 0, 0, 0.6)', padding: '3px 10px', borderRadius: '12px', color: '#fff', fontWeight: '800' }}>
-                    🌍 Región {playerData.region}
+                  <span style={{ fontSize: '0.72rem', background: 'rgba(0, 0, 0, 0.65)', padding: '4px 10px', borderRadius: '12px', color: '#fff', fontWeight: '800' }}>
+                    🌍 Región {playerData.region || 'LATAM'}
                   </span>
-                  <span style={{ fontSize: '0.75rem', background: '#34d399', color: '#000', padding: '3px 10px', borderRadius: '12px', fontWeight: '900' }}>
-                    {playerData.rankName}
+                  <span style={{ fontSize: '0.72rem', background: '#34d399', color: '#000', padding: '4px 10px', borderRadius: '12px', fontWeight: '900' }}>
+                    Garena Verified ✅
                   </span>
                 </div>
 
                 {/* Profile Body */}
-                <div style={{ padding: '0 20px 20px 20px', marginTop: '-35px', display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ padding: '0 20px 20px 20px', marginTop: '-30px', display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   {/* Avatar Icon */}
                   <div style={{
-                    width: '74px',
-                    height: '74px',
+                    width: '68px',
+                    height: '68px',
                     borderRadius: '16px',
                     border: '3px solid var(--accent-cyan)',
                     background: '#0d111a',
@@ -673,31 +634,20 @@ export default function Likes() {
                   </div>
 
                   {/* Player Info */}
-                  <div style={{ flex: 1, paddingTop: '40px', minWidth: '200px' }}>
+                  <div style={{ flex: 1, paddingTop: '34px', minWidth: '200px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <h3 style={{ margin: 0, fontSize: '1.3rem', color: '#fff', fontWeight: '900' }}>
+                      <h3 style={{ margin: 0, fontSize: '1.35rem', color: '#fff', fontWeight: '900' }}>
                         {playerData.nickname}
                       </h3>
-                      <span style={{
-                        fontSize: '0.7rem',
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        background: 'rgba(234, 179, 8, 0.2)',
-                        color: '#fbbf24',
-                        fontWeight: '800',
-                        border: '1px solid rgba(234, 179, 8, 0.4)'
-                      }}>
-                        Nv. {playerData.level}
-                      </span>
                     </div>
 
                     <div style={{ color: 'var(--accent-cyan)', fontSize: '0.85rem', fontWeight: '700', marginTop: '2px' }}>
-                      UID: {targetUid.trim()}
+                      ID / UID: {targetUid.trim()}
                     </div>
                   </div>
                 </div>
 
-                {/* Likes Counter Progression Box */}
+                {/* Service Details Box */}
                 <div style={{
                   margin: '0 20px 20px 20px',
                   padding: '14px 18px',
@@ -705,28 +655,28 @@ export default function Likes() {
                   border: '1px solid var(--border-glass)',
                   borderRadius: 'var(--radius-md)',
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                   gap: '12px',
                   textAlign: 'center'
                 }}>
                   <div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>LIKES ANTES</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#fff', marginTop: '2px' }}>
-                      {playerData.liked.toLocaleString()} ❤️
+                    <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>LIKES A ENVIAR</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#34d399', marginTop: '2px' }}>
+                      +{(activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays)).toLocaleString()} LIKES
                     </div>
                   </div>
 
                   <div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>LIKES AÑADIDOS</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: 'var(--accent-cyan)', marginTop: '2px' }}>
-                      +{(activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays)).toLocaleString()} ⚡
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>ENTREGA ESTIMADA</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#fff', marginTop: '2px' }}>
+                      {activeTab === 'fixed' ? selectedPackage.deliveryDays : `${autoDays} Días`}
                     </div>
                   </div>
 
                   <div>
-                    <div style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: '700' }}>META FINAL</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#34d399', marginTop: '2px' }}>
-                      {(playerData.liked + (activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays))).toLocaleString()} 🎯
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>ESTADO DE CUENTA</div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: '800', color: '#34d399', marginTop: '4px' }}>
+                      Lista para Recibir ⚡
                     </div>
                   </div>
                 </div>
@@ -781,7 +731,7 @@ export default function Likes() {
 
             <button
               onClick={handleProceedPayment}
-              disabled={isProcessing || !hasSufficientBalance || !targetUid.trim()}
+              disabled={isProcessing || !hasSufficientBalance || !playerData}
               className="btn-cyan"
               style={{
                 width: '100%',
@@ -793,6 +743,8 @@ export default function Likes() {
             >
               {isProcessing
                 ? 'Procesando Envío de Likes...'
+                : !playerData
+                ? 'Valida tu ID de Jugador para Continuar'
                 : !hasSufficientBalance
                 ? 'Saldo Insuficiente (Recarga tu Billetera)'
                 : `💎 Pagar con Billetera ($${currentPriceUsdt.toFixed(2)} USDT)`}

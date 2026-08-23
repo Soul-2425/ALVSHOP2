@@ -208,33 +208,16 @@ def get_player_info():
         print(f"Error consultando Recargas América: {e}")
 
     if not nickname:
-        nickname = f"Player_{uid[-4:]}"
-
-    # Generate realistic/consistent player stats for display based on UID
-    seed = int(uid) if uid.isdigit() else 12345
-    level = 50 + (seed % 35)
-    liked = 1200 + (seed % 38000)
-    ranks = ['Platino IV', 'Diamante II', 'Diamante IV', 'Heroico ⭐', 'Heroico ⭐⭐', 'Maestro 👑', 'Gran Maestro 🔥']
-    rank_name = ranks[seed % len(ranks)]
+        return jsonify({"error": "ID incorrecta. Por favor, verifica el ID ingresado.", "success": False}), 404
 
     response_data = {
+        "success": True,
         "basicInfo": {
             "accountId": str(uid),
             "nickname": nickname,
             "region": server,
-            "level": level,
-            "liked": liked,
-            "rankName": rank_name,
-            "badgeCnt": 85 + (seed % 150),
-            "rank": 220
-        },
-        "profileInfo": {
-            "avatarId": 102000007,
-            "avatarUrl": "https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png",
-            "bannerUrl": "https://raw.githubusercontent.com/hexated/freefire-data/main/icons/banners/banner_1.png"
-        },
-        "guildInfo": {
-            "guildName": "ALV CLAN"
+            "isVerified": True,
+            "source": "Garena / Recargas América Oficial"
         }
     }
 

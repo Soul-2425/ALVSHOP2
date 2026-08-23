@@ -162,11 +162,8 @@ export default function AdminLikes() {
       return {
         target_uid: obj.target_uid || 'N/A',
         player_nickname: obj.player_nickname || ord.profiles?.full_name || 'Jugador',
-        player_level: obj.player_level || 65,
-        player_rank: obj.player_rank || 'Heroico ⭐',
-        likes_before: Number(obj.likes_before || 0),
+        region: obj.region || 'LATAM',
         likes_to_add: Number(obj.likes_to_add || 2000),
-        target_likes_final: Number(obj.target_likes_final || (Number(obj.likes_before || 0) + Number(obj.likes_to_add || 2000))),
         delivery_estimated: obj.delivery_estimated || '1-2 Días',
         dispatch_mode: obj.dispatch_mode || (ord.status === 'Completed' ? 'API' : 'MANUAL'),
         mode: obj.mode || 'fixed'
@@ -175,11 +172,8 @@ export default function AdminLikes() {
       return {
         target_uid: 'N/A',
         player_nickname: ord.profiles?.full_name || 'Jugador',
-        player_level: 60,
-        player_rank: 'Heroico ⭐',
-        likes_before: 0,
+        region: 'LATAM',
         likes_to_add: 2000,
-        target_likes_final: 2000,
         delivery_estimated: '1-2 Días',
         dispatch_mode: 'MANUAL',
         mode: 'fixed'
@@ -345,7 +339,7 @@ export default function AdminLikes() {
                   <th style={{ padding: '10px 8px' }}># ID Orden</th>
                   <th style={{ padding: '10px 8px' }}>Cliente</th>
                   <th style={{ padding: '10px 8px' }}>Jugador (Nick / UID)</th>
-                  <th style={{ padding: '10px 8px' }}>Likes Antes ➔ Después</th>
+                  <th style={{ padding: '10px 8px' }}>Likes a Enviar</th>
                   <th style={{ padding: '10px 8px' }}>Total Pagado</th>
                   <th style={{ padding: '10px 8px' }}>Modo</th>
                   <th style={{ padding: '10px 8px' }}>Estado</th>
@@ -379,11 +373,7 @@ export default function AdminLikes() {
                         </td>
 
                         <td style={{ padding: '12px 8px' }}>
-                          <div>
-                            <span style={{ color: 'var(--text-muted)' }}>{audit.likes_before.toLocaleString()}</span>
-                            <span style={{ color: '#34d399', fontWeight: 'bold', margin: '0 6px' }}>+{audit.likes_to_add.toLocaleString()}</span>
-                            <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>➔ {audit.target_likes_final.toLocaleString()}</span>
-                          </div>
+                          <strong style={{ color: '#34d399', fontSize: '0.95rem' }}>+{audit.likes_to_add.toLocaleString()} LIKES</strong>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Entrega: {audit.delivery_estimated}</div>
                         </td>
 
@@ -697,23 +687,18 @@ export default function AdminLikes() {
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>⚡ Nivel & Rango:</span>
-                    <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>Nv. {audit.player_level} ({audit.player_rank})</span>
+                    <span style={{ color: 'var(--text-muted)' }}>🌍 Región Verificada:</span>
+                    <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{audit.region} (Garena Verified ✅)</span>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>❤️ Likes Antes de la Compra:</span>
-                    <span style={{ color: '#fff', fontWeight: 'bold' }}>{audit.likes_before.toLocaleString()} Likes</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(6, 182, 212, 0.1)', padding: '12px', borderRadius: '6px' }}>
+                    <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>➕ Likes a Despachar:</span>
+                    <strong style={{ color: '#34d399', fontSize: '1.2rem' }}>+{audit.likes_to_add.toLocaleString()} LIKES</strong>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>➕ Likes Añadidos (Paquete):</span>
-                    <strong style={{ color: '#34d399', fontSize: '1.1rem' }}>+{audit.likes_to_add.toLocaleString()} LIKES</strong>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(6, 182, 212, 0.1)', padding: '10px', borderRadius: '6px' }}>
-                    <span style={{ color: '#fff', fontWeight: 'bold' }}>🎯 Meta / Likes Actuales:</span>
-                    <strong style={{ color: '#fbbf24', fontSize: '1.15rem' }}>{audit.target_likes_final.toLocaleString()} LIKES</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>🚚 Tiempo de Entrega:</span>
+                    <span style={{ color: '#fff', fontWeight: 'bold' }}>{audit.delivery_estimated}</span>
                   </div>
                 </div>
               );
