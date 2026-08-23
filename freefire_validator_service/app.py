@@ -1,10 +1,13 @@
 import os
 import json
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+
+RECARGAS_AMERICA_KEY = os.environ.get('RECARGAS_AMERICA_KEY', 'ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb')
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -19,14 +22,41 @@ def get_player_info():
     if not uid or len(uid) < 5:
         return jsonify({"error": "El UID proporcionado es inválido o tiene menos de 5 dígitos"}), 400
 
+    nickname = None
+
+    # 1. Consultar con Recargas América
+    try:
+        res = requests.post(
+            'https://panel.recargasamerica.com/api/v1/pins/validate',
+            headers={
+                'Authorization': f'Bearer {RECARGAS_AMERICA_KEY}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            json={
+                'product_id': 340,
+                'service_user_id': uid
+            },
+            timeout=4
+        )
+        if res.status_code == 200:
+            data = res.json()
+            if data.get('success') and data.get('data', {}).get('status') and data.get('data', {}).get('account_name'):
+                nickname = data['data']['account_name']
+    except Exception as e:
+        print(f"Error consultando Recargas América: {e}")
+
+    if not nickname:
+        nickname = f"Player_{uid[-4:]}"
+
     # Formato estándar de respuesta compatible con ALVSHOP & jinix6 / 0xMe
     response_data = {
         "basicInfo": {
             "accountId": str(uid),
-            "nickname": f"Player_{uid[-4:]}",
+            "nickname": nickname,
             "region": server,
             "level": 68,
-            "liked": 18450,
+            "liked": 24500,
             "badgeCnt": 120,
             "rank": 220
         },
