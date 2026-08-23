@@ -207,7 +207,7 @@ export function AppProvider({ children }) {
   };
 
   // Fetch Current Profile
-  const fetchProfile = async (userId) => {
+  const fetchProfile = async (userId, userEmailParam = '') => {
     try {
       const serverBalances = await fetchServerBalances();
 
@@ -218,15 +218,17 @@ export function AppProvider({ children }) {
         .single();
 
       let effectiveBal = null;
-      const userEmail = data?.email || user?.email || '';
+      const userEmail = (userEmailParam || data?.email || user?.email || '').toLowerCase().trim();
+      const referralCode = (data?.referral_code || '').trim();
 
       if (serverBalances) {
         if (userId && serverBalances[userId] !== undefined) effectiveBal = Number(serverBalances[userId]);
-        else if (userEmail && serverBalances[userEmail.toLowerCase().trim()] !== undefined) effectiveBal = Number(serverBalances[userEmail.toLowerCase().trim()]);
+        else if (userEmail && serverBalances[userEmail] !== undefined) effectiveBal = Number(serverBalances[userEmail]);
+        else if (referralCode && serverBalances[referralCode] !== undefined) effectiveBal = Number(serverBalances[referralCode]);
       }
 
       if (effectiveBal === null) {
-        const localBal = getLocalUserBalance(userId) || (userEmail ? getLocalUserBalance(userEmail) : null);
+        const localBal = getLocalUserBalance(userId) || (userEmail ? getLocalUserBalance(userEmail) : null) || (referralCode ? getLocalUserBalance(referralCode) : null);
         if (localBal !== null) effectiveBal = localBal;
       }
 
@@ -240,6 +242,11 @@ export function AppProvider({ children }) {
         setProfile({ ...data, wallet_balance: finalBal });
         setRole(data.role || 'Cliente Común');
         setWalletBalance(finalBal);
+
+        // Sync to Supabase profile with active user session
+        if (effectiveBal !== null && effectiveBal !== Number(data.wallet_balance || 0)) {
+          supabase.from('profiles').update({ wallet_balance: finalBal }).eq('id', userId).then(() => {});
+        }
 
         // Load notifications and request permission
         loadUserNotifications(userId);
@@ -314,7 +321,7 @@ export function AppProvider({ children }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile(session.user.id, session.user.email);
       }
       setIsLoading(false);
     });
@@ -323,7 +330,7 @@ export function AppProvider({ children }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile(session.user.id, session.user.email);
       } else {
         setProfile(null);
         setRole('Cliente Común');
