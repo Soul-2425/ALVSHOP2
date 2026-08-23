@@ -20,6 +20,7 @@ export default function AdminOrders() {
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [cleaningOld, setCleaningOld] = useState(false);
   const [credentialsInput, setCredentialsInput] = useState('');
+  const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
   // Load Orders from Supabase
   const loadOrders = async () => {
@@ -690,16 +691,56 @@ export default function AdminOrders() {
                 <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>
                   <strong style={{ fontSize: '0.8rem', color: '#34d399' }}>📸 Comprobante de Pago Adjunto:</strong>
                   {selectedOrder.bank_receipt_url.startsWith('data:image') || selectedOrder.bank_receipt_url.startsWith('http') ? (
-                    <div style={{ marginTop: '6px' }}>
-                      <a href={selectedOrder.bank_receipt_url} target="_blank" rel="noopener noreferrer" title="Clic para ver en grande">
+                    <div style={{ marginTop: '8px' }}>
+                      <div
+                        onClick={() => setViewingReceiptUrl(selectedOrder.bank_receipt_url)}
+                        style={{
+                          cursor: 'zoom-in',
+                          position: 'relative',
+                          display: 'inline-block',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          border: '2px solid var(--accent-cyan)'
+                        }}
+                      >
                         <img
                           src={selectedOrder.bank_receipt_url}
                           alt="Comprobante de depósito"
-                          style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', border: '1px solid var(--border-cyan)', objectFit: 'contain', cursor: 'zoom-in' }}
+                          style={{ maxWidth: '100%', maxHeight: '220px', display: 'block', objectFit: 'contain', background: '#000' }}
                         />
-                      </a>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        🔍 Haz clic en el comprobante para abrirlo en tamaño completo
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          background: 'rgba(0,0,0,0.7)',
+                          color: '#fff',
+                          fontSize: '0.72rem',
+                          padding: '4px',
+                          textAlign: 'center',
+                          fontWeight: 'bold'
+                        }}>
+                          🔍 Clic para ampliar en pantalla completa
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setViewingReceiptUrl(selectedOrder.bank_receipt_url)}
+                          className="btn-cyan"
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 'bold' }}
+                        >
+                          🔍 Ver Comprobante Completo
+                        </button>
+                        <a
+                          href={selectedOrder.bank_receipt_url}
+                          download="comprobante_deposito.png"
+                          className="btn-glass"
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', textDecoration: 'none', color: '#34d399' }}
+                        >
+                          📥 Descargar Imagen
+                        </a>
                       </div>
                     </div>
                   ) : (
@@ -843,6 +884,91 @@ export default function AdminOrders() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Full-Screen Receipt Lightbox Modal */}
+      {viewingReceiptUrl && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.88)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '20px'
+          }}
+          onClick={() => setViewingReceiptUrl(null)}
+        >
+          <div
+            style={{
+              maxWidth: '90vw',
+              maxHeight: '88vh',
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              background: '#0d111a',
+              padding: '16px',
+              borderRadius: '16px',
+              border: '1px solid var(--border-cyan)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.8)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#34d399', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📸 Comprobante de Pago
+              </h3>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <a
+                  href={viewingReceiptUrl}
+                  download="comprobante_pago.png"
+                  className="btn-cyan"
+                  style={{ padding: '6px 14px', fontSize: '0.8rem', textDecoration: 'none' }}
+                >
+                  📥 Descargar
+                </a>
+                <button
+                  onClick={() => setViewingReceiptUrl(null)}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    color: '#f87171',
+                    borderRadius: '8px',
+                    width: '32px',
+                    height: '32px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '1.1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <img
+              src={viewingReceiptUrl}
+              alt="Comprobante de depósito"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '75vh',
+                borderRadius: '8px',
+                objectFit: 'contain',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }}
+            />
           </div>
         </div>
       )}
