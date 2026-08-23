@@ -117,24 +117,31 @@ export default function Profile() {
     await supabase.auth.signOut();
   };
 
-  // Handle Wallet Recharge Request
+  // Handle Wallet Recharge Request (Manual Quetzales)
   const handleRequestDeposit = async (e) => {
     e.preventDefault();
-    if (!depositAmount || Number(depositAmount) <= 0) return;
+    const amount = Number(depositAmount);
+    if (!depositAmount || isNaN(amount) || amount < 5) {
+      alert('⚠️ El monto mínimo para recargar saldo es de $5.00 USDT.');
+      return;
+    }
     setDepositLoading(true);
 
     try {
+      const currentRate = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
+      const totalGtq = Number((amount * currentRate).toFixed(2));
+
       const { data, error } = await supabase.from('orders').insert({
         user_id: user.id,
-        total_usdt: Number(depositAmount),
-        total_gtq: Number((Number(depositAmount) * 7.8).toFixed(2)),
+        total_usdt: amount,
+        total_gtq: totalGtq,
         status: 'Verification',
         payment_method: 'Manual',
         customer_notes: 'Recarga de Billetera Interna'
       }).select().single();
 
       if (error) throw error;
-      alert('¡Solicitud de recarga enviada! Realiza la transferencia en Quetzales y un asesor acreditará tus USDT.');
+      alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (Q${totalGtq.toFixed(2)} GTQ) enviada con éxito!\nRealiza tu transferencia bancaria y un asesor validará tu pago para acreditar tu saldo.`);
       setDepositAmount('');
       setActiveTab('orders');
     } catch (err) {
@@ -642,7 +649,7 @@ export default function Profile() {
             </div>
 
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Ingresa el monto que deseas recargar a tu billetera y escanea el código con tu App de Binance:
+              Ingresa el monto que deseas recargar a tu billetera (mínimo $5.00 USDT) y escanea el código con tu App de Binance:
             </p>
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -650,7 +657,7 @@ export default function Profile() {
                 <input
                   type="number"
                   step="1"
-                  min="1"
+                  min="5"
                   value={binanceDepositAmount}
                   onChange={(e) => setBinanceDepositAmount(e.target.value)}
                   style={{
@@ -671,7 +678,14 @@ export default function Profile() {
 
               <button
                 type="button"
-                onClick={() => setShowBinanceModal(true)}
+                onClick={() => {
+                  const amt = Number(binanceDepositAmount);
+                  if (!binanceDepositAmount || isNaN(amt) || amt < 5) {
+                    alert('⚠️ El monto mínimo para recargar con Binance Pay es de $5.00 USDT.');
+                    return;
+                  }
+                  setShowBinanceModal(true);
+                }}
                 className="btn-cyan"
                 style={{
                   background: '#f0b90b',
@@ -684,6 +698,9 @@ export default function Profile() {
                 ⚡ Recargar con Binance Pay ➔
               </button>
             </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+              ⚠️ Monto mínimo de recarga: $5.00 USDT
+            </div>
           </div>
 
           {/* Manual Bank Transfer Deposit */}
@@ -694,20 +711,25 @@ export default function Profile() {
           }}>
             <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Recarga con Transferencia Bancaria (Quetzales)</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Transfiere en Quetzales a Banrural y un asesor validará tu boleta para acreditar tus USDT.
+              Transfiere en Quetzales a nuestras cuentas y un asesor validará tu boleta para acreditar tus USDT inmediatamente.
             </p>
 
             <form onSubmit={handleRequestDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  Monto a Recargar (en USDT):
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Monto a Recargar (en USDT):
+                  </label>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>
+                    Mínimo: $5.00 USDT
+                  </span>
+                </div>
                 <input
                   type="number"
                   step="0.5"
-                  min="1"
+                  min="5"
                   required
-                  placeholder="Ej. 10.00"
+                  placeholder="Mínimo 5.00 USDT"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   style={{
@@ -726,19 +748,39 @@ export default function Profile() {
               {depositAmount && (
                 <div style={{
                   background: 'rgba(255, 255, 255, 0.03)',
-                  padding: '12px',
+                  padding: '14px',
                   borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
                 }}>
-                  <div>Total a transferir en Quetzales: <strong>Q{(Number(depositAmount) * 7.8).toFixed(2)} GTQ</strong></div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Cuenta Banrural: 4313076359 (Jonathan Alvares)
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Total a transferir:</span>
+                    <strong style={{ fontSize: '1.1rem', color: '#fbbf24' }}>
+                      Q{(Number(depositAmount) * Number(config?.usdt_gtq_rate || exchangeRate || 7.80)).toFixed(2)} GTQ
+                    </strong>
+                  </div>
+                  
+                  <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    <div style={{ fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Cuentas Disponibles para Transferir:</div>
+                    {config?.bank_accounts && config.bank_accounts.length > 0 ? (
+                      config.bank_accounts.map((acc, idx) => (
+                        <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
+                          🏦 <strong>{acc.bank}</strong> ({acc.type || 'Ahorro'}): <span style={{ color: 'var(--accent-cyan)' }}>{acc.account_number}</span> — {acc.name}
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
+                        🏦 <strong>Banrural Cuenta de Ahorro:</strong> <span style={{ color: 'var(--accent-cyan)' }}>4313076359</span> (Jonathan Alvares)
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              <button type="submit" disabled={depositLoading} className="btn-cyan" style={{ padding: '12px' }}>
-                {depositLoading ? 'Enviando...' : 'Solicitar Recarga Manual ➔'}
+              <button type="submit" disabled={depositLoading} className="btn-cyan" style={{ padding: '12px', fontWeight: '800' }}>
+                {depositLoading ? 'Enviando Solicitud...' : 'Solicitar Recarga Manual ➔'}
               </button>
             </form>
           </div>

@@ -111,6 +111,63 @@ export default function AdminUsers() {
     }
   };
 
+  // Balance adjustment modal state
+  const [selectedUserForBalance, setSelectedUserForBalance] = useState(null);
+  const [balanceAction, setBalanceAction] = useState('ADD'); // 'ADD', 'SUBTRACT', 'SET'
+  const [balanceAmount, setBalanceAmount] = useState('');
+  const [balanceReason, setBalanceReason] = useState('');
+  const [savingBalance, setSavingBalance] = useState(false);
+
+  // Handle Balance Adjustment
+  const handleSaveBalance = async (e) => {
+    e.preventDefault();
+    if (!selectedUserForBalance || !balanceAmount || Number(balanceAmount) < 0) return;
+    setSavingBalance(true);
+
+    try {
+      const currentBal = Number(selectedUserForBalance.wallet_balance || 0);
+      const amt = Number(balanceAmount);
+      let newBal = currentBal;
+
+      if (balanceAction === 'ADD') {
+        newBal = currentBal + amt;
+      } else if (balanceAction === 'SUBTRACT') {
+        newBal = Math.max(0, currentBal - amt);
+      } else if (balanceAction === 'SET') {
+        newBal = amt;
+      }
+
+      // 1. Update Profile in Supabase
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ wallet_balance: newBal })
+        .eq('id', selectedUserForBalance.id);
+
+      if (profileError) throw profileError;
+
+      // 2. Insert Audit Transaction Log
+      const reasonText = balanceReason.trim() || `Ajuste manual de saldo (${balanceAction === 'ADD' ? '+' : balanceAction === 'SUBTRACT' ? '-' : '='}$${amt.toFixed(2)} USDT) por Admin`;
+      await supabase.from('transactions').insert({
+        user_id: selectedUserForBalance.id,
+        type: balanceAction === 'ADD' ? 'Deposit' : 'Admin Adjustment',
+        amount_usdt: amt,
+        status: 'Completed',
+        notes: reasonText
+      });
+
+      // 3. Update State in UI
+      setUsers(prev => prev.map(u => u.id === selectedUserForBalance.id ? { ...u, wallet_balance: newBal } : u));
+      alert(`¡Saldo actualizado con éxito!\nNuevo saldo de ${selectedUserForBalance.full_name || selectedUserForBalance.email}: $${newBal.toFixed(2)} USDT`);
+      setSelectedUserForBalance(null);
+      setBalanceAmount('');
+      setBalanceReason('');
+    } catch (err) {
+      alert('Error ajustando saldo: ' + err.message);
+    } finally {
+      setSavingBalance(false);
+    }
+  };
+
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
 
   return (
@@ -190,6 +247,7 @@ export default function AdminUsers() {
                 <th style={{ padding: '10px 8px' }}>Teléfono</th>
                 <th style={{ padding: '10px 8px' }}>Referido</th>
                 <th style={{ padding: '10px 8px' }}>Saldo USDT</th>
+                <th style={{ padding: '10px 8px' }}>Gestión de Saldo</th>
                 <th style={{ padding: '10px 8px' }}>Rol Actual</th>
                 <th style={{ padding: '10px 8px' }}>Cambiar Rol</th>
               </tr>
@@ -203,8 +261,29 @@ export default function AdminUsers() {
                   <td style={{ padding: '12px 8px' }}>
                     <span style={{ color: 'var(--accent-cyan)', fontWeight: '700' }}>{u.referral_code || 'N/A'}</span>
                   </td>
-                  <td style={{ padding: '12px 8px', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+                  <td style={{ padding: '12px 8px', fontWeight: '900', color: '#34d399', fontSize: '0.95rem' }}>
                     ${Number(u.wallet_balance || 0).toFixed(2)}
+                  </td>
+                  <td style={{ padding: '12px 8px' }}>
+                    <button
+                      onClick={() => {
+                        setSelectedUserForBalance(u);
+                        setBalanceAction('ADD');
+                        setBalanceAmount('');
+                        setBalanceReason('');
+                      }}
+                      className="btn-cyan"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.72rem',
+                        fontWeight: '800',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      💰 Editar Saldo
+                    </button>
                   </td>
                   <td style={{ padding: '12px 8px' }}>
                     <span className="badge-cyan" style={{ fontSize: '0.7rem' }}>{u.role}</span>
@@ -269,6 +348,178 @@ export default function AdminUsers() {
           </div>
         </div>
       </div>
+
+      {/* Direct Balance Adjustment Modal */}
+      {selectedUserForBalance && (
+        <div className="modal-backdrop" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '460px',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            border: '1px solid #34d399',
+            background: 'linear-gradient(135deg, #0d111a 0%, #064e3b 100%)',
+            boxShadow: '0 0 30px rgba(52, 211, 153, 0.2)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.4rem' }}>💰</span>
+                <h3 style={{ fontSize: '1.15rem', margin: 0, color: '#34d399' }}>Ajuste Directo de Saldo</h3>
+              </div>
+              <button
+                onClick={() => setSelectedUserForBalance(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', marginBottom: '16px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Cliente Seleccionado:</div>
+              <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>{selectedUserForBalance.full_name || 'Sin Nombre'}</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{selectedUserForBalance.email}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)', marginTop: '4px', fontWeight: '700' }}>
+                Saldo Actual: ${Number(selectedUserForBalance.wallet_balance || 0).toFixed(2)} USDT
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveBalance} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Acción a realizar:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setBalanceAction('ADD')}
+                    style={{
+                      padding: '8px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.75rem',
+                      fontWeight: '800',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: balanceAction === 'ADD' ? '#34d399' : 'rgba(255,255,255,0.05)',
+                      color: balanceAction === 'ADD' ? '#000' : '#fff'
+                    }}
+                  >
+                    ➕ Sumar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBalanceAction('SUBTRACT')}
+                    style={{
+                      padding: '8px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.75rem',
+                      fontWeight: '800',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: balanceAction === 'SUBTRACT' ? '#f87171' : 'rgba(255,255,255,0.05)',
+                      color: balanceAction === 'SUBTRACT' ? '#000' : '#fff'
+                    }}
+                  >
+                    ➖ Restar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBalanceAction('SET')}
+                    style={{
+                      padding: '8px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.75rem',
+                      fontWeight: '800',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: balanceAction === 'SET' ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.05)',
+                      color: balanceAction === 'SET' ? '#000' : '#fff'
+                    }}
+                  >
+                    ✏️ Fijar Saldo
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  {balanceAction === 'ADD' ? 'Monto a Sumar (USDT):' : balanceAction === 'SUBTRACT' ? 'Monto a Restar (USDT):' : 'Nuevo Saldo Total (USDT):'}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  placeholder="Ej. 10.00"
+                  value={balanceAmount}
+                  onChange={(e) => setBalanceAmount(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontSize: '1.1rem',
+                    fontWeight: '800'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Motivo o Nota del Ajuste (Opcional):
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Recarga manual acordada por WhatsApp"
+                  value={balanceReason}
+                  onChange={(e) => setBalanceReason(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontSize: '0.8rem'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUserForBalance(null)}
+                  className="btn-glass"
+                  style={{ flex: 1, padding: '10px', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingBalance}
+                  className="btn-cyan"
+                  style={{ flex: 2, padding: '10px', fontWeight: '800', fontSize: '0.85rem' }}
+                >
+                  {savingBalance ? 'Aplicando...' : '💾 Aplicar Saldo Ahora'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

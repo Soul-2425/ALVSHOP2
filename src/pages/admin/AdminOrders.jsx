@@ -172,6 +172,29 @@ export default function AdminOrders() {
         }
       }
 
+      // 2. Acreditación automática si es un depósito/recarga de saldo de billetera
+      const isWalletRecharge = (typeof selectedOrder.customer_notes === 'string' && selectedOrder.customer_notes.includes('Recarga de Billetera')) ||
+        (!selectedOrder.order_items || selectedOrder.order_items.length === 0);
+
+      if (newStatus === 'Completed' && isWalletRecharge && selectedOrder.user_id) {
+        try {
+          const { data: userProfile } = await supabase.from('profiles').select('wallet_balance').eq('id', selectedOrder.user_id).single();
+          const currentBal = Number(userProfile?.wallet_balance || 0);
+          const newBal = currentBal + Number(selectedOrder.total_usdt);
+
+          await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', selectedOrder.user_id);
+          await supabase.from('transactions').insert({
+            user_id: selectedOrder.user_id,
+            type: 'Deposit',
+            amount_usdt: Number(selectedOrder.total_usdt),
+            status: 'Completed',
+            notes: `Recarga manual en Quetzales acreditada por Administración (Orden #${selectedOrder.id.slice(0, 8)})`
+          });
+        } catch (depositErr) {
+          console.error('Error acreditando saldo manual:', depositErr);
+        }
+      }
+
       // Update Order Status in Supabase
       const updatePayload = { status: newStatus };
       if (supplierTxId) {

@@ -350,66 +350,102 @@ export default function AdminFinance() {
         </div>
 
         {/* ========================================================================= */}
-        {/* BANK ACCOUNTS CARD */}
+        {/* BANK ACCOUNTS CARD (RESPONSIVE & CLEAN NO-OVERFLOW) */}
         {/* ========================================================================= */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <h4 style={{ fontSize: '1.05rem', margin: 0 }}>🏦 Cuentas Bancarias para Transferencias Manuales (GTQ)</h4>
-            <button type="button" onClick={handleAddAccount} className="btn-glass" style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
-              ➕ Agregar Cuenta
+            <button type="button" onClick={handleAddAccount} className="btn-glass" style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700' }}>
+              ➕ Agregar Nueva Cuenta
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {bankAccounts.map((acc, idx) => (
-              <div key={idx} style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid var(--border-glass)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr 1fr 40px',
-                gap: '8px',
-                alignItems: 'center'
-              }}>
-                <input
-                  type="text"
-                  placeholder="Banco (Ej. Banrural)"
-                  value={acc.bank}
-                  onChange={(e) => handleAccountChange(idx, 'bank', e.target.value)}
-                  style={{ padding: '8px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                />
-                <input
-                  type="text"
-                  placeholder="No. de Cuenta"
-                  value={acc.account_number}
-                  onChange={(e) => handleAccountChange(idx, 'account_number', e.target.value)}
-                  style={{ padding: '8px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                />
-                <input
-                  type="text"
-                  placeholder="Tipo (Ahorro / Monetario)"
-                  value={acc.type}
-                  onChange={(e) => handleAccountChange(idx, 'type', e.target.value)}
-                  style={{ padding: '8px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                />
-                <input
-                  type="text"
-                  placeholder="Nombre Titular"
-                  value={acc.name}
-                  onChange={(e) => handleAccountChange(idx, 'name', e.target.value)}
-                  style={{ padding: '8px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRemoveAccount(idx)}
-                  style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '1rem' }}
-                  title="Eliminar cuenta"
-                >
-                  ✕
-                </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {bankAccounts.length === 0 ? (
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '12px', textAlign: 'center' }}>
+                No hay cuentas bancarias registradas. Haz clic en "Agregar Nueva Cuenta" para añadir una.
               </div>
-            ))}
+            ) : (
+              bankAccounts.map((acc, idx) => (
+                <div key={idx} style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+                      💳 Cuenta #{idx + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAccount(idx)}
+                      style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700' }}
+                    >
+                      ✕ Eliminar Cuenta
+                    </button>
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: '10px'
+                  }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        Banco:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Banrural"
+                        value={acc.bank}
+                        onChange={(e) => handleAccountChange(idx, 'bank', e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        No. de Cuenta:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej. 4313076359"
+                        value={acc.account_number}
+                        onChange={(e) => handleAccountChange(idx, 'account_number', e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        Tipo de Cuenta:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Ahorro / Monetario"
+                        value={acc.type}
+                        onChange={(e) => handleAccountChange(idx, 'type', e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        Nombre Titular:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Jonathan Alvares"
+                        value={acc.name}
+                        onChange={(e) => handleAccountChange(idx, 'name', e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
