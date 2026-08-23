@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { notifyAdminNewOrder, notifyOrderCompleted, sendPushNotification } from '../../notificaciones y apis/notificaciones/pushService';
+import { checkRateLimit } from '../services/securityShield';
 import BinancePayModal from '../components/BinancePayModal';
 
 export default function ProductDetail() {
@@ -248,25 +249,34 @@ export default function ProductDetail() {
     setIsProcessing(true);
 
     try {
-      // Upload Receipt if provided for Manual Bank Transfer
+      // Upload / Convert Receipt if provided for Manual Bank Transfer
       let uploadedReceiptUrl = null;
       if (paymentMethod === 'Manual' && receiptFile) {
         setUploadingReceipt(true);
         try {
-          const fileExt = receiptFile.name.split('.').pop();
-          const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-          const filePath = `receipts/${fileName}`;
+          uploadedReceiptUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(receiptFile);
+          });
 
-          const { error: uploadError } = await supabase.storage
-            .from('avatars')
-            .upload(filePath, receiptFile, { upsert: true });
+          try {
+            const fileExt = receiptFile.name.split('.').pop();
+            const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+            const filePath = `receipts/${fileName}`;
 
-          if (!uploadError) {
-            const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
-            uploadedReceiptUrl = data.publicUrl;
-          }
+            const { error: uploadError } = await supabase.storage
+              .from('avatars')
+              .upload(filePath, receiptFile, { upsert: true });
+
+            if (!uploadError) {
+              const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+              if (data?.publicUrl) uploadedReceiptUrl = data.publicUrl;
+            }
+          } catch (storageErr) {}
         } catch (e) {
-          console.warn('Error subiendo comprobante:', e);
+          console.warn('Error procesando comprobante:', e);
         } finally {
           setUploadingReceipt(false);
         }
