@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
-import { getLocalUserBalance, setLocalUserBalance, useApp } from '../../context/AppContext';
+import { getLocalUserBalance, setLocalUserBalance, fetchServerBalances, useApp } from '../../context/AppContext';
 
 export default function AdminUsers() {
   const { updateUserWalletBalance } = useApp();
@@ -57,11 +57,28 @@ export default function AdminUsers() {
       const { data, count, error } = await query;
 
       if (data && !error) {
+        let serverBalances = {};
+        try {
+          serverBalances = await fetchServerBalances();
+        } catch (e) {}
+
         const mappedUsers = data.map(u => {
-          const localBal = getLocalUserBalance(u.id);
+          const emailKey = (u.email || '').toLowerCase().trim();
+          let bal = null;
+          if (serverBalances) {
+            if (serverBalances[u.id] !== undefined) bal = Number(serverBalances[u.id]);
+            else if (emailKey && serverBalances[emailKey] !== undefined) bal = Number(serverBalances[emailKey]);
+          }
+          if (bal === null) {
+            const localBal = getLocalUserBalance(u.id) || (emailKey ? getLocalUserBalance(emailKey) : null);
+            if (localBal !== null) bal = localBal;
+          }
+          if (bal === null) {
+            bal = Number(u.wallet_balance || 0);
+          }
           return {
             ...u,
-            wallet_balance: localBal !== null ? localBal : Number(u.wallet_balance || 0)
+            wallet_balance: Number(bal.toFixed(2))
           };
         });
         setUsers(mappedUsers);
@@ -148,10 +165,12 @@ export default function AdminUsers() {
 
       newBal = Number(newBal.toFixed(2));
 
-      // 1. Update Profile in Supabase and LocalStorage Sync
+      // 1. Update Profile in Supabase, Backend Server and LocalStorage Sync
       setLocalUserBalance(selectedUserForBalance.id, newBal);
+      if (selectedUserForBalance.email) setLocalUserBalance(selectedUserForBalance.email, newBal);
+
       if (updateUserWalletBalance) {
-        updateUserWalletBalance(selectedUserForBalance.id, newBal);
+        updateUserWalletBalance(selectedUserForBalance.id, newBal, selectedUserForBalance.email);
       }
 
       try {

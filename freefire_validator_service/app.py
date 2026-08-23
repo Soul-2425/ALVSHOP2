@@ -10,10 +10,57 @@ app = Flask(__name__)
 CORS(app)
 
 RECARGAS_AMERICA_KEY = os.environ.get('RECARGAS_AMERICA_KEY', 'ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb')
+BALANCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'balances.json')
+
+def load_balances():
+    if not os.path.exists(BALANCES_FILE):
+        initial = {
+            "carlosjavierlarosagranado@gmail.com": 0.75,
+            "0a6ee88c-c9e8-4b8f-a247-4fa73d2cac1c": 0.75
+        }
+        with open(BALANCES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(initial, f, indent=2)
+        return initial
+    try:
+        with open(BALANCES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_balances(data):
+    try:
+        with open(BALANCES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving balances: {e}")
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "ok", "service": "Free Fire Validator Microservice (0xMe & jinix6 compatible)"}), 200
+    return jsonify({"status": "ok", "service": "Free Fire Validator & Balance Microservice"}), 200
+
+# ==========================================
+# CENTRALIZED USER WALLET BALANCE API
+# ==========================================
+@app.route('/api/v1/balances', methods=['GET'])
+def get_all_balances():
+    balances = load_balances()
+    return jsonify({"success": True, "balances": balances}), 200
+
+@app.route('/api/v1/balance/update', methods=['POST'])
+def update_user_balance():
+    payload = request.get_json(force=True, silent=True) or {}
+    user_id = payload.get('userId', '').strip()
+    email = payload.get('email', '').strip().lower()
+    balance = float(payload.get('balance', 0))
+
+    balances = load_balances()
+    if user_id:
+        balances[user_id] = round(balance, 2)
+    if email:
+        balances[email] = round(balance, 2)
+
+    save_balances(balances)
+    return jsonify({"success": True, "userId": user_id, "email": email, "balance": round(balance, 2)}), 200
 
 @app.route('/api/v1/account', methods=['GET'])
 @app.route('/get_player_personal_show', methods=['GET'])

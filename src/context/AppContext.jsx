@@ -5,23 +5,53 @@ import { soundEffects } from '../services/soundEffects';
 
 const AppContext = createContext();
 
-export function getLocalUserBalance(userId) {
-  if (typeof window === 'undefined' || !userId) return null;
+export async function fetchServerBalances() {
+  try {
+    const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
+    const endpoints = [`/api/v1/balances`, `http://${host}:5000/api/v1/balances`];
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.balances) {
+            try {
+              const currentMap = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
+              const merged = { ...currentMap, ...data.balances };
+              localStorage.setItem('alv_wallet_balances', JSON.stringify(merged));
+            } catch (e) {}
+            return data.balances;
+          }
+        }
+      } catch (e) {}
+    }
+  } catch (err) {}
+  return {};
+}
+
+export function getLocalUserBalance(userIdOrEmail) {
+  if (typeof window === 'undefined' || !userIdOrEmail) return null;
   try {
     const map = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
-    return map[userId] !== undefined ? Number(map[userId]) : null;
+    const key = String(userIdOrEmail).toLowerCase().trim();
+    if (map[key] !== undefined) return Number(map[key]);
+    if (map[userIdOrEmail] !== undefined) return Number(map[userIdOrEmail]);
+    return null;
   } catch (e) {
     return null;
   }
 }
 
-export function setLocalUserBalance(userId, balance) {
-  if (typeof window === 'undefined' || !userId) return;
+export function setLocalUserBalance(userIdOrEmail, balance) {
+  if (typeof window === 'undefined' || !userIdOrEmail) return;
   try {
     const map = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
-    map[userId] = Number(balance);
+    const key = String(userIdOrEmail).toLowerCase().trim();
+    const num = Number(balance);
+    map[key] = num;
+    map[userIdOrEmail] = num;
     localStorage.setItem('alv_wallet_balances', JSON.stringify(map));
-    window.dispatchEvent(new CustomEvent('alv_balance_updated', { detail: { userId, balance: Number(balance) } }));
+    window.dispatchEvent(new CustomEvent('alv_balance_updated', { detail: { key, balance: num } }));
   } catch (e) {}
 }
 
@@ -179,45 +209,82 @@ export function AppProvider({ children }) {
   // Fetch Current Profile
   const fetchProfile = async (userId) => {
     try {
+      const serverBalances = await fetchServerBalances();
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      const localBal = getLocalUserBalance(userId);
+      let effectiveBal = null;
+      const userEmail = data?.email || user?.email || '';
+
+      if (serverBalances) {
+        if (userId && serverBalances[userId] !== undefined) effectiveBal = Number(serverBalances[userId]);
+        else if (userEmail && serverBalances[userEmail.toLowerCase().trim()] !== undefined) effectiveBal = Number(serverBalances[userEmail.toLowerCase().trim()]);
+      }
+
+      if (effectiveBal === null) {
+        const localBal = getLocalUserBalance(userId) || (userEmail ? getLocalUserBalance(userEmail) : null);
+        if (localBal !== null) effectiveBal = localBal;
+      }
+
+      if (effectiveBal === null && data) {
+        effectiveBal = Number(data.wallet_balance || 0);
+      }
+
+      const finalBal = effectiveBal !== null ? effectiveBal : 0.00;
 
       if (data && !error) {
-        const effectiveBal = localBal !== null ? localBal : Number(data.wallet_balance || 0);
-        setProfile({ ...data, wallet_balance: effectiveBal });
+        setProfile({ ...data, wallet_balance: finalBal });
         setRole(data.role || 'Cliente Común');
-        setWalletBalance(effectiveBal);
+        setWalletBalance(finalBal);
 
         // Load notifications and request permission
         loadUserNotifications(userId);
         requestPushPermission(userId);
-      } else if (localBal !== null) {
-        setWalletBalance(localBal);
+      } else {
+        setWalletBalance(finalBal);
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
-      const localBal = getLocalUserBalance(userId);
-      if (localBal !== null) setWalletBalance(localBal);
+      const localBal = getLocalUserBalance(userId) || (user?.email ? getLocalUserBalance(user.email) : 0);
+      setWalletBalance(localBal || 0);
     }
   };
 
   // Centralized Wallet Balance Updater
-  const updateUserWalletBalance = async (userId, newBal, reason = '') => {
+  const updateUserWalletBalance = async (userId, newBal, email = '') => {
     const finalBal = Number(Number(newBal).toFixed(2));
-    setLocalUserBalance(userId, finalBal);
+    const userEmail = (email || '').toLowerCase().trim();
 
-    if (user?.id === userId) {
+    if (userId) setLocalUserBalance(userId, finalBal);
+    if (userEmail) setLocalUserBalance(userEmail, finalBal);
+
+    if (user?.id === userId || (userEmail && user?.email?.toLowerCase().trim() === userEmail)) {
       setWalletBalance(finalBal);
       setProfile(prev => prev ? { ...prev, wallet_balance: finalBal } : prev);
     }
 
+    // Send to backend microservice to persist across all devices
     try {
-      await supabase.from('profiles').update({ wallet_balance: finalBal }).eq('id', userId);
+      const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
+      const endpoints = [`/api/v1/balance/update`, `http://${host}:5000/api/v1/balance/update`];
+      for (const ep of endpoints) {
+        try {
+          await fetch(ep, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, email: userEmail, balance: finalBal })
+          });
+          break;
+        } catch (e) {}
+      }
+    } catch (err) {}
+
+    try {
+      if (userId) await supabase.from('profiles').update({ wallet_balance: finalBal }).eq('id', userId);
     } catch (err) {
       console.warn('Supabase profile update warning:', err);
     }
@@ -225,10 +292,14 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     const handleBalanceEvent = (e) => {
-      if (e.detail && user?.id && e.detail.userId === user.id) {
-        const bal = Number(e.detail.balance);
-        setWalletBalance(bal);
-        setProfile(prev => prev ? { ...prev, wallet_balance: bal } : prev);
+      if (e.detail) {
+        const { key, balance } = e.detail;
+        const currentEmail = user?.email?.toLowerCase().trim();
+        if (key === user?.id || (currentEmail && key === currentEmail)) {
+          const bal = Number(balance);
+          setWalletBalance(bal);
+          setProfile(prev => prev ? { ...prev, wallet_balance: bal } : prev);
+        }
       }
     };
     window.addEventListener('alv_balance_updated', handleBalanceEvent);

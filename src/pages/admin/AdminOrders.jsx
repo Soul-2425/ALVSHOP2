@@ -172,12 +172,30 @@ export default function AdminOrders() {
 
       if (newStatus === 'Completed' && isWalletRecharge && selectedOrder.user_id) {
         try {
-          const { data: userProfile } = await supabase.from('profiles').select('wallet_balance').eq('id', selectedOrder.user_id).single();
-          const localBal = getLocalUserBalance(selectedOrder.user_id);
+          const { data: userProfile } = await supabase.from('profiles').select('wallet_balance, email').eq('id', selectedOrder.user_id).single();
+          const userEmail = userProfile?.email || selectedOrder.customer_email || '';
+          const localBal = getLocalUserBalance(selectedOrder.user_id) || (userEmail ? getLocalUserBalance(userEmail) : null);
           const currentBal = localBal !== null ? localBal : Number(userProfile?.wallet_balance || 0);
           const newBal = Number((currentBal + Number(selectedOrder.total_usdt)).toFixed(2));
 
           setLocalUserBalance(selectedOrder.user_id, newBal);
+          if (userEmail) setLocalUserBalance(userEmail, newBal);
+
+          try {
+            const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
+            const endpoints = [`/api/v1/balance/update`, `http://${host}:5000/api/v1/balance/update`];
+            for (const ep of endpoints) {
+              try {
+                await fetch(ep, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId: selectedOrder.user_id, email: userEmail, balance: newBal })
+                });
+                break;
+              } catch (e) {}
+            }
+          } catch (e) {}
+
           try {
             await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', selectedOrder.user_id);
           } catch (e) {}

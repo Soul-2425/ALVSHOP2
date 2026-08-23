@@ -72,6 +72,13 @@ export default function Profile() {
     }
   }, [searchParams]);
 
+  // Refresh profile balance on mount
+  useEffect(() => {
+    if (user?.id) {
+      fetchProfile(user.id);
+    }
+  }, [user?.id]);
+
   // Load User Orders
   useEffect(() => {
     async function loadOrders() {
