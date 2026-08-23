@@ -27,6 +27,7 @@ import AdminStreaming from './pages/admin/AdminStreaming';
 import AdminCoupons from './pages/admin/AdminCoupons';
 import AdminFinance from './pages/admin/AdminFinance';
 import AdminBranding from './pages/admin/AdminBranding';
+import AdminLikes from './pages/admin/AdminLikes';
 
 // Real-time Push & Toast Components
 import NotificationToastContainer from './components/NotificationToastContainer';
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />
                 <Route path="orders" element={<AdminOrders />} />
+                <Route path="likes" element={<AdminLikes />} />
                 <Route path="integrations" element={<AdminIntegrations />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="products" element={<AdminProducts />} />

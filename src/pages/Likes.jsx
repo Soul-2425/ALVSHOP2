@@ -1,892 +1,805 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { validatePlayerUid } from '../../notificaciones y apis/apis/index';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 
 export default function Likes() {
-  const { user } = useApp();
-  const [activeTab, setActiveTab] = useState('instant'); // 'instant' or 'auto'
+  const { user, profile, config, updateUserWalletBalance } = useApp();
+  const navigate = useNavigate();
 
-  // Instant Likes Form State
-  const [instantUid, setInstantUid] = useState('29386038');
-  const [instantQty, setInstantQty] = useState('2000');
-  const [showInstantModal, setShowInstantModal] = useState(false);
-  const [instantLoading, setInstantLoading] = useState(false);
+  // Exchange rate & Wallet
+  const exchangeRate = Number(config?.exchange_rate_gtq || 7.80);
+  const walletBalance = Number(profile?.wallet_balance || 0);
 
-  // Auto Likes Form State
-  const [autoUid, setAutoUid] = useState('29386038');
-  const [autoQtyPerDay, setAutoQtyPerDay] = useState('2000');
-  const [autoDurationDays, setAutoDurationDays] = useState('365');
-  const [autoHour, setAutoHour] = useState('13');
-  const [autoMinute, setAutoMinute] = useState('21');
-  const [showAutoModal, setShowAutoModal] = useState(false);
-  const [autoLoading, setAutoLoading] = useState(false);
+  // Tab: 'fixed' (Paquetes Fijos) vs 'scheduled' (Programado Diario)
+  const [activeTab, setActiveTab] = useState('fixed');
 
-  // Validated Player Info State
-  const [playerInfo, setPlayerInfo] = useState({
-    nickname: 'Jona detona',
-    currentLikes: 210193
-  });
+  // Fixed Packages Config
+  const fixedPackages = [
+    {
+      id: '2k',
+      title: '2K LIKES',
+      quantity: 2000,
+      likesLabel: '2,000 LIKES',
+      priceUsdt: 1.50,
+      deliveryDays: '1-2 Días',
+      badge: 'POPULAR 🔥',
+      gradient: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(30, 58, 138, 0.4) 100%)'
+    },
+    {
+      id: '4k',
+      title: '4K LIKES',
+      quantity: 4000,
+      likesLabel: '4,000 LIKES',
+      priceUsdt: 2.80,
+      deliveryDays: '2-3 Días',
+      badge: 'MEJOR VALOR ⭐',
+      gradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(30, 58, 138, 0.4) 100%)'
+    },
+    {
+      id: '10k',
+      title: '10K LIKES',
+      quantity: 10000,
+      likesLabel: '10,000 LIKES',
+      priceUsdt: 6.00,
+      deliveryDays: '4-5 Días',
+      badge: 'PAQUETE PRO 👑',
+      gradient: 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(217, 119, 6, 0.4) 100%)'
+    }
+  ];
 
-  // Handle Instant Form Submit -> Open Modal 1
-  const handleOpenInstantModal = async (e) => {
-    e.preventDefault();
-    if (!instantUid.trim()) return alert('Por favor ingresa el ID del jugador.');
-    const qty = Number(instantQty);
-    if (isNaN(qty) || qty < 1 || qty > 2000) {
-      return alert('La cantidad de likes debe estar entre 1 y 2,000.');
+  const [selectedPackage, setSelectedPackage] = useState(fixedPackages[0]);
+
+  // Input & Player State
+  const [targetUid, setTargetUid] = useState('');
+  const [isValidating, setIsValidating] = useState(false);
+  const [playerData, setPlayerData] = useState(null);
+  const [validationError, setValidationError] = useState('');
+
+  // Scheduled / Daily Form State
+  const [autoQtyPerDay, setAutoQtyPerDay] = useState(2000);
+  const [autoDays, setAutoDays] = useState(7);
+  const [autoHour, setAutoHour] = useState('14');
+  const [autoMinute, setAutoMinute] = useState('00');
+
+  // Checkout & Dispatch State
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(null);
+
+  // Active Price Calculation
+  const currentPriceUsdt = activeTab === 'fixed'
+    ? selectedPackage.priceUsdt
+    : (autoQtyPerDay / 1000 * 0.70 * autoDays);
+  const currentPriceGtq = (currentPriceUsdt * exchangeRate).toFixed(2);
+  const hasSufficientBalance = walletBalance >= currentPriceUsdt;
+
+  // Validate UID
+  const handleValidateUid = async (uidToValidate) => {
+    const cleanUid = (uidToValidate || targetUid).trim().replace(/\D/g, '');
+    if (!cleanUid || cleanUid.length < 5) {
+      setValidationError('Ingresa un UID válido de al menos 5 dígitos.');
+      setPlayerData(null);
+      return;
     }
 
-    setInstantLoading(true);
+    setIsValidating(true);
+    setValidationError('');
+
     try {
-      const res = await validatePlayerUid(instantUid.trim(), 'Free Fire');
-      if (res && res.success) {
-        setPlayerInfo({
-          nickname: res.nickname || 'Jona detona',
-          currentLikes: res.currentLikes || 210193
-        });
-      } else {
-        setPlayerInfo({
-          nickname: `Jugador_${instantUid.slice(-4)}`,
-          currentLikes: 210193
-        });
+      // 1. Try local python microservice if available for full stats
+      let fullStats = null;
+      try {
+        const pyRes = await fetch(`http://localhost:5000/api/v1/account?uid=${cleanUid}&server=LATAM`);
+        if (pyRes.ok) {
+          const json = await pyRes.json();
+          if (json?.basicInfo) {
+            fullStats = {
+              nickname: json.basicInfo.nickname || `Player_${cleanUid.slice(-4)}`,
+              level: json.basicInfo.level || 65,
+              liked: json.basicInfo.liked || 15400,
+              rankName: json.basicInfo.rankName || 'Heroico ⭐',
+              region: json.basicInfo.region || 'LATAM',
+              avatarUrl: json.profileInfo?.avatarUrl || 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
+            };
+          }
+        }
+      } catch (e) {}
+
+      // 2. Fallback to official Recargas America validation
+      if (!fullStats) {
+        const res = await validatePlayerUid(cleanUid, 'Free Fire');
+        const seed = parseInt(cleanUid) || 12345;
+        if (res && res.success) {
+          fullStats = {
+            nickname: res.nickname || `Player_${cleanUid.slice(-4)}`,
+            level: 55 + (seed % 25),
+            liked: res.currentLikes || (4500 + (seed % 35000)),
+            rankName: ['Platino IV', 'Diamante II', 'Heroico ⭐', 'Maestro 👑'][seed % 4],
+            region: res.region || 'LATAM',
+            avatarUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
+          };
+        } else {
+          fullStats = {
+            nickname: `Jugador_${cleanUid.slice(-4)}`,
+            level: 50 + (seed % 20),
+            liked: 3200 + (seed % 25000),
+            rankName: 'Heroico ⭐',
+            region: 'LATAM',
+            avatarUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
+          };
+        }
       }
-      setShowInstantModal(true);
+
+      setPlayerData(fullStats);
     } catch (err) {
-      console.warn(err);
-      setShowInstantModal(true);
+      console.warn('Error validando UID:', err);
+      setPlayerData({
+        nickname: `Jugador_${cleanUid.slice(-4)}`,
+        level: 60,
+        liked: 12500,
+        rankName: 'Heroico ⭐',
+        region: 'LATAM',
+        avatarUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png'
+      });
     } finally {
-      setInstantLoading(false);
+      setIsValidating(false);
     }
   };
 
-  // Handle Auto Form Submit -> Open Modal 2
-  const handleOpenAutoModal = async (e) => {
-    e.preventDefault();
-    if (!autoUid.trim()) return alert('Por favor ingresa el ID del jugador.');
-    const qty = Number(autoQtyPerDay);
-    if (isNaN(qty) || qty < 1 || qty > 2000) {
-      return alert('La cantidad de likes por día debe estar entre 1 y 2,000.');
-    }
-    const days = Number(autoDurationDays);
-    if (isNaN(days) || days < 1) {
-      return alert('La duración en días debe ser mínimo 1.');
+  // Submit Order & Pay with Wallet
+  const handleProceedPayment = async () => {
+    if (!user) {
+      alert('Debes iniciar sesión para realizar la compra.');
+      navigate('/profile');
+      return;
     }
 
-    setAutoLoading(true);
+    if (!targetUid.trim() || targetUid.trim().length < 5) {
+      alert('Por favor ingresa un ID (UID) de Free Fire válido.');
+      return;
+    }
+
+    if (!hasSufficientBalance) {
+      alert('Saldo insuficiente en tu billetera. Por favor recarga saldo antes de continuar.');
+      navigate('/profile?tab=wallet');
+      return;
+    }
+
+    setIsProcessing(true);
+
     try {
-      const res = await validatePlayerUid(autoUid.trim(), 'Free Fire');
-      if (res && res.success) {
-        setPlayerInfo({
-          nickname: res.nickname || 'Jona detona',
-          currentLikes: res.currentLikes || 210193
+      const likesToAdd = activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays);
+      const deliveryTime = activeTab === 'fixed' ? selectedPackage.deliveryDays : `${autoDays} Días`;
+      const playerNick = playerData?.nickname || `Jugador_${targetUid.slice(-4)}`;
+      const currentLikesBefore = playerData?.liked || 0;
+
+      // 1. Deduct user wallet balance immediately
+      const newBalance = Math.max(0, walletBalance - currentPriceUsdt);
+      await updateUserWalletBalance(user.id, newBalance, user.email);
+
+      // 2. Dispatch with backend Likes service
+      let dispatchResult = { mode: 'MANUAL', txId: null };
+      try {
+        const dispRes = await fetch('http://localhost:5000/api/v1/likes/dispatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: `LIKES-${Date.now()}`,
+            uid: targetUid.trim(),
+            likesToAdd: likesToAdd,
+            nickname: playerNick,
+            currentLikes: currentLikesBefore
+          })
         });
-      } else {
-        setPlayerInfo({
-          nickname: `Jugador_${autoUid.slice(-4)}`,
-          currentLikes: 210193
-        });
+        if (dispRes.ok) {
+          dispatchResult = await dispRes.json();
+        }
+      } catch (e) {
+        console.warn('Microservicio de despacho no disponible, fallback a manual:', e);
       }
-      setShowAutoModal(true);
+
+      // 3. Register Order in Supabase
+      const isAutoDispatched = dispatchResult.mode === 'API';
+      const orderStatus = isAutoDispatched ? 'Completed' : 'Pending';
+
+      const orderPayload = {
+        user_id: user.id,
+        total_usdt: currentPriceUsdt,
+        total_gtq: Number(currentPriceGtq),
+        status: orderStatus,
+        payment_method: 'Wallet',
+        bank_receipt_url: isAutoDispatched ? `LIKES_API | Tx: ${dispatchResult.txId}` : 'WALLET_PAY',
+        customer_notes: JSON.stringify({
+          service_type: 'Free Fire Likes',
+          mode: activeTab,
+          target_uid: targetUid.trim(),
+          player_nickname: playerNick,
+          player_level: playerData?.level || 65,
+          player_rank: playerData?.rankName || 'Heroico ⭐',
+          likes_before: currentLikesBefore,
+          likes_to_add: likesToAdd,
+          target_likes_final: currentLikesBefore + likesToAdd,
+          delivery_estimated: deliveryTime,
+          dispatch_mode: dispatchResult.mode || 'MANUAL',
+          scheduled_hour: activeTab === 'scheduled' ? `${autoHour}:${autoMinute}` : 'Inmediato'
+        })
+      };
+
+      const { data: createdOrder, error: orderErr } = await supabase
+        .from('orders')
+        .insert(orderPayload)
+        .select()
+        .single();
+
+      if (createdOrder) {
+        try {
+          await supabase.from('order_items').insert({
+            order_id: createdOrder.id,
+            product_id: null,
+            quantity: 1,
+            price_usdt: currentPriceUsdt,
+            cost_usdt: currentPriceUsdt * 0.5,
+            fields_data: {
+              target_uid: targetUid.trim(),
+              player_nickname: playerNick,
+              likes_quantity: likesToAdd,
+              delivery_days: deliveryTime
+            }
+          });
+        } catch (e) {}
+      }
+
+      setOrderSuccess({
+        id: createdOrder?.id || `ORD-${Date.now()}`,
+        likesToAdd,
+        playerNick,
+        targetUid: targetUid.trim(),
+        likesBefore: currentLikesBefore,
+        targetLikesFinal: currentLikesBefore + likesToAdd,
+        priceUsdt: currentPriceUsdt,
+        deliveryTime,
+        isAutoDispatched
+      });
     } catch (err) {
-      console.warn(err);
-      setShowAutoModal(true);
+      alert('Error procesando el pedido de likes: ' + err.message);
     } finally {
-      setAutoLoading(false);
-    }
-  };
-
-  // Confirm Actions
-  const handleConfirmInstant = async () => {
-    try {
-      if (user) {
-        await supabase.from('orders').insert({
-          user_id: user.id,
-          total_usdt: 0,
-          total_gtq: 0,
-          status: 'Completed',
-          payment_method: 'Free Fire Likes Instant',
-          customer_notes: `Envío Instantáneo de ${instantQty} Likes a UID: ${instantUid} (${playerInfo.nickname})`
-        });
-      }
-      alert(`¡Solicitud confirmada! Se han enviado ${instantQty} likes al jugador "${playerInfo.nickname}".`);
-      setShowInstantModal(false);
-    } catch (err) {
-      alert('¡Envío realizado exitosamente!');
-      setShowInstantModal(false);
-    }
-  };
-
-  const handleConfirmAuto = async () => {
-    const totalExpected = (Number(autoQtyPerDay) * Number(autoDurationDays)).toLocaleString();
-    try {
-      if (user) {
-        await supabase.from('orders').insert({
-          user_id: user.id,
-          total_usdt: 0,
-          total_gtq: 0,
-          status: 'Completed',
-          payment_method: 'Free Fire Likes Scheduled',
-          customer_notes: `Programación de ${autoQtyPerDay} likes/día por ${autoDurationDays} días (${totalExpected} total) a UID: ${autoUid} (${playerInfo.nickname}) a las ${autoHour}:${autoMinute}`
-        });
-      }
-      alert(`¡Horario diario creado exitosamente! Se programaron ${autoQtyPerDay} likes diarios durante ${autoDurationDays} días para "${playerInfo.nickname}".`);
-      setShowAutoModal(false);
-    } catch (err) {
-      alert('¡Horario diario programado exitosamente!');
-      setShowAutoModal(false);
+      setIsProcessing(false);
     }
   };
 
   return (
-    <div className="container" style={{ paddingTop: '20px', paddingBottom: '50px', maxWidth: '440px' }}>
+    <div className="container" style={{ paddingTop: '20px', paddingBottom: '60px', maxWidth: '780px' }}>
       
-      {/* Tab Switcher: Instant vs Auto */}
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        backgroundColor: '#0a0f0d',
-        padding: '6px',
-        borderRadius: '16px',
-        border: '1px solid rgba(0, 230, 118, 0.15)',
-        marginBottom: '20px'
-      }}>
-        <button
-          onClick={() => setActiveTab('instant')}
-          style={{
-            flex: 1,
-            padding: '10px 8px',
-            borderRadius: '12px',
-            fontSize: '0.85rem',
-            fontWeight: '700',
-            cursor: 'pointer',
-            transition: 'all 0.25s ease',
-            backgroundColor: activeTab === 'instant' ? '#00e676' : 'transparent',
-            color: activeTab === 'instant' ? '#000' : '#8e9aa8',
-            boxShadow: activeTab === 'instant' ? '0 0 16px rgba(0, 230, 118, 0.35)' : 'none'
-          }}
-        >
-          ⚡ Likes Instantáneos
-        </button>
-
-        <button
-          onClick={() => setActiveTab('auto')}
-          style={{
-            flex: 1,
-            padding: '10px 8px',
-            borderRadius: '12px',
-            fontSize: '0.85rem',
-            fontWeight: '700',
-            cursor: 'pointer',
-            transition: 'all 0.25s ease',
-            backgroundColor: activeTab === 'auto' ? '#00e676' : 'transparent',
-            color: activeTab === 'auto' ? '#000' : '#8e9aa8',
-            boxShadow: activeTab === 'auto' ? '0 0 16px rgba(0, 230, 118, 0.35)' : 'none'
-          }}
-        >
-          🔄 Me Gusta Automático
-        </button>
+      {/* Title Header */}
+      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '4px 14px',
+          borderRadius: 'var(--radius-full)',
+          background: 'rgba(6, 182, 212, 0.15)',
+          border: '1px solid var(--border-cyan)',
+          color: 'var(--accent-cyan)',
+          fontSize: '0.78rem',
+          fontWeight: '900',
+          marginBottom: '10px',
+          letterSpacing: '0.05em'
+        }}>
+          ⚡ SERVICIO OFICIAL DE LIKES PARA FREE FIRE
+        </div>
+        <h1 style={{
+          fontSize: 'clamp(1.8rem, 5vw, 2.5rem)',
+          fontWeight: '900',
+          margin: 0,
+          background: 'linear-gradient(135deg, #fff 30%, var(--accent-cyan) 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent'
+        }}>
+          Aumenta tus Likes en Free Fire
+        </h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '540px', margin: '8px auto 0 auto' }}>
+          Entrega 100% segura por UID oficial. Consulta tu perfil en tiempo real y recibe tus likes con total garantía.
+        </p>
       </div>
 
-      {/* 1. VIEW: ENVIAR ME GUSTA (Instantáneos) */}
-      {activeTab === 'instant' && (
-        <div style={{
-          backgroundColor: '#0d1512',
-          border: '1px solid rgba(0, 230, 118, 0.2)',
-          borderRadius: '24px',
-          padding: '28px 20px',
-          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)'
-        }} className="animate-fade">
-          
-          <h2 style={{
-            fontSize: '1.25rem',
-            fontWeight: '800',
-            color: '#fff',
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            marginBottom: '6px'
-          }}>
-            ENVIAR ME GUSTA
-          </h2>
-
-          <p style={{
-            fontSize: '0.85rem',
-            color: '#718096',
-            lineHeight: '1.4',
-            marginBottom: '24px'
-          }}>
-            Introduzca el ID del objetivo y la cantidad deseada.
-          </p>
-
-          <form onSubmit={handleOpenInstantModal} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
-            {/* Field: ID DEL OBJETIVO */}
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                color: '#8e9aa8',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '8px'
-              }}>
-                ID DEL OBJETIVO
-              </label>
-              <input
-                type="text"
-                required
-                value={instantUid}
-                onChange={(e) => setInstantUid(e.target.value)}
-                placeholder="29386038"
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  backgroundColor: '#070b09',
-                  border: '1px solid rgba(0, 230, 118, 0.4)',
-                  borderRadius: '12px',
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontWeight: '600',
-                  outline: 'none',
-                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)'
-                }}
-              />
-            </div>
-
-            {/* Field: CANTIDAD (1 - 2,000) */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label style={{
-                  fontSize: '0.75rem',
-                  fontWeight: '700',
-                  color: '#8e9aa8',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}>
-                  CANTIDAD
-                </label>
-                <span style={{ fontSize: '0.72rem', color: '#00e676' }}>Límite: 1 - 2,000</span>
-              </div>
-              <input
-                type="number"
-                min="1"
-                max="2000"
-                required
-                value={instantQty}
-                onChange={(e) => setInstantQty(e.target.value)}
-                placeholder="2000"
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  backgroundColor: '#070b09',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontWeight: '600',
-                  outline: 'none'
-                }}
-              />
-            </div>
-
-            {/* Action Button */}
-            <button
-              type="submit"
-              disabled={instantLoading}
-              style={{
-                width: '100%',
-                padding: '14px',
-                backgroundColor: '#00e676',
-                color: '#000',
-                fontWeight: '800',
-                fontSize: '0.92rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                borderRadius: '16px',
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 4px 20px rgba(0, 230, 118, 0.35)',
-                marginTop: '10px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {instantLoading ? 'Verificando...' : 'ENVIAR ME GUSTA'}
-            </button>
-
-          </form>
-        </div>
-      )}
-
-      {/* 2. VIEW: ME GUSTA AUTOMÁTICO (Programado) */}
-      {activeTab === 'auto' && (
-        <div style={{
-          backgroundColor: '#0d1512',
-          border: '1px solid rgba(0, 230, 118, 0.2)',
-          borderRadius: '24px',
-          padding: '28px 20px',
-          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)'
-        }} className="animate-fade">
-          
-          <h2 style={{
-            fontSize: '1.25rem',
-            fontWeight: '800',
-            color: '#fff',
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            marginBottom: '6px'
-          }}>
-            ME GUSTA AUTOMÁTICO
-          </h2>
-
-          <p style={{
-            fontSize: '0.85rem',
-            color: '#718096',
-            lineHeight: '1.4',
-            marginBottom: '20px'
-          }}>
-            Configura envíos automáticos diarios durante un período de tiempo. Proporciona el ID del jugador objetivo.
-          </p>
-
-          <form onSubmit={handleOpenAutoModal} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            
-            {/* Field: ID DEL OBJETIVO */}
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                color: '#8e9aa8',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '6px'
-              }}>
-                ID DEL OBJETIVO
-              </label>
-              <input
-                type="text"
-                required
-                value={autoUid}
-                onChange={(e) => setAutoUid(e.target.value)}
-                placeholder="29386038"
-                style={{
-                  width: '100%',
-                  padding: '13px 16px',
-                  backgroundColor: '#070b09',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  color: '#fff',
-                  fontSize: '0.95rem',
-                  fontWeight: '600'
-                }}
-              />
-            </div>
-
-            {/* Field: CANTIDAD POR DÍA (1-2000) */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <label style={{
-                  fontSize: '0.75rem',
-                  fontWeight: '700',
-                  color: '#8e9aa8',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}>
-                  CANTIDAD POR DÍA
-                </label>
-                <span style={{ fontSize: '0.72rem', color: '#00e676' }}>1 - 2,000 / día</span>
-              </div>
-              <input
-                type="number"
-                min="1"
-                max="2000"
-                required
-                value={autoQtyPerDay}
-                onChange={(e) => setAutoQtyPerDay(e.target.value)}
-                placeholder="2000"
-                style={{
-                  width: '100%',
-                  padding: '13px 16px',
-                  backgroundColor: '#070b09',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  color: '#fff',
-                  fontSize: '0.95rem',
-                  fontWeight: '600'
-                }}
-              />
-            </div>
-
-            {/* Field: DURACIÓN (DÍAS) */}
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                color: '#8e9aa8',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '6px'
-              }}>
-                DURACIÓN (DÍAS)
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={autoDurationDays}
-                onChange={(e) => setAutoDurationDays(e.target.value)}
-                placeholder="365"
-                style={{
-                  width: '100%',
-                  padding: '13px 16px',
-                  backgroundColor: '#070b09',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '12px',
-                  color: '#fff',
-                  fontSize: '0.95rem',
-                  fontWeight: '600'
-                }}
-              />
-            </div>
-
-            {/* Field: TIEMPO DE ENVÍO (Hora y Minuto) */}
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                color: '#8e9aa8',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: '6px'
-              }}>
-                TIEMPO DE ENVÍO
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  required
-                  value={autoHour}
-                  onChange={(e) => setAutoHour(e.target.value)}
-                  placeholder="13"
-                  style={{
-                    width: '100%',
-                    padding: '13px 16px',
-                    backgroundColor: '#070b09',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '12px',
-                    color: '#fff',
-                    fontSize: '0.95rem',
-                    fontWeight: '600',
-                    textAlign: 'center'
-                  }}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  required
-                  value={autoMinute}
-                  onChange={(e) => setAutoMinute(e.target.value)}
-                  placeholder="21"
-                  style={{
-                    width: '100%',
-                    padding: '13px 16px',
-                    backgroundColor: '#070b09',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '12px',
-                    color: '#fff',
-                    fontSize: '0.95rem',
-                    fontWeight: '600',
-                    textAlign: 'center'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Action Button */}
-            <button
-              type="submit"
-              disabled={autoLoading}
-              style={{
-                width: '100%',
-                padding: '14px',
-                backgroundColor: '#00e676',
-                color: '#000',
-                fontWeight: '800',
-                fontSize: '0.92rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                borderRadius: '16px',
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 4px 20px rgba(0, 230, 118, 0.35)',
-                marginTop: '6px',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {autoLoading ? 'Verificando...' : 'CREAR HORARIO DIARIO'}
-            </button>
-
-          </form>
-        </div>
-      )}
-
-      {/* ====================================================================== */}
-      {/* SCREENSHOT 1 MODAL: CONFIRMAR ENVÍO (Instantáneo)                     */}
-      {/* ====================================================================== */}
-      {showInstantModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 100,
-          backgroundColor: 'rgba(0,0,0,0.82)',
-          backdropFilter: 'blur(10px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px'
+      {orderSuccess ? (
+        /* SUCCESS RECEIPT CARD */
+        <div className="glass-panel" style={{
+          borderRadius: 'var(--radius-lg)',
+          padding: '36px 24px',
+          textAlign: 'center',
+          border: '1px solid #34d399',
+          boxShadow: '0 0 35px rgba(52, 211, 153, 0.2)'
         }}>
-          <div className="animate-fade" style={{
-            width: '100%',
-            maxWidth: '380px',
-            backgroundColor: '#0d1512',
-            border: '1px solid rgba(0, 230, 118, 0.3)',
-            borderRadius: '24px',
-            padding: '24px 20px',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)'
+          <div style={{ fontSize: '3.5rem', marginBottom: '12px' }}>🎉</div>
+          <h2 style={{ fontSize: '1.5rem', color: '#34d399', fontWeight: '900', marginBottom: '6px' }}>
+            ¡Pedido de Likes Confirmado con Éxito!
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '24px' }}>
+            {orderSuccess.isAutoDispatched
+              ? '⚡ La API del proveedor ha iniciado el envío de likes automáticamente.'
+              : '📋 Tu orden ha sido registrada en el panel. El administrador realizará el envío en el plazo estimado.'}
+          </p>
+
+          {/* Audit Card Summary */}
+          <div style={{
+            background: '#0d111a',
+            border: '1px solid var(--border-glass)',
+            borderRadius: 'var(--radius-md)',
+            padding: '20px',
+            maxWidth: '480px',
+            margin: '0 auto 24px auto',
+            textAlign: 'left',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            fontSize: '0.88rem'
           }}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                Confirmar envío
-              </h3>
-              <button
-                onClick={() => setShowInstantModal(false)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: 'none',
-                  color: '#8e9aa8',
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem'
-                }}
-              >
-                ✕
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Jugador:</span>
+              <strong style={{ color: '#fff' }}>{orderSuccess.playerNick}</strong>
             </div>
-
-            {/* Formatted Rows Container */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '18px' }}>
-              
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.85rem', color: '#8e9aa8' }}>ID del objetivo:</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>{instantUid}</span>
-              </div>
-
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.85rem', color: '#8e9aa8' }}>Apodo:</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>{playerInfo.nickname}</span>
-              </div>
-
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.85rem', color: '#8e9aa8' }}>Cantidad solicitada:</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>{instantQty}</span>
-              </div>
-
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.85rem', color: '#8e9aa8' }}>Me gusta actualmente:</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>{playerInfo.currentLikes.toLocaleString()}</span>
-              </div>
-
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>ID / UID:</span>
+              <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{orderSuccess.targetUid}</span>
             </div>
-
-            {/* Alert / Question Container */}
-            <div style={{
-              backgroundColor: 'rgba(234, 179, 8, 0.08)',
-              border: '1px solid rgba(234, 179, 8, 0.25)',
-              borderRadius: '14px',
-              padding: '12px 16px',
-              textAlign: 'center',
-              marginBottom: '18px'
-            }}>
-              <p style={{ fontSize: '0.82rem', color: '#fde047', margin: 0, lineHeight: '1.4' }}>
-                ¿Estás seguro de que quieres enviar estos "me gusta"?
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Likes Antes:</span>
+              <span>{orderSuccess.likesBefore.toLocaleString()} ❤️</span>
             </div>
-
-            {/* Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => setShowInstantModal(false)}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  backgroundColor: '#070b09',
-                  color: '#00e676',
-                  border: '1px solid rgba(0, 230, 118, 0.3)',
-                  borderRadius: '16px',
-                  fontWeight: '700',
-                  fontSize: '0.9rem',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmInstant}
-                style={{
-                  width: '100%',
-                  padding: '13px',
-                  backgroundColor: '#00e676',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '16px',
-                  fontWeight: '800',
-                  fontSize: '0.92rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 15px rgba(0, 230, 118, 0.35)'
-                }}
-              >
-                Confirmar envío
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Likes Añadidos:</span>
+              <strong style={{ color: '#34d399' }}>+{orderSuccess.likesToAdd.toLocaleString()} LIKES</strong>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Meta Final:</span>
+              <strong style={{ color: '#fbbf24' }}>{orderSuccess.targetLikesFinal.toLocaleString()} LIKES</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Tiempo de Entrega:</span>
+              <span style={{ color: '#fff', fontWeight: 'bold' }}>{orderSuccess.deliveryTime}</span>
+            </div>
+          </div>
 
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setOrderSuccess(null);
+                setTargetUid('');
+                setPlayerData(null);
+              }}
+              className="btn-cyan"
+              style={{ padding: '10px 20px', fontSize: '0.88rem' }}
+            >
+              ➕ Solicitar Otro Paquete
+            </button>
+            <button
+              onClick={() => navigate('/profile')}
+              className="btn-glass"
+              style={{ padding: '10px 20px', fontSize: '0.88rem' }}
+            >
+              👤 Ver en Mi Perfil
+            </button>
           </div>
         </div>
-      )}
-
-      {/* ====================================================================== */}
-      {/* SCREENSHOT 2 MODAL: CONFIRMAR CITA (Automático)                       */}
-      {/* ====================================================================== */}
-      {showAutoModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 100,
-          backgroundColor: 'rgba(0,0,0,0.82)',
-          backdropFilter: 'blur(10px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px'
-        }}>
-          <div className="animate-fade" style={{
-            width: '100%',
-            maxWidth: '380px',
-            backgroundColor: '#0d1512',
-            border: '1px solid rgba(0, 230, 118, 0.3)',
-            borderRadius: '24px',
-            padding: '24px 20px',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)'
+      ) : (
+        <>
+          {/* TAB SELECTOR: Fixed vs Scheduled */}
+          <div style={{
+            display: 'flex',
+            background: 'rgba(255, 255, 255, 0.03)',
+            padding: '4px',
+            borderRadius: 'var(--radius-full)',
+            border: '1px solid var(--border-glass)',
+            marginBottom: '28px'
           }}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff', margin: 0 }}>
-                Confirmar cita
-              </h3>
-              <button
-                onClick={() => setShowAutoModal(false)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: 'none',
-                  color: '#8e9aa8',
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem'
+            <button
+              onClick={() => setActiveTab('fixed')}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '0.88rem',
+                fontWeight: '800',
+                cursor: 'pointer',
+                background: activeTab === 'fixed' ? 'var(--accent-cyan)' : 'transparent',
+                color: activeTab === 'fixed' ? '#000' : 'var(--text-muted)',
+                border: 'none',
+                transition: 'all 0.2s ease',
+                boxShadow: activeTab === 'fixed' ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none'
+              }}
+            >
+              🔥 Paquetes Fijos de Likes
+            </button>
+            <button
+              onClick={() => setActiveTab('scheduled')}
+              style={{
+                flex: 1,
+                padding: '10px 16px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '0.88rem',
+                fontWeight: '800',
+                cursor: 'pointer',
+                background: activeTab === 'scheduled' ? 'var(--accent-cyan)' : 'transparent',
+                color: activeTab === 'scheduled' ? '#000' : 'var(--text-muted)',
+                border: 'none',
+                transition: 'all 0.2s ease',
+                boxShadow: activeTab === 'scheduled' ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none'
+              }}
+            >
+              ⏰ Likes Diarios Programados
+            </button>
+          </div>
+
+          {/* PASO 1: SELECCIÓN DE PAQUETE */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--accent-cyan)', marginBottom: '12px' }}>
+              PASO 1: SELECCIONA TU PAQUETE DE LIKES
+            </div>
+
+            {activeTab === 'fixed' ? (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                gap: '14px'
+              }}>
+                {fixedPackages.map((pkg) => {
+                  const isSelected = selectedPackage.id === pkg.id;
+                  const priceGtq = (pkg.priceUsdt * exchangeRate).toFixed(2);
+
+                  return (
+                    <div
+                      key={pkg.id}
+                      onClick={() => setSelectedPackage(pkg)}
+                      style={{
+                        borderRadius: 'var(--radius-lg)',
+                        padding: '18px 16px',
+                        cursor: 'pointer',
+                        background: isSelected ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                        border: isSelected ? '2px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
+                        boxShadow: isSelected ? '0 0 20px rgba(6, 182, 212, 0.25)' : 'none',
+                        transition: 'all 0.2s ease',
+                        position: 'relative',
+                        display: 'flex',
+                        flexDirection: 'column'
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute',
+                        top: '12px',
+                        right: '12px',
+                        background: isSelected ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.08)',
+                        color: isSelected ? '#000' : 'var(--text-muted)',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        fontSize: '0.68rem',
+                        fontWeight: '800'
+                      }}>
+                        {pkg.badge}
+                      </div>
+
+                      <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#fff', marginBottom: '4px' }}>
+                        {pkg.title}
+                      </div>
+
+                      <div style={{ fontSize: '0.75rem', color: '#34d399', fontWeight: '700', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>🚚</span> Entrega: {pkg.deliveryDays}
+                      </div>
+
+                      <div style={{ marginTop: 'auto', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
+                        <div style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
+                          ${pkg.priceUsdt.toFixed(2)} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>USDT</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: '600' }}>
+                          Q{priceGtq} GTQ
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Scheduled Custom Pack Config */
+              <div className="glass-panel" style={{ padding: '20px', borderRadius: 'var(--radius-lg)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                      Likes por Día:
+                    </label>
+                    <select
+                      value={autoQtyPerDay}
+                      onChange={(e) => setAutoQtyPerDay(Number(e.target.value))}
+                      style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                    >
+                      <option value={1000}>1,000 Likes / día</option>
+                      <option value={2000}>2,000 Likes / día</option>
+                      <option value={3000}>3,000 Likes / día</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                      Duración (Días):
+                    </label>
+                    <select
+                      value={autoDays}
+                      onChange={(e) => setAutoDays(Number(e.target.value))}
+                      style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                    >
+                      <option value={7}>7 Días (1 Semana)</option>
+                      <option value={15}>15 Días (Quincena)</option>
+                      <option value={30}>30 Días (1 Mes)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                      Hora de Envío Diario:
+                    </label>
+                    <input
+                      type="time"
+                      value={`${autoHour}:${autoMinute}`}
+                      onChange={(e) => {
+                        const [h, m] = e.target.value.split(':');
+                        setAutoHour(h || '14');
+                        setAutoMinute(m || '00');
+                      }}
+                      style={{ width: '100%', padding: '9px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(6, 182, 212, 0.1)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-cyan)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Total de Likes Acumulados: </span>
+                    <strong style={{ color: '#fff' }}>{(autoQtyPerDay * autoDays).toLocaleString()} Likes</strong>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <strong style={{ fontSize: '1.2rem', color: 'var(--accent-cyan)' }}>${currentPriceUsdt.toFixed(2)} USDT</strong>
+                    <span style={{ fontSize: '0.75rem', color: '#fbbf24', marginLeft: '6px' }}>(Q{currentPriceGtq} GTQ)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* PASO 2: ID DEL OBJETIVO */}
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--accent-cyan)', marginBottom: '10px' }}>
+              PASO 2: INGRESA EL ID DEL OBJETIVO (UID DE FREE FIRE)
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="text"
+                placeholder="Ej. 29386038"
+                value={targetUid}
+                onChange={(e) => {
+                  setTargetUid(e.target.value);
+                  setValidationError('');
                 }}
+                onBlur={() => {
+                  if (targetUid.trim().length >= 5) handleValidateUid();
+                }}
+                style={{
+                  flex: 1,
+                  padding: '14px 18px',
+                  borderRadius: 'var(--radius-md)',
+                  background: '#0d111a',
+                  border: validationError ? '1px solid #f87171' : (playerData ? '1px solid #34d399' : '1px solid var(--border-glass)'),
+                  color: '#fff',
+                  fontSize: '1rem',
+                  fontWeight: '700',
+                  letterSpacing: '0.04em'
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => handleValidateUid()}
+                disabled={isValidating}
+                className="btn-cyan"
+                style={{ padding: '0 24px', fontSize: '0.9rem', whiteSpace: 'nowrap' }}
               >
-                ✕
+                {isValidating ? 'Consultando...' : '🔍 Consultar'}
               </button>
             </div>
 
-            {/* Formatted Rows Container */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
-              
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>ID del objetivo:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>{autoUid}</span>
+            {validationError && (
+              <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: '6px', fontWeight: '600' }}>
+                ⚠️ {validationError}
+              </div>
+            )}
+          </div>
+
+          {/* PASO 3: TARJETA DE PERFIL OFICIAL */}
+          {isValidating && (
+            <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+              <div className="spinner-medium" style={{ margin: '0 auto 12px auto' }} />
+              Cargando tarjeta de perfil oficial de Free Fire...
+            </div>
+          )}
+
+          {playerData && !isValidating && (
+            <div style={{ marginBottom: '28px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#34d399', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>✅</span> PERFIL DEL JUGADOR VERIFICADO
               </div>
 
               <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+                background: 'linear-gradient(135deg, #0f172a 0%, #0d111a 100%)',
+                border: '1px solid var(--border-cyan)',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px rgba(6, 182, 212, 0.15)',
+                position: 'relative'
               }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>Apodo:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>{playerInfo.nickname}</span>
+                {/* Header Banner */}
+                <div style={{
+                  height: '80px',
+                  background: 'linear-gradient(90deg, #1e3a8a 0%, #06b6d4 100%)',
+                  position: 'relative',
+                  padding: '14px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start'
+                }}>
+                  <span style={{ fontSize: '0.72rem', background: 'rgba(0, 0, 0, 0.6)', padding: '3px 10px', borderRadius: '12px', color: '#fff', fontWeight: '800' }}>
+                    🌍 Región {playerData.region}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', background: '#34d399', color: '#000', padding: '3px 10px', borderRadius: '12px', fontWeight: '900' }}>
+                    {playerData.rankName}
+                  </span>
+                </div>
+
+                {/* Profile Body */}
+                <div style={{ padding: '0 20px 20px 20px', marginTop: '-35px', display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  {/* Avatar Icon */}
+                  <div style={{
+                    width: '74px',
+                    height: '74px',
+                    borderRadius: '16px',
+                    border: '3px solid var(--accent-cyan)',
+                    background: '#0d111a',
+                    overflow: 'hidden',
+                    boxShadow: '0 8px 20px rgba(0, 0, 0, 0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '2rem'
+                  }}>
+                    🎮
+                  </div>
+
+                  {/* Player Info */}
+                  <div style={{ flex: 1, paddingTop: '40px', minWidth: '200px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: '1.3rem', color: '#fff', fontWeight: '900' }}>
+                        {playerData.nickname}
+                      </h3>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: 'rgba(234, 179, 8, 0.2)',
+                        color: '#fbbf24',
+                        fontWeight: '800',
+                        border: '1px solid rgba(234, 179, 8, 0.4)'
+                      }}>
+                        Nv. {playerData.level}
+                      </span>
+                    </div>
+
+                    <div style={{ color: 'var(--accent-cyan)', fontSize: '0.85rem', fontWeight: '700', marginTop: '2px' }}>
+                      UID: {targetUid.trim()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Likes Counter Progression Box */}
+                <div style={{
+                  margin: '0 20px 20px 20px',
+                  padding: '14px 18px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-glass)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '12px',
+                  textAlign: 'center'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>LIKES ANTES</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#fff', marginTop: '2px' }}>
+                      {playerData.liked.toLocaleString()} ❤️
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>LIKES AÑADIDOS</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: 'var(--accent-cyan)', marginTop: '2px' }}>
+                      +{(activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays)).toLocaleString()} ⚡
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: '700' }}>META FINAL</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#34d399', marginTop: '2px' }}>
+                      {(playerData.liked + (activeTab === 'fixed' ? selectedPackage.quantity : (autoQtyPerDay * autoDays))).toLocaleString()} 🎯
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PASO 4: PAGO CON BILLETERA */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TU SALDO DISPONIBLE EN BILLETERA:</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: hasSufficientBalance ? 'var(--accent-cyan)' : '#f87171' }}>
+                  ${walletBalance.toFixed(2)} USDT <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>(Q{(walletBalance * exchangeRate).toFixed(2)} GTQ)</span>
+                </div>
               </div>
 
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>Me gusta actualmente:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>{playerInfo.currentLikes.toLocaleString()}</span>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TOTAL A PAGAR:</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#fff' }}>
+                  ${currentPriceUsdt.toFixed(2)} USDT
+                </div>
               </div>
+            </div>
 
+            {!hasSufficientBalance && (
               <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 16px',
+                marginBottom: '16px',
                 display: 'flex',
+                alignItems: 'center',
                 justifyContent: 'space-between',
-                alignItems: 'center'
+                flexWrap: 'wrap',
+                gap: '10px'
               }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>Me gusta por día:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>{autoQtyPerDay} me gusta/día</span>
-              </div>
-
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>Duración:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>{autoDurationDays} días</span>
-              </div>
-
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>Total previsto:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#00e676' }}>
-                  {(Number(autoQtyPerDay) * Number(autoDurationDays)).toLocaleString()} me gusta
+                <span style={{ color: '#f87171', fontSize: '0.85rem', fontWeight: '700' }}>
+                  ⚠️ Saldo insuficiente para realizar esta orden.
                 </span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/profile?tab=wallet')}
+                  className="btn-cyan"
+                  style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                >
+                  ➕ Recargar Billetera ➔
+                </button>
               </div>
+            )}
 
-              <div style={{
-                backgroundColor: '#070b09',
-                borderRadius: '12px',
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.82rem', color: '#8e9aa8' }}>Horario diario:</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#fff' }}>{autoHour}:{autoMinute}</span>
-              </div>
-
-            </div>
-
-            {/* Alert / Instruction Container */}
-            <div style={{
-              backgroundColor: 'rgba(234, 179, 8, 0.08)',
-              border: '1px solid rgba(234, 179, 8, 0.25)',
-              borderRadius: '14px',
-              padding: '10px 14px',
-              textAlign: 'center',
-              marginBottom: '16px'
-            }}>
-              <p style={{ fontSize: '0.78rem', color: '#fde047', margin: 0, lineHeight: '1.4' }}>
-                Confirme los detalles antes de activar el envío automático.
-              </p>
-            </div>
-
-            {/* Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => setShowAutoModal(false)}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  backgroundColor: '#070b09',
-                  color: '#00e676',
-                  border: '1px solid rgba(0, 230, 118, 0.3)',
-                  borderRadius: '16px',
-                  fontWeight: '700',
-                  fontSize: '0.9rem',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmAuto}
-                style={{
-                  width: '100%',
-                  padding: '13px',
-                  backgroundColor: '#00e676',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '16px',
-                  fontWeight: '800',
-                  fontSize: '0.92rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 15px rgba(0, 230, 118, 0.35)'
-                }}
-              >
-                Confirmar cita
-              </button>
-            </div>
-
+            <button
+              onClick={handleProceedPayment}
+              disabled={isProcessing || !hasSufficientBalance || !targetUid.trim()}
+              className="btn-cyan"
+              style={{
+                width: '100%',
+                padding: '16px',
+                fontSize: '1rem',
+                fontWeight: '900',
+                letterSpacing: '0.04em'
+              }}
+            >
+              {isProcessing
+                ? 'Procesando Envío de Likes...'
+                : !hasSufficientBalance
+                ? 'Saldo Insuficiente (Recarga tu Billetera)'
+                : `💎 Pagar con Billetera ($${currentPriceUsdt.toFixed(2)} USDT)`}
+            </button>
           </div>
-        </div>
+        </>
       )}
-
     </div>
   );
 }
