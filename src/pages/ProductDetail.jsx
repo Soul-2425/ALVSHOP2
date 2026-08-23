@@ -22,6 +22,7 @@ export default function ProductDetail() {
   const [playerNickname, setPlayerNickname] = useState(null);
   const [playerLevel, setPlayerLevel] = useState(null);
   const [playerRegion, setPlayerRegion] = useState(null);
+  const [playerLikes, setPlayerLikes] = useState(null);
   const [validationError, setValidationError] = useState('');
   const uidDebounceTimeout = useRef(null);
 
@@ -48,32 +49,20 @@ export default function ProductDetail() {
       setLoading(true);
 
       // 1. Fetch Product
-      const { data: prodData } = await supabase
+      const { data: prodData, error: prodError } = await supabase
         .from('products')
-        .select('*, subcategories(name, categories(name))')
+        .select('*, subcategories(*, categories(*))')
         .eq('id', id)
         .single();
 
-      if (prodData) {
-        setProduct(prodData);
-      } else {
-        // Fallback product
-        setProduct({
-          id: id,
-          name: '100 + 10 Diamantes Free Fire (Recarga Directa)',
-          description: 'Recarga rápida directa a tu cuenta de Free Fire por UID. Entrega 100% garantizada en minutos.',
-          price_public: 1.00,
-          price_reseller: 0.85,
-          cost: 0.71,
-          stock: 999,
-          requires_validation: true,
-          validation_type: 'Free Fire',
-          button_action_text: 'Solicitar',
-          image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=700&auto=format&fit=crop&q=80'
-        });
+      if (prodError || !prodData) {
+        console.error('Error fetching product:', prodError);
+        navigate('/');
+        return;
       }
+      setProduct(prodData);
 
-      // 2. Fetch Form Fields
+      // 2. Fetch Custom Fields
       const { data: fieldsData } = await supabase
         .from('product_fields')
         .select('*')
@@ -117,6 +106,7 @@ export default function ProductDetail() {
       setPlayerNickname(null);
       setPlayerLevel(null);
       setPlayerRegion(null);
+      setPlayerLikes(null);
       setValidationError('');
       setValidatingUid(false);
       return;
@@ -129,11 +119,14 @@ export default function ProductDetail() {
       const result = await validatePlayerUid(cleanUid, product?.validation_type || 'Free Fire');
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
-        setPlayerLevel(result.account_level || 65);
+        setPlayerLevel(result.account_level || null);
         setPlayerRegion(result.region || 'LATAM');
+        setPlayerLikes(result.currentLikes || null);
         setValidationError('');
       } else {
         setPlayerNickname(null);
+        setPlayerLevel(null);
+        setPlayerLikes(null);
         setValidationError(result?.error || 'ID de jugador no encontrado en los servidores de Free Fire');
       }
     } catch (err) {
@@ -600,33 +593,60 @@ export default function ProductDetail() {
 
             {playerNickname && (
               <div style={{
-                background: 'rgba(52, 211, 153, 0.12)',
-                border: '1px solid rgba(52, 211, 153, 0.4)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px 14px',
-                marginBottom: '16px',
+                background: 'linear-gradient(135deg, rgba(13, 27, 42, 0.9) 0%, rgba(6, 78, 59, 0.4) 100%)',
+                border: '1px solid #34d399',
+                borderRadius: 'var(--radius-md)',
+                padding: '14px 16px',
+                marginBottom: '18px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: '10px'
+                gap: '12px',
+                boxShadow: '0 4px 20px rgba(52, 211, 153, 0.15)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '1.4rem' }}>🎮</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+                    border: '1px solid #34d399',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.4rem',
+                    flexShrink: 0
+                  }}>
+                    🎮
+                  </div>
                   <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>Cuenta Verificada</span>
-                      <span style={{ color: '#34d399', fontWeight: 'bold' }}>• Oficial</span>
+                    <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <span>✓ Cuenta Oficial Verificada</span>
                     </div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: '900', color: '#34d399' }}>{playerNickname}</div>
+                    <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
+                      {playerNickname}
+                    </div>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontWeight: '800' }}>
-                    ⭐ Nivel {playerLevel || 65}
-                  </span>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                  {playerLevel ? (
+                    <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontWeight: '800' }}>
+                      ⭐ Nivel {playerLevel}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.72rem', background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                      🟢 Lista para Recarga
+                    </span>
+                  )}
+                  {playerLikes && (
+                    <span style={{ fontSize: '0.7rem', color: '#fbbf24' }}>
+                      👍 {Number(playerLikes).toLocaleString()}
+                    </span>
+                  )}
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                     🌎 {playerRegion || 'LATAM'}
-                  </div>
+                  </span>
                 </div>
               </div>
             )}

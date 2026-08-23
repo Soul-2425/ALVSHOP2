@@ -257,29 +257,27 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'LATAM
       const result = {
         success: true,
         nickname: data.data.account_name,
-        account_level: 65,
         region: region,
-        currentLikes: 25000,
-        source: 'Recargas América Official Validator'
+        isVerified: true,
+        source: 'Garena / Recargas América Oficial'
       };
       uidCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
+    } else if (data?.success && data?.data?.status === false) {
+      return {
+        success: false,
+        error: 'El ID ingresado no existe en los servidores de Free Fire. Verifica tu UID.'
+      };
     }
   } catch (err) {
     console.warn('[API VALIDADORA] Error consultando Recargas América:', err);
   }
 
-  // 3. Fallback Automático con formato Gamer Verificado
-  const fallbackNick = `Player_${cleanUid.slice(-4)}`;
-  const fallbackResult = {
-    success: true,
-    nickname: fallbackNick,
-    account_level: 55,
-    region: region,
-    currentLikes: 12500,
-    source: 'Smart ID Fallback'
+  // 3. Si no se encontró en ningún servidor, retornar error claro (nunca nombres falsos)
+  return {
+    success: false,
+    error: 'No se pudo verificar el Nickname. Asegúrate de que el UID sea correcto.'
   };
-  return fallbackResult;
 }
 
 /**
