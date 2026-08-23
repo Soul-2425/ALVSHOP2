@@ -166,11 +166,24 @@ export default function AdminUsers() {
       newBal = Number(newBal.toFixed(2));
 
       // 1. Update Profile in Supabase, Backend Server and LocalStorage Sync
+      const reasonText = balanceReason.trim() || `Ajuste manual de saldo (${balanceAction === 'ADD' ? '+' : balanceAction === 'SUBTRACT' ? '-' : '='}$${amt.toFixed(2)} USDT) por Admin`;
+
       setLocalUserBalance(selectedUserForBalance.id, newBal);
       if (selectedUserForBalance.email) setLocalUserBalance(selectedUserForBalance.email, newBal);
 
       if (updateUserWalletBalance) {
         updateUserWalletBalance(selectedUserForBalance.id, newBal, selectedUserForBalance.email);
+      }
+
+      // Try RPC function (bypasses RLS with SECURITY DEFINER)
+      try {
+        await supabase.rpc('admin_set_user_balance', {
+          target_user_id: selectedUserForBalance.id,
+          new_balance: newBal,
+          admin_reason: reasonText
+        });
+      } catch (rpcErr) {
+        console.warn('RPC admin_set_user_balance fallback:', rpcErr);
       }
 
       try {
@@ -181,7 +194,6 @@ export default function AdminUsers() {
       } catch (e) {}
 
       // 2. Insert Audit Transaction Log
-      const reasonText = balanceReason.trim() || `Ajuste manual de saldo (${balanceAction === 'ADD' ? '+' : balanceAction === 'SUBTRACT' ? '-' : '='}$${amt.toFixed(2)} USDT) por Admin`;
       try {
         await supabase.from('transactions').insert({
           user_id: selectedUserForBalance.id,
