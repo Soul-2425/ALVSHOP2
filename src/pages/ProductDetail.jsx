@@ -97,9 +97,7 @@ export default function ProductDetail() {
     }
 
     loadProductData();
-  }, [id]);
-
-  // Handle Free Fire UID Real-time validation with Smooth Debounce (no false rate limits)
+  }, [id]);  // Handle Free Fire UID Real-time validation
   const handleUidValidation = async (uidValue) => {
     const cleanUid = (uidValue || '').trim().replace(/\D/g, '');
     if (!cleanUid || cleanUid.length < 5) {
@@ -127,10 +125,10 @@ export default function ProductDetail() {
         setPlayerNickname(null);
         setPlayerLevel(null);
         setPlayerLikes(null);
-        setValidationError(result?.error || 'ID de jugador no encontrado en los servidores de Free Fire');
+        setValidationError(result?.error || 'ID incorrecta. Por favor, verifica el ID ingresado.');
       }
     } catch (err) {
-      setValidationError('Error conectando con el servicio de validación');
+      setValidationError('ID incorrecta. Por favor, verifica el ID ingresado.');
     } finally {
       setValidatingUid(false);
     }
@@ -140,26 +138,28 @@ export default function ProductDetail() {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
 
     if (fieldName.toLowerCase().includes('uid') || fieldName.toLowerCase().includes('id')) {
+      // Clear errors immediately when typing starts
+      setValidationError('');
+
       if (uidDebounceTimeout.current) {
         clearTimeout(uidDebounceTimeout.current);
       }
 
       const clean = (value || '').trim().replace(/\D/g, '');
-      if (clean.length < 5) {
+      if (clean.length < 8) {
         setPlayerNickname(null);
         setPlayerLevel(null);
         setPlayerRegion(null);
-        setValidationError('');
+        setPlayerLikes(null);
         setValidatingUid(false);
         return;
       }
 
       setValidatingUid(true);
-      setValidationError('');
 
       uidDebounceTimeout.current = setTimeout(() => {
         handleUidValidation(clean);
-      }, 450);
+      }, 400);
     }
   };
 
@@ -568,11 +568,13 @@ export default function ProductDetail() {
                     required={field.is_required}
                     placeholder={`Ingresa tu ${field.field_name}...`}
                     value={formData[field.field_name] || ''}
-                    onChange={(e) => {
-                      handleInputChange(field.field_name, e.target.value);
-                      if (field.field_name.toLowerCase().includes('uid')) {
-                        clearTimeout(uidDebounceTimeout.current);
-                        uidDebounceTimeout.current = setTimeout(() => handleUidValidation(e.target.value), 200);
+                    onChange={(e) => handleInputChange(field.field_name, e.target.value)}
+                    onBlur={(e) => {
+                      if (field.field_name.toLowerCase().includes('uid') || field.field_name.toLowerCase().includes('id')) {
+                        const clean = (e.target.value || '').trim().replace(/\D/g, '');
+                        if (clean.length >= 8) {
+                          handleUidValidation(clean);
+                        }
                       }
                     }}
                     style={{
