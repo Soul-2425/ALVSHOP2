@@ -13,10 +13,10 @@
 import { supabase } from '../supabaseClient.js';
 
 const RATE_LIMIT_CONFIG = {
-  maxAttemptsPerMinute: 3,
+  maxAttemptsPerMinute: 30,      // Permitir consultas normales de búsqueda/validación
   windowMs: 60 * 1000,           // 1 minuto
   violationWindowMs: 5 * 60 * 1000, // 5 minutos
-  maxViolationsBeforeBan: 3,
+  maxViolationsBeforeBan: 10,
   banDurationMs: 15 * 60 * 1000  // 15 minutos de baneo
 };
 
@@ -24,6 +24,12 @@ const RATE_LIMIT_CONFIG = {
 const requestBuckets = new Map();
 const violationBuckets = new Map();
 const activeBans = new Map();
+
+export function clearAllBans() {
+  requestBuckets.clear();
+  violationBuckets.clear();
+  activeBans.clear();
+}
 
 // Helper para obtener un identificador del cliente / IP
 export function getClientFingerprint() {

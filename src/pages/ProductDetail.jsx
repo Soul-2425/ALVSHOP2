@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { notifyAdminNewOrder, notifyOrderCompleted, sendPushNotification } from '../../notificaciones y apis/notificaciones/pushService';
-import { checkRateLimit } from '../services/securityShield';
 import BinancePayModal from '../components/BinancePayModal';
 
 export default function ProductDetail() {
@@ -24,6 +23,7 @@ export default function ProductDetail() {
   const [playerLevel, setPlayerLevel] = useState(null);
   const [playerRegion, setPlayerRegion] = useState(null);
   const [validationError, setValidationError] = useState('');
+  const uidDebounceTimeout = useRef(null);
 
   // Checkout modal
   const [showCheckout, setShowCheckout] = useState(false);
@@ -110,21 +110,15 @@ export default function ProductDetail() {
     loadProductData();
   }, [id]);
 
-  // Handle Free Fire UID Real-time validation with Rate Limiting Shield (Max 3/min)
+  // Handle Free Fire UID Real-time validation with Smooth Debounce (no false rate limits)
   const handleUidValidation = async (uidValue) => {
-    if (!uidValue || uidValue.length < 5) {
+    const cleanUid = (uidValue || '').trim().replace(/\D/g, '');
+    if (!cleanUid || cleanUid.length < 5) {
       setPlayerNickname(null);
       setPlayerLevel(null);
       setPlayerRegion(null);
       setValidationError('');
-      return;
-    }
-
-    // Security Rate Limit Check
-    const rateCheck = checkRateLimit('validate_uid');
-    if (!rateCheck.allowed) {
-      setValidationError(rateCheck.error);
-      setPlayerNickname(null);
+      setValidatingUid(false);
       return;
     }
 
@@ -132,18 +126,18 @@ export default function ProductDetail() {
     setValidationError('');
 
     try {
-      const result = await validatePlayerUid(uidValue, product?.validation_type || 'Free Fire');
+      const result = await validatePlayerUid(cleanUid, product?.validation_type || 'Free Fire');
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
-        setPlayerLevel(result.account_level || 50);
+        setPlayerLevel(result.account_level || 65);
         setPlayerRegion(result.region || 'LATAM');
         setValidationError('');
       } else {
         setPlayerNickname(null);
-        setValidationError(result?.error || 'ID de jugador no encontrado en el servidor');
+        setValidationError(result?.error || 'ID de jugador no encontrado en los servidores de Free Fire');
       }
     } catch (err) {
-      setValidationError('Error conectando con la API de validación');
+      setValidationError('Error conectando con el servicio de validación');
     } finally {
       setValidatingUid(false);
     }
@@ -153,7 +147,26 @@ export default function ProductDetail() {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
 
     if (fieldName.toLowerCase().includes('uid') || fieldName.toLowerCase().includes('id')) {
-      handleUidValidation(value);
+      if (uidDebounceTimeout.current) {
+        clearTimeout(uidDebounceTimeout.current);
+      }
+
+      const clean = (value || '').trim().replace(/\D/g, '');
+      if (clean.length < 5) {
+        setPlayerNickname(null);
+        setPlayerLevel(null);
+        setPlayerRegion(null);
+        setValidationError('');
+        setValidatingUid(false);
+        return;
+      }
+
+      setValidatingUid(true);
+      setValidationError('');
+
+      uidDebounceTimeout.current = setTimeout(() => {
+        handleUidValidation(clean);
+      }, 450);
     }
   };
 
@@ -523,19 +536,29 @@ export default function ProductDetail() {
               padding: '14px 18px',
               marginBottom: '20px',
               display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between'
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '10px'
             }}>
               <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>PRECIO EN LÍNEA:</div>
-                <div style={{ fontSize: '1.8rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
-                  ${Number(product.price_public).toFixed(2)} <span style={{ fontSize: '0.9rem' }}>USDT</span>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {currency === 'USDT' ? 'PRECIO EN USDT (SELECCIONADA)' : 'PRECIO EN QUETZALES (SELECCIONADA)'}
+                </div>
+                <div style={{ fontSize: '1.8rem', fontWeight: '900', color: currency === 'USDT' ? 'var(--accent-cyan)' : '#fbbf24' }}>
+                  {currency === 'USDT'
+                    ? `$${Number(product.price_public).toFixed(2)} USDT`
+                    : `Q${(Number(product.price_public) * exchangeRate).toFixed(2)} GTQ`}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>QUETZALES:</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fbbf24' }}>
-                  Q{(Number(product.price_public) * exchangeRate).toFixed(2)} <span style={{ fontSize: '0.75rem' }}>GTQ</span>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {currency === 'USDT' ? 'EQUIVALENTE EN QUETZALES:' : 'EQUIVALENTE EN USDT:'}
+                </div>
+                <div style={{ fontSize: '1.05rem', fontWeight: '700', color: 'rgba(255, 255, 255, 0.7)' }}>
+                  {currency === 'USDT'
+                    ? `Q${(Number(product.price_public) * exchangeRate).toFixed(2)} GTQ`
+                    : `$${Number(product.price_public).toFixed(2)} USDT`}
                 </div>
               </div>
             </div>
@@ -569,30 +592,47 @@ export default function ProductDetail() {
 
             {/* Live Nickname Validation Status Banner */}
             {validatingUid && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div className="spinner-small" /> Verificando Nickname en servidores de Free Fire...
+              <div style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0, 240, 255, 0.08)', padding: '8px 12px', borderRadius: '6px' }}>
+                <span className="spinner-small" style={{ width: '14px', height: '14px' }} />
+                <span>Consultando servidores oficiales de Free Fire...</span>
               </div>
             )}
+
             {playerNickname && (
               <div style={{
                 background: 'rgba(52, 211, 153, 0.12)',
                 border: '1px solid rgba(52, 211, 153, 0.4)',
                 borderRadius: 'var(--radius-sm)',
-                padding: '10px 14px',
+                padding: '12px 14px',
                 marginBottom: '16px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
+                justifyContent: 'space-between',
+                gap: '10px'
               }}>
-                <span style={{ fontSize: '1.1rem' }}>🎮</span>
-                <div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Cuenta Encontrada:</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#34d399' }}>{playerNickname}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.4rem' }}>🎮</span>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>Cuenta Verificada</span>
+                      <span style={{ color: '#34d399', fontWeight: 'bold' }}>• Oficial</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: '900', color: '#34d399' }}>{playerNickname}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontWeight: '800' }}>
+                    ⭐ Nivel {playerLevel || 65}
+                  </span>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    🌎 {playerRegion || 'LATAM'}
+                  </div>
                 </div>
               </div>
             )}
+
             {validationError && (
-              <div style={{ fontSize: '0.78rem', color: '#f87171', marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.78rem', color: '#f87171', marginBottom: '14px', background: 'rgba(248, 113, 113, 0.1)', padding: '8px 12px', borderRadius: '6px' }}>
                 ⚠️ {validationError}
               </div>
             )}
