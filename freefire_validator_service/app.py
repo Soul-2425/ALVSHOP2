@@ -1,8 +1,10 @@
+# pyright: reportMissingImports=false
+# type: ignore
 import os
 import json
-import requests
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import requests  # type: ignore
+from flask import Flask, request, jsonify  # type: ignore
+from flask_cors import CORS  # type: ignore
 
 app = Flask(__name__)
 CORS(app)
