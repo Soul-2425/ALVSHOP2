@@ -49,6 +49,8 @@ export default function AdminProducts() {
   const [showQuickCatForm, setShowQuickCatForm] = useState(false);
   const [quickCatName, setQuickCatName] = useState('');
   const [quickCatIcon, setQuickCatIcon] = useState('💎');
+  const [quickCatImage, setQuickCatImage] = useState('');
+  const [uploadingQuickCatImg, setUploadingQuickCatImg] = useState(false);
   const [creatingQuickCat, setCreatingQuickCat] = useState(false);
 
   const [showQuickSubcatForm, setShowQuickSubcatForm] = useState(false);
@@ -79,39 +81,49 @@ export default function AdminProducts() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const { data: catData } = await supabase.from('categories').select('*').order('name');
-      const { data: subcatData } = await supabase.from('subcategories').select('*').order('name');
-      const { data: prodData } = await supabase
-        .from('products')
-        .select('*, subcategories(id, name, category_id, categories(id, name, icon, image_url))')
-        .order('created_at', { ascending: false });
+      // Parallel fast flat fetch
+      const [catsRes, subsRes, prodsRes] = await Promise.all([
+        supabase.from('categories').select('*').order('name'),
+        supabase.from('subcategories').select('*').order('name'),
+        supabase.from('products').select('*').order('created_at', { ascending: false })
+      ]);
 
-      if (catData) setCategories(catData);
-      if (subcatData) setSubcategories(subcatData);
+      const catData = catsRes.data || [];
+      const subcatData = subsRes.data || [];
+      const rawProdData = prodsRes.data || [];
 
-      if (prodData) {
-        // Deduplicate in memory by product name so each item appears EXACTLY ONCE
-        const uniqueMap = new Map();
-        const duplicatesToDelete = [];
+      setCategories(catData);
+      setSubcategories(subcatData);
 
-        prodData.forEach(p => {
-          const cleanName = p.name.trim().toLowerCase();
-          if (!uniqueMap.has(cleanName)) {
-            uniqueMap.set(cleanName, p);
-          } else {
-            duplicatesToDelete.push(p.id);
-          }
-        });
+      // Fast JS Memory join
+      const catMap = new Map(catData.map(c => [c.id, c]));
+      const subMap = new Map(subcatData.map(s => [s.id, { ...s, categories: catMap.get(s.category_id) }]));
+      const prodData = rawProdData.map(p => ({
+        ...p,
+        subcategories: subMap.get(p.subcategory_id)
+      }));
 
-        // Automatically delete duplicate entries from Supabase in the background
-        if (duplicatesToDelete.length > 0) {
-          supabase.from('products').delete().in('id', duplicatesToDelete).then(() => {
-            console.log('Duplicados de productos depurados en base de datos:', duplicatesToDelete.length);
-          });
+      // Deduplicate in memory by product name
+      const uniqueMap = new Map();
+      const duplicatesToDelete = [];
+
+      prodData.forEach(p => {
+        const cleanName = p.name.trim().toLowerCase();
+        if (!uniqueMap.has(cleanName)) {
+          uniqueMap.set(cleanName, p);
+        } else {
+          duplicatesToDelete.push(p.id);
         }
+      });
 
-        setProducts(Array.from(uniqueMap.values()));
+      // Automatically delete duplicate entries from Supabase in the background
+      if (duplicatesToDelete.length > 0) {
+        supabase.from('products').delete().in('id', duplicatesToDelete).then(() => {
+          console.log('Duplicados de productos depurados en base de datos:', duplicatesToDelete.length);
+        });
       }
+
+      setProducts(Array.from(uniqueMap.values()));
     } catch (err) {
       console.warn('Error loading products:', err);
     } finally {
@@ -242,7 +254,7 @@ export default function AdminProducts() {
     setShowProductModal(true);
   };
 
-  // Quick Inline Category Creation
+  // Quick Inline Category Creation with Photo
   const handleQuickCreateCategory = async (e) => {
     e.preventDefault();
     if (!quickCatName.trim()) return;
@@ -254,7 +266,8 @@ export default function AdminProducts() {
       const { data: newCat, error } = await supabase.from('categories').insert({
         name: quickCatName.trim(),
         slug,
-        icon: quickCatIcon || '💎'
+        icon: quickCatIcon || '💎',
+        image_url: quickCatImage.trim() || null
       }).select().single();
 
       if (error) throw error;
@@ -274,12 +287,47 @@ export default function AdminProducts() {
 
       setSelectedCat(newCat.id);
       setQuickCatName('');
+      setQuickCatImage('');
       setShowQuickCatForm(false);
-      alert(`¡Categoría "${newCat.name}" creada y seleccionada!`);
+      alert(`¡Categoría "${newCat.name}" creada y seleccionada con éxito!`);
     } catch (err) {
       alert('Error creando categoría: ' + err.message);
     } finally {
       setCreatingQuickCat(false);
+    }
+  };
+
+  // Direct Photo Upload for Selected Category in Product Form
+  const handleUploadSelectedCatPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedCat) return;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `cat_${selectedCat}_${Date.now()}.${fileExt}`;
+      const filePath = `categories/${fileName}`;
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const photoUrl = reader.result;
+        await supabase.from('categories').update({ image_url: photoUrl }).eq('id', selectedCat);
+        setCategories(prev => prev.map(c => c.id === selectedCat ? { ...c, image_url: photoUrl } : c));
+      };
+      reader.readAsDataURL(file);
+
+      try {
+        const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+        if (!upErr) {
+          const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+          if (data?.publicUrl) {
+            await supabase.from('categories').update({ image_url: data.publicUrl }).eq('id', selectedCat);
+            setCategories(prev => prev.map(c => c.id === selectedCat ? { ...c, image_url: data.publicUrl } : c));
+          }
+        }
+      } catch (stErr) {}
+
+      alert('¡Foto de la categoría actualizada con éxito!');
+    } catch (err) {
+      alert('Error al subir foto de la categoría: ' + err.message);
     }
   };
 
@@ -1305,7 +1353,7 @@ export default function AdminProducts() {
             <form onSubmit={handleSaveProduct} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               
               {/* Category and Subcategory Selector */}
-              <div style={{ background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
+              <div style={{ background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: 'var(--radius-md)', padding: '14px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '4px' }}>
@@ -1343,13 +1391,86 @@ export default function AdminProducts() {
                   </div>
                 </div>
 
+                {/* Selected Category Photo / Image Live Editor */}
+                {selectedCat && (() => {
+                  const currentCatObj = categories.find(c => c.id === selectedCat);
+                  if (!currentCatObj) return null;
+                  return (
+                    <div style={{
+                      marginTop: '8px',
+                      marginBottom: '10px',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-glass)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      flexWrap: 'wrap'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '6px',
+                          background: '#0d111a',
+                          border: '1px solid var(--border-cyan)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          fontSize: '1.2rem',
+                          flexShrink: 0
+                        }}>
+                          {currentCatObj.image_url ? (
+                            <img src={currentCatObj.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <span>{currentCatObj.icon || '📁'}</span>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#fff' }}>
+                            {currentCatObj.name}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: currentCatObj.image_url ? '#34d399' : '#fbbf24' }}>
+                            {currentCatObj.image_url ? '✅ Foto de Categoría Asignada' : '⚠️ Sin Foto de Categoría'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <label style={{
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        background: 'rgba(6, 182, 212, 0.15)',
+                        border: '1px solid var(--border-cyan)',
+                        color: 'var(--accent-cyan)',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        📸 Subir / Cambiar Foto de Categoría
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={handleUploadSelectedCatPhoto}
+                        />
+                      </label>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     onClick={() => setShowQuickCatForm(!showQuickCatForm)}
                     style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px', fontWeight: '700' }}
                   >
-                    {showQuickCatForm ? '✕ Cancelar' : '➕ Crear Nueva Categoría'}
+                    {showQuickCatForm ? '✕ Cancelar' : '➕ Crear Nueva Categoría con Foto'}
                   </button>
                   <span style={{ color: 'var(--border-glass)' }}>|</span>
                   <button
@@ -1361,28 +1482,76 @@ export default function AdminProducts() {
                   </button>
                 </div>
 
+                {/* Quick Create Category Form with Photo Upload */}
                 {showQuickCatForm && (
-                  <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
-                    <input
-                      type="text"
-                      placeholder="Icono (💎)"
-                      value={quickCatIcon}
-                      onChange={(e) => setQuickCatIcon(e.target.value)}
-                      style={{ width: '60px', padding: '6px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Nombre (ej. Cuentas Streaming)"
-                      value={quickCatName}
-                      onChange={(e) => setQuickCatName(e.target.value)}
-                      style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
-                    />
-                    <button type="button" onClick={handleQuickCreateCategory} disabled={creatingQuickCat} className="btn-cyan" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
-                      {creatingQuickCat ? '...' : 'Guardar'}
-                    </button>
+                  <div style={{ marginTop: '10px', padding: '12px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '800' }}>
+                      ➕ Nueva Categoría Principal:
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="💎"
+                        value={quickCatIcon}
+                        onChange={(e) => setQuickCatIcon(e.target.value)}
+                        style={{ padding: '6px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Nombre de la Categoría (ej. Cuentas Streaming)"
+                        value={quickCatName}
+                        onChange={(e) => setQuickCatName(e.target.value)}
+                        style={{ padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="URL de Foto de Categoría o sube archivo"
+                        value={quickCatImage}
+                        onChange={(e) => setQuickCatImage(e.target.value)}
+                        style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                      />
+                      <label style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        background: 'rgba(6, 182, 212, 0.15)',
+                        border: '1px solid var(--border-cyan)',
+                        color: 'var(--accent-cyan)',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        📁 {uploadingQuickCatImg ? '...' : 'Subir'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setUploadingQuickCatImg(true);
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setQuickCatImage(reader.result);
+                              setUploadingQuickCatImg(false);
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                      <button type="button" onClick={handleQuickCreateCategory} disabled={creatingQuickCat || uploadingQuickCatImg} className="btn-cyan" style={{ padding: '6px 14px', fontSize: '0.75rem' }}>
+                        {creatingQuickCat ? 'Guardando...' : '💾 Guardar'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
+                {/* Quick Create Subcategory Form */}
                 {showQuickSubcatForm && (
                   <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
                     <input
