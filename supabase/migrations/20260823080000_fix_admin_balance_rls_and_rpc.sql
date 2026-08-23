@@ -1,37 +1,51 @@
 -- =========================================================================
--- MIGRACIÓN DE SUPABASE: PERMISOS DE ADMIN Y SINCRONIZACIÓN DE SALDO
--- Archivo: supabase/migrations/20260823080000_fix_admin_balance_rls_and_rpc.sql
+-- SOLUCIÓN DEFINITIVA: ELIMINAR RECURSIÓN INFINITA Y PERMISOS DE ADMIN
 -- =========================================================================
 
--- 1. Eliminar políticas restrictivas antiguas en la tabla profiles
+-- 1. Eliminar todas las políticas existentes en profiles para limpiar el error 42P17
 DROP POLICY IF EXISTS "Users can manage their profile" ON profiles;
 DROP POLICY IF EXISTS "Users can update their profile" ON profiles;
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON profiles;
 DROP POLICY IF EXISTS "Admins can update any profile" ON profiles;
 DROP POLICY IF EXISTS "Admins can update all profiles" ON profiles;
 DROP POLICY IF EXISTS "Users can manage their own profile" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_all" ON profiles;
+DROP POLICY IF EXISTS "profiles_update_policy" ON profiles;
+DROP POLICY IF EXISTS "profiles_insert_policy" ON profiles;
 
--- 2. Permitir que cualquier usuario vea los perfiles
-CREATE POLICY "Public profiles are viewable by everyone" ON profiles
+-- 2. Crear función auxiliar con SECURITY DEFINER (esto evita 100% la recursión infinita en Postgres)
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+    AND role IN ('Admin', 'Asesor')
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated, service_role;
+
+-- 3. Política de SELECT limpia (sin subconsultas, lectura instantánea para todos)
+CREATE POLICY "profiles_select_all" ON profiles
 FOR SELECT USING (true);
 
--- 3. Permitir que el propio usuario actualice su perfil
-CREATE POLICY "Users can manage their own profile" ON profiles
-FOR UPDATE USING (auth.uid() = id);
-
--- 4. Permitir que los Administradores y Asesores modifiquen cualquier perfil (saldo, rol, etc.)
-CREATE POLICY "Admins can update all profiles" ON profiles
-FOR ALL USING (
-  auth.uid() = id OR
-  EXISTS (
-    SELECT 1 FROM profiles p
-    WHERE p.id = auth.uid()
-    AND p.role IN ('Admin', 'Asesor')
-  )
+-- 4. Política de UPDATE limpia (el propio usuario o un Admin)
+CREATE POLICY "profiles_update_policy" ON profiles
+FOR UPDATE USING (
+  auth.uid() = id OR public.is_admin()
 );
 
--- 5. CREAR FUNCIÓN RPC SEGURA PARA ACTUALIZAR SALDO DESDE EL PANEL ADMIN
--- SECURITY DEFINER se ejecuta con privilegios de sistema para garantizar que nunca sea bloqueado por RLS.
+-- 5. Política de INSERT limpia
+CREATE POLICY "profiles_insert_policy" ON profiles
+FOR INSERT WITH CHECK (
+  auth.uid() = id OR public.is_admin()
+);
+
+-- 6. Función RPC Segura para asignación directa de saldo (bypasses RLS)
 CREATE OR REPLACE FUNCTION admin_set_user_balance(
   target_user_id UUID,
   new_balance NUMERIC,
@@ -40,11 +54,12 @@ CREATE OR REPLACE FUNCTION admin_set_user_balance(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_user_email TEXT;
 BEGIN
-  -- Actualizar saldo en profiles
+  -- Actualizar saldo en la tabla profiles
   UPDATE public.profiles
   SET wallet_balance = new_balance,
       updated_at = NOW()
@@ -69,7 +84,6 @@ BEGIN
       NOW()
     );
   EXCEPTION WHEN OTHERS THEN
-    -- Ignorar si transactions tiene alguna restricción adicional
   END;
 
   RETURN jsonb_build_object(
@@ -81,5 +95,4 @@ BEGIN
 END;
 $$;
 
--- 6. Dar permisos de ejecución públicos y autenticados a la función RPC
 GRANT EXECUTE ON FUNCTION admin_set_user_balance(UUID, NUMERIC, TEXT) TO anon, authenticated, service_role;

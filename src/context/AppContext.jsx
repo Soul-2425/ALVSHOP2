@@ -252,11 +252,18 @@ export function AppProvider({ children }) {
         loadUserNotifications(userId);
         requestPushPermission(userId);
       } else {
+        const fallbackEmail = userEmail || user?.email || '';
+        const isKnownAdmin = fallbackEmail === 'alvarezmendezj33@gmail.com' || fallbackEmail === 'larosagranado1111@gmail.com';
+        setProfile(prev => prev || { id: userId, email: fallbackEmail, full_name: user?.user_metadata?.full_name || fallbackEmail.split('@')[0], role: isKnownAdmin ? 'Admin' : 'Cliente Común', wallet_balance: finalBal });
+        if (isKnownAdmin) setRole('Admin');
         setWalletBalance(finalBal);
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
-      const localBal = getLocalUserBalance(userId) || (user?.email ? getLocalUserBalance(user.email) : 0);
+      const fallbackEmail = (userEmailParam || user?.email || '').toLowerCase().trim();
+      const localBal = getLocalUserBalance(userId) || (fallbackEmail ? getLocalUserBalance(fallbackEmail) : 0);
+      const isKnownAdmin = fallbackEmail === 'alvarezmendezj33@gmail.com' || fallbackEmail === 'larosagranado1111@gmail.com';
+      if (isKnownAdmin) setRole('Admin');
       setWalletBalance(localBal || 0);
     }
   };
