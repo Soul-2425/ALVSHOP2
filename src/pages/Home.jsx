@@ -4,16 +4,54 @@ import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import ProductCard from '../components/ProductCard';
 
+// Local storage cache keys
+const CACHE_KEY_CATS = 'alv_cache_categories';
+const CACHE_KEY_SUBS = 'alv_cache_subcategories';
+const CACHE_KEY_PRODS = 'alv_cache_products';
+
 export default function Home() {
   const { config, profile } = useApp();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // State
-  const [allCategories, setAllCategories] = useState([]);
-  const [allSubcategories, setAllSubcategories] = useState([]);
-  const [allProducts, setAllProducts] = useState([]);
-  const [initialLoading, setInitialLoading] = useState(true);
+  // Initialize state immediately with cached data if available (0ms instant render)
+  const [allCategories, setAllCategories] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_CATS);
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [allSubcategories, setAllSubcategories] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_SUBS);
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [allProducts, setAllProducts] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_PRODS);
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // If we already have cache in memory, don't show the initial loading spinner!
+  const [initialLoading, setInitialLoading] = useState(() => {
+    try {
+      const cachedCats = localStorage.getItem(CACHE_KEY_CATS);
+      const cachedProds = localStorage.getItem(CACHE_KEY_PRODS);
+      return !(cachedCats && cachedProds);
+    } catch (e) {
+      return true;
+    }
+  });
 
   // Active Category & Subcategory Selection
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'categories');
@@ -21,30 +59,39 @@ export default function Home() {
 
   const ITEMS_PER_PAGE = 12;
 
-  // 1. FAST SINGLE PARALLEL FETCH (Loads in < 250ms with zero subsequent network lag)
+  // 1. FAST SINGLE PARALLEL FLAT FETCH + SWR CACHING
   useEffect(() => {
     let isMounted = true;
 
-    async function loadInitialData() {
+    async function loadStoreData() {
       try {
+        // Flat parallel queries (No slow PostgREST nested joins)
         const [catsRes, subsRes, prodsRes] = await Promise.all([
           supabase.from('categories').select('*').order('name'),
           supabase.from('subcategories').select('*').order('name'),
-          supabase.from('products').select('*, subcategories(id, name, category_id, categories(id, name, icon, image_url))').eq('is_active', true).order('price_public', { ascending: true })
+          supabase.from('products').select('*').eq('is_active', true).order('price_public', { ascending: true })
         ]);
 
         if (!isMounted) return;
 
         const cats = catsRes.data || [];
         const subs = subsRes.data || [];
-        const prods = prodsRes.data || [];
+        const rawProds = prodsRes.data || [];
+
+        // Fast In-Memory Join (0.1ms)
+        const catMap = new Map(cats.map(c => [c.id, c]));
+        const subMap = new Map(subs.map(s => [s.id, { ...s, categories: catMap.get(s.category_id) }]));
+
+        const prods = rawProds.map(p => ({
+          ...p,
+          subcategories: subMap.get(p.subcategory_id)
+        }));
 
         // Enrich categories with accurate product counts
         const enrichedCats = cats.map((c) => {
-          // Check if category is Likes
           const isLikes = c.name?.toLowerCase().includes('like');
           if (isLikes) {
-            return { ...c, product_count: 3 }; // 3 fixed packs (2K, 4K, 10K)
+            return { ...c, product_count: 3 };
           }
 
           const catSubIds = subs.filter((s) => s.category_id === c.id).map((s) => s.id);
@@ -57,9 +104,18 @@ export default function Home() {
           return { ...c, product_count: count };
         });
 
+        // Update state
         setAllCategories(enrichedCats);
         setAllSubcategories(subs);
         setAllProducts(prods);
+
+        // Update localStorage cache
+        try {
+          localStorage.setItem(CACHE_KEY_CATS, JSON.stringify(enrichedCats));
+          localStorage.setItem(CACHE_KEY_SUBS, JSON.stringify(subs));
+          localStorage.setItem(CACHE_KEY_PRODS, JSON.stringify(prods));
+        } catch (e) {}
+
       } catch (err) {
         console.warn('Error loading store data:', err);
       } finally {
@@ -67,7 +123,7 @@ export default function Home() {
       }
     }
 
-    loadInitialData();
+    loadStoreData();
     return () => { isMounted = false; };
   }, []);
 
@@ -310,7 +366,7 @@ export default function Home() {
       {/* VIEW 1: CATEGORIES SHOWCASE GRID */}
       {selectedCategory === 'categories' ? (
         <div style={{ marginBottom: '40px' }}>
-          {initialLoading ? (
+          {initialLoading && allCategories.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <div className="spinner-large" style={{ margin: '0 auto 16px auto' }} />
               Cargando categorías...
@@ -434,7 +490,7 @@ export default function Home() {
       ) : (
         /* VIEW 2: INSTANT PRODUCTS GRID */
         <div>
-          {initialLoading ? (
+          {initialLoading && allProducts.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <div className="spinner-large" style={{ margin: '0 auto 16px auto' }} />
               Cargando productos...
