@@ -26,16 +26,18 @@ const uidCache = new Map();
 export function getActiveRecargasAmericaKey() {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('alv_supplier_api_key');
-    if (saved && saved.trim()) return saved.trim();
+    if (saved && saved.trim() && !saved.startsWith('ra_test_')) {
+      return saved.trim();
+    }
   }
   return RECARGAS_AMERICA_CONFIG.apiKey;
 }
 
 export function setActiveRecargasAmericaKey(newKey) {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('alv_supplier_api_key', newKey.trim());
+    localStorage.setItem('alv_supplier_api_key', (newKey || '').trim());
   }
-  RECARGAS_AMERICA_CONFIG.apiKey = newKey.trim();
+  RECARGAS_AMERICA_CONFIG.apiKey = (newKey || '').trim();
 }
 
 export function isRecargasAmericaSandbox() {
@@ -47,17 +49,7 @@ export function isRecargasAmericaSandbox() {
  * Obtiene los headers de autenticación para Recargas América
  */
 export async function getRecargasAmericaHeaders() {
-  let activeKey = getActiveRecargasAmericaKey();
-
-  try {
-    const { data: configRow } = await supabase.from('config').select('supplier_api_key').single();
-    if (configRow?.supplier_api_key && configRow.supplier_api_key.trim()) {
-      activeKey = configRow.supplier_api_key.trim();
-      setActiveRecargasAmericaKey(activeKey);
-    }
-  } catch (e) {
-    // Usar local / default
-  }
+  const activeKey = getActiveRecargasAmericaKey();
 
   return {
     'Authorization': `Bearer ${activeKey}`,
@@ -266,17 +258,17 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'LATAM
     } else if (data?.success && data?.data?.status === false) {
       return {
         success: false,
-        error: 'El ID ingresado no existe en los servidores de Free Fire. Verifica tu UID.'
+        error: 'ID incorrecta. Por favor, verifica el ID ingresado.'
       };
     }
   } catch (err) {
     console.warn('[API VALIDADORA] Error consultando Recargas América:', err);
   }
 
-  // 3. Si no se encontró en ningún servidor, retornar error claro (nunca nombres falsos)
+  // 3. Si no se encontró en ningún servidor, retornar mensaje formal
   return {
     success: false,
-    error: 'No se pudo verificar el Nickname. Asegúrate de que el UID sea correcto.'
+    error: 'ID incorrecta. Por favor, verifica el ID ingresado.'
   };
 }
 
