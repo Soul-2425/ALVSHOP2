@@ -13,11 +13,12 @@ export default function Sidebar({ isOpen, onClose }) {
   };
 
   const mainNavLinks = [
-    { label: '🛍️ Catálogo de Productos', path: '/' },
+    { label: '🏠 Inicio', path: '/' },
+    { label: '🛍️ Tienda (Catálogo)', path: '/?tab=catalog' },
     { label: '👤 Mi Perfil & Billetera', path: '/profile' },
+    { label: '👍 Likes Free Fire', path: '/likes' },
     { label: '🌐 Comunidad & Feed', path: '/feed' },
-    { label: '📜 Términos y Condiciones', path: '/terms' },
-    { label: '🔒 Políticas de Privacidad', path: '/privacy' },
+    { label: '💡 Sugerencias del Cliente', path: '/support' },
   ];
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';

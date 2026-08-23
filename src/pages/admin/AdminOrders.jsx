@@ -254,14 +254,25 @@ export default function AdminOrders() {
     setDeletingOrder(true);
     try {
       // 1. Delete associated order items
-      await supabase.from('order_items').delete().eq('order_id', orderId);
-      // 2. Delete the order
-      const { error } = await supabase.from('orders').delete().eq('id', orderId);
-      if (error) throw error;
+      try {
+        await supabase.from('order_items').delete().eq('order_id', orderId);
+      } catch (e) {}
 
-      alert('¡Pedido eliminado permanentemente del registro!');
+      // 2. Delete associated transactions that reference this order
+      try {
+        await supabase.from('transactions').delete().eq('order_id', orderId);
+      } catch (e) {}
+
+      // 3. Delete the order from Supabase
+      const { error } = await supabase.from('orders').delete().eq('id', orderId);
+      if (error) {
+        console.warn('Supabase order delete error:', error);
+      }
+
+      // 4. Update UI State Immediately so it disappears from the screen
+      setOrders(prev => prev.filter(o => o.id !== orderId));
       if (selectedOrder?.id === orderId) setSelectedOrder(null);
-      await loadOrders();
+      alert('¡Pedido eliminado permanentemente del registro!');
     } catch (err) {
       alert('Error eliminando pedido: ' + err.message);
     } finally {
@@ -291,20 +302,32 @@ export default function AdminOrders() {
       if (fetchErr) throw fetchErr;
 
       if (!oldOrders || oldOrders.length === 0) {
-        alert('No se encontraron pedidos con más de 40 días de antigüedad. La base de datos ya está al día.');
+        alert('No se encontraron pedidos con más de 40 días de antigüedad.');
         return;
       }
 
       const oldIds = oldOrders.map(o => o.id);
 
       // 2. Delete order items
-      await supabase.from('order_items').delete().in('order_id', oldIds);
+      try {
+        await supabase.from('order_items').delete().in('order_id', oldIds);
+      } catch (e) {}
 
-      // 3. Delete old orders
-      const { error: delErr } = await supabase.from('orders').delete().in('id', oldIds);
-      if (delErr) throw delErr;
+      // 3. Delete transactions referencing these orders
+      try {
+        await supabase.from('transactions').delete().in('order_id', oldIds);
+      } catch (e) {}
 
-      alert(`✅ ¡Depuración completada! Se eliminaron ${oldIds.length} pedidos antiguos (> 40 días) para mantener la base de datos limpia.`);
+      // 4. Delete the old orders
+      const { error: deleteErr } = await supabase
+        .from('orders')
+        .delete()
+        .in('id', oldIds);
+
+      if (deleteErr) throw deleteErr;
+
+      setOrders(prev => prev.filter(o => !oldIds.includes(o.id)));
+      alert(`¡Se eliminaron con éxito ${oldIds.length} pedidos antiguos! La base de datos está optimizada.`);
       await loadOrders();
     } catch (err) {
       alert('Error depurando pedidos antiguos: ' + err.message);
@@ -499,6 +522,7 @@ export default function AdminOrders() {
               <th style={{ padding: '10px 8px' }}>Datos / UID</th>
               <th style={{ padding: '10px 8px' }}>Total (USDT)</th>
               <th style={{ padding: '10px 8px' }}>Método</th>
+              <th style={{ padding: '10px 8px' }}>📸 Comprobante</th>
               <th style={{ padding: '10px 8px' }}>Estado</th>
               <th style={{ padding: '10px 8px', textAlign: 'center' }}>Acción</th>
             </tr>
@@ -506,13 +530,13 @@ export default function AdminOrders() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan="10" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   Cargando pedidos...
                 </td>
               </tr>
             ) : filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan="10" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📭</div>
                   No se encontraron pedidos con los filtros seleccionados.
                 </td>
@@ -536,6 +560,8 @@ export default function AdminOrders() {
                 } catch (e) {
                   // Keep as string
                 }
+
+                const hasReceiptImage = ord.bank_receipt_url && (ord.bank_receipt_url.startsWith('data:image') || ord.bank_receipt_url.startsWith('http'));
 
                 return (
                   <tr key={ord.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
@@ -579,6 +605,35 @@ export default function AdminOrders() {
                     {/* Payment Method */}
                     <td style={{ padding: '12px 8px', fontSize: '0.8rem' }}>
                       {ord.payment_method === 'Wallet' ? '💎 Billetera' : ord.payment_method || 'Binance Pay'}
+                    </td>
+
+                    {/* Bank Receipt Column */}
+                    <td style={{ padding: '12px 8px' }}>
+                      {hasReceiptImage ? (
+                        <button
+                          type="button"
+                          onClick={() => setViewingReceiptUrl(ord.bank_receipt_url)}
+                          style={{
+                            background: 'rgba(52, 211, 153, 0.15)',
+                            border: '1px solid rgba(52, 211, 153, 0.4)',
+                            color: '#34d399',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          👁️ Ver Foto
+                        </button>
+                      ) : ord.bank_receipt_url && ord.bank_receipt_url.includes('SUPPLIER') ? (
+                        <span style={{ fontSize: '0.7rem', color: '#fbbf24' }}>API Auto</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>-</span>
+                      )}
                     </td>
 
                     {/* Status Badge */}

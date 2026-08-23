@@ -63,6 +63,13 @@ export default function AdminProducts() {
   const [uploadingCatImg, setUploadingCatImg] = useState(false);
   const [savingCat, setSavingCat] = useState(false);
 
+  // Category Edit State
+  const [editingCatId, setEditingCatId] = useState(null);
+  const [editingCatName, setEditingCatName] = useState('');
+  const [editingCatIcon, setEditingCatIcon] = useState('💎');
+  const [editingCatImage, setEditingCatImage] = useState('');
+  const [savingEditCat, setSavingEditCat] = useState(false);
+
   // Subcategory management state inside Category Modal
   const [activeCatForSubcats, setActiveCatForSubcats] = useState(null);
   const [newSubcatName, setNewSubcatName] = useState('');
@@ -345,6 +352,74 @@ export default function AdminProducts() {
       alert('Error creando categoría: ' + err.message);
     } finally {
       setSavingCat(false);
+    }
+  };
+
+  // Upload/Process Category Photo
+  const handleCatPhotoUpload = async (e, isEditing = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCatImg(true);
+    try {
+      // 1. Convert to DataURL for instant base
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (isEditing) setEditingCatImage(reader.result);
+        else setNewCatImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+
+      // 2. Try Supabase storage
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `cat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const filePath = `categories/${fileName}`;
+        const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+        if (!upErr) {
+          const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+          if (data?.publicUrl) {
+            if (isEditing) setEditingCatImage(data.publicUrl);
+            else setNewCatImage(data.publicUrl);
+          }
+        }
+      } catch (stErr) {}
+    } catch (err) {
+      console.warn('Error uploading category photo:', err);
+    } finally {
+      setUploadingCatImg(false);
+    }
+  };
+
+  // Save Edited Category
+  const handleSaveEditCategory = async (catId) => {
+    if (!editingCatName.trim()) return;
+    setSavingEditCat(true);
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .update({
+          name: editingCatName.trim(),
+          icon: editingCatIcon || '💎',
+          image_url: editingCatImage.trim() || null
+        })
+        .eq('id', catId);
+
+      if (error) throw error;
+
+      setCategories(prev => prev.map(c => c.id === catId ? {
+        ...c,
+        name: editingCatName.trim(),
+        icon: editingCatIcon || '💎',
+        image_url: editingCatImage.trim() || null
+      } : c));
+
+      setEditingCatId(null);
+      alert('¡Categoría actualizada con éxito!');
+      loadData();
+    } catch (err) {
+      alert('Error actualizando categoría: ' + err.message);
+    } finally {
+      setSavingEditCat(false);
     }
   };
 
@@ -955,24 +1030,47 @@ export default function AdminProducts() {
                   <input
                     type="text"
                     required
-                    placeholder="Ej. Streaming"
+                    placeholder="Ej. Streaming, Free Fire..."
                     value={newCatName}
                     onChange={(e) => setNewCatName(e.target.value)}
                     style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>URL Imagen (Opcional)</label>
-                  <input
-                    type="text"
-                    placeholder="https://..."
-                    value={newCatImage}
-                    onChange={(e) => setNewCatImage(e.target.value)}
-                    style={{ width: '100%', padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                  />
+                  <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>Foto / Banner de la Categoría</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      placeholder="https://... o sube foto"
+                      value={newCatImage}
+                      onChange={(e) => setNewCatImage(e.target.value)}
+                      style={{ flex: 1, padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                    />
+                    <label style={{
+                      padding: '8px 12px',
+                      borderRadius: '4px',
+                      background: 'rgba(6, 182, 212, 0.15)',
+                      border: '1px solid var(--border-cyan)',
+                      color: 'var(--accent-cyan)',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      📁 {uploadingCatImg ? '...' : 'Subir'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleCatPhotoUpload(e, false)}
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
-              <button type="submit" disabled={savingCat} className="btn-cyan" style={{ alignSelf: 'flex-start', padding: '8px 16px', fontSize: '0.8rem' }}>
+              <button type="submit" disabled={savingCat || uploadingCatImg} className="btn-cyan" style={{ alignSelf: 'flex-start', padding: '8px 16px', fontSize: '0.8rem' }}>
                 {savingCat ? 'Creando...' : '➕ Guardar Categoría'}
               </button>
             </form>
@@ -981,42 +1079,147 @@ export default function AdminProducts() {
               {categories.map((cat) => {
                 const subsForCat = subcategories.filter(s => s.category_id === cat.id);
                 const isSelectedForSub = activeCatForSubcats?.id === cat.id;
+                const isEditingThisCat = editingCatId === cat.id;
 
                 return (
                   <div key={cat.id} style={{
                     background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid var(--border-glass)',
+                    border: isEditingThisCat ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
                     borderRadius: 'var(--radius-md)',
                     padding: '14px'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '1.2rem' }}>{cat.icon || '📁'}</span>
+                    {isEditingThisCat ? (
+                      /* Edit Category Inline Form */
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontWeight: 'bold', color: 'var(--accent-cyan)', fontSize: '0.85rem' }}>
+                          ✏️ Editar Categoría: {cat.name}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '8px' }}>
+                          <input
+                            type="text"
+                            value={editingCatIcon}
+                            onChange={(e) => setEditingCatIcon(e.target.value)}
+                            placeholder="Ícono"
+                            style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', textAlign: 'center' }}
+                          />
+                          <input
+                            type="text"
+                            value={editingCatName}
+                            onChange={(e) => setEditingCatName(e.target.value)}
+                            placeholder="Nombre de la categoría"
+                            style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                          />
+                        </div>
                         <div>
-                          <strong style={{ color: '#fff' }}>{cat.name}</strong>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                            ({subsForCat.length} subcategorías)
-                          </span>
+                          <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                            Foto / Banner de la Categoría:
+                          </label>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <input
+                              type="text"
+                              value={editingCatImage}
+                              onChange={(e) => setEditingCatImage(e.target.value)}
+                              placeholder="URL de la imagen"
+                              style={{ flex: 1, padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                            />
+                            <label style={{
+                              padding: '8px 12px',
+                              borderRadius: '4px',
+                              background: 'rgba(6, 182, 212, 0.15)',
+                              border: '1px solid var(--border-cyan)',
+                              color: 'var(--accent-cyan)',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              fontWeight: 'bold',
+                              display: 'flex',
+                              alignItems: 'center',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              📁 {uploadingCatImg ? '...' : 'Subir'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                onChange={(e) => handleCatPhotoUpload(e, true)}
+                              />
+                            </label>
+                          </div>
+                          {editingCatImage && (
+                            <img src={editingCatImage} alt="Preview" style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginTop: '6px', border: '1px solid var(--border-cyan)' }} />
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          <button
+                            type="button"
+                            disabled={savingEditCat}
+                            onClick={() => handleSaveEditCategory(cat.id)}
+                            className="btn-cyan"
+                            style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                          >
+                            {savingEditCat ? 'Guardando...' : '💾 Guardar Cambios'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCatId(null)}
+                            className="btn-glass"
+                            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                          >
+                            Cancelar
+                          </button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setActiveCatForSubcats(isSelectedForSub ? null : cat)}
-                          className="btn-glass"
-                          style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                        >
-                          {isSelectedForSub ? 'Ocultar' : '➕ Subcategorías'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCategory(cat.id)}
-                          style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem' }}
-                        >
-                          🗑️
-                        </button>
+                    ) : (
+                      /* Category Row */
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {cat.image_url ? (
+                            <img
+                              src={cat.image_url}
+                              alt={cat.name}
+                              style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--border-cyan)' }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '1.4rem' }}>{cat.icon || '📁'}</span>
+                          )}
+                          <div>
+                            <strong style={{ color: '#fff' }}>{cat.name}</strong>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                              ({subsForCat.length} subcategorías)
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCatId(cat.id);
+                              setEditingCatName(cat.name);
+                              setEditingCatIcon(cat.icon || '💎');
+                              setEditingCatImage(cat.image_url || '');
+                            }}
+                            className="btn-glass"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', color: 'var(--accent-cyan)' }}
+                          >
+                            ✏️ Editar Foto / Info
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveCatForSubcats(isSelectedForSub ? null : cat)}
+                            className="btn-glass"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                          >
+                            {isSelectedForSub ? 'Ocultar' : '➕ Subcategorías'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(cat.id)}
+                            style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem' }}
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {isSelectedForSub && (
                       <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-glass)' }}>

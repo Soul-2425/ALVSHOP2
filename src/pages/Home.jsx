@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import ProductCard from '../components/ProductCard';
 
 export default function Home() {
   const { config, profile } = useApp();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'categories'); // 'categories' is the main showcase
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [products, setProducts] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,7 +47,10 @@ export default function Home() {
 
           if (cat && cat.id) {
             if (!catMap.has(cat.id)) {
-              catMap.set(cat.id, cat);
+              catMap.set(cat.id, { ...cat, product_count: 1 });
+            } else {
+              const prev = catMap.get(cat.id);
+              catMap.set(cat.id, { ...prev, product_count: (prev.product_count || 1) + 1 });
             }
           }
 
@@ -70,7 +74,7 @@ export default function Home() {
         // If no categories found from products, load all
         if (catMap.size === 0) {
           const { data: catData } = await supabase.from('categories').select('*').order('name');
-          if (catData) setCategories(catData);
+          if (catData) setCategories(catData.map(c => ({ ...c, product_count: 0 })));
         } else {
           setCategories(Array.from(catMap.values()));
         }
@@ -85,12 +89,17 @@ export default function Home() {
   }, []);
 
   // Filtered subcategories for current active category (only unique and active)
-  const activeSubcategories = selectedCategory === 'all'
+  const activeSubcategories = (selectedCategory === 'all' || selectedCategory === 'categories')
     ? []
     : subcategories.filter(s => s.category_id === selectedCategory);
 
   // Fetch Products with Strict Filtering
   useEffect(() => {
+    if (selectedCategory === 'categories') {
+      setLoading(false);
+      return;
+    }
+
     async function loadProducts() {
       setLoading(true);
       const from = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -131,6 +140,7 @@ export default function Home() {
       } catch (err) {
         console.warn('Error fetching products:', err);
         setProducts([]);
+        setTotalCount(0);
       } finally {
         setLoading(false);
       }
@@ -145,7 +155,12 @@ export default function Home() {
     setSelectedCategory(catId);
     setSelectedSubcategory('all');
     setCurrentPage(1);
+    if (catId !== 'categories') {
+      document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
+
+  const activeCategoryObj = categories.find(c => c.id === selectedCategory);
 
   return (
     <div className="container" style={{ paddingTop: '16px' }}>
@@ -194,15 +209,41 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* Main Category Filter Bar */}
+      {/* Main Category Filter & Navigation Bar */}
       <div id="catalogo" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-            <span>🎮</span> Catálogo Oficial
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <h3 style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0, fontWeight: '800' }}>
+            <span>{selectedCategory === 'categories' ? '📁' : (activeCategoryObj?.icon || '🎮')}</span>
+            <span>
+              {selectedCategory === 'categories'
+                ? 'Categorías Disponibles'
+                : selectedCategory === 'all'
+                ? 'Todo el Catálogo'
+                : activeCategoryObj?.name || 'Catálogo Oficial'}
+            </span>
           </h3>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Mostrando {products.length} de {totalCount} productos
-          </span>
+
+          {selectedCategory !== 'categories' && (
+            <button
+              onClick={() => handleCategoryChange('categories')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-full)',
+                background: 'rgba(6, 182, 212, 0.15)',
+                border: '1px solid var(--border-cyan)',
+                color: 'var(--accent-cyan)',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              ⬅️ Ver Categorías
+            </button>
+          )}
         </div>
 
         {/* Primary Categories Scrollable Carousel */}
@@ -214,14 +255,36 @@ export default function Home() {
           scrollbarWidth: 'none'
         }}>
           <button
+            onClick={() => handleCategoryChange('categories')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 14px',
+              borderRadius: 'var(--radius-full)',
+              fontSize: '0.82rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              background: selectedCategory === 'categories' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
+              color: selectedCategory === 'categories' ? '#000' : 'var(--text-main)',
+              border: selectedCategory === 'categories' ? 'none' : '1px solid var(--border-glass)',
+              transition: 'all 0.2s ease',
+              boxShadow: selectedCategory === 'categories' ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none'
+            }}
+          >
+            <span>📁</span> Categorías
+          </button>
+
+          <button
             onClick={() => handleCategoryChange('all')}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '8px 16px',
+              padding: '7px 14px',
               borderRadius: 'var(--radius-full)',
-              fontSize: '0.85rem',
+              fontSize: '0.82rem',
               fontWeight: '700',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
@@ -248,7 +311,7 @@ export default function Home() {
                   gap: '8px',
                   padding: '7px 14px',
                   borderRadius: 'var(--radius-full)',
-                  fontSize: '0.85rem',
+                  fontSize: '0.82rem',
                   fontWeight: '700',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
@@ -264,8 +327,8 @@ export default function Home() {
                     src={cat.image_url}
                     alt={cat.name}
                     style={{
-                      width: '20px',
-                      height: '20px',
+                      width: '18px',
+                      height: '18px',
                       borderRadius: '4px',
                       objectFit: 'cover',
                       flexShrink: 0
@@ -281,12 +344,12 @@ export default function Home() {
         </div>
 
         {/* Clean Subcategory Filter (Only unique active subcategories) */}
-        {selectedCategory !== 'all' && activeSubcategories.length > 1 && (
+        {selectedCategory !== 'all' && selectedCategory !== 'categories' && activeSubcategories.length > 1 && (
           <div style={{
             display: 'flex',
             gap: '6px',
             overflowX: 'auto',
-            marginTop: '8px',
+            marginTop: '10px',
             paddingBottom: '4px',
             scrollbarWidth: 'none'
           }}>
@@ -303,7 +366,7 @@ export default function Home() {
                 border: selectedSubcategory === 'all' ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)'
               }}
             >
-              Todos en {categories.find(c => c.id === selectedCategory)?.name || ''}
+              Todos en {activeCategoryObj?.name || ''}
             </button>
 
             {activeSubcategories.map((sub) => {
@@ -335,76 +398,195 @@ export default function Home() {
         )}
       </div>
 
-      {/* Strict 2x3 Grid (6 items) */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
-          <div className="spinner-large" style={{ margin: '0 auto 16px auto' }} />
-          Cargando productos oficiales...
-        </div>
-      ) : products.length === 0 ? (
-        <div className="glass-panel" style={{
-          textAlign: 'center',
-          padding: '60px 20px',
-          borderRadius: 'var(--radius-lg)',
-          margin: '20px 0',
-          border: '1px solid var(--border-glass)'
-        }}>
-          <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🛍️</div>
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No hay productos disponibles por el momento</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '400px', margin: '0 auto' }}>
-            Estamos preparando nuevas ofertas y paquetes para esta sección. ¡Vuelve a consultar pronto!
-          </p>
+      {/* VIEW 1: CATEGORIES SHOWCASE GRID */}
+      {selectedCategory === 'categories' ? (
+        <div>
+          {categories.length === 0 ? (
+            <div className="glass-panel" style={{ textAlign: 'center', padding: '60px 20px', borderRadius: 'var(--radius-lg)' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '12px' }}>📁</div>
+              <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No hay categorías registradas</h3>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: '14px',
+              marginBottom: '32px'
+            }}>
+              {categories.map((cat) => (
+                <div
+                  key={cat.id}
+                  onClick={() => handleCategoryChange(cat.id)}
+                  style={{
+                    cursor: 'pointer',
+                    borderRadius: 'var(--radius-lg)',
+                    overflow: 'hidden',
+                    background: 'rgba(17, 24, 39, 0.75)',
+                    border: '1px solid var(--border-glass)',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                    transition: 'all 0.25s ease',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.borderColor = 'var(--accent-cyan)';
+                    e.currentTarget.style.boxShadow = '0 12px 30px rgba(6, 182, 212, 0.25)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'var(--border-glass)';
+                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.5)';
+                  }}
+                >
+                  {/* Category Image Header */}
+                  <div style={{
+                    height: '110px',
+                    width: '100%',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    background: cat.image_url
+                      ? `url(${cat.image_url}) center/cover no-repeat`
+                      : 'linear-gradient(135deg, #1e3a8a 0%, #06b6d4 100%)'
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(13, 17, 26, 0.9) 100%)'
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: '10px',
+                      right: '10px',
+                      background: 'rgba(0, 0, 0, 0.65)',
+                      backdropFilter: 'blur(4px)',
+                      padding: '3px 8px',
+                      borderRadius: '12px',
+                      fontSize: '0.7rem',
+                      color: 'var(--accent-cyan)',
+                      fontWeight: '800',
+                      border: '1px solid rgba(6, 182, 212, 0.4)'
+                    }}>
+                      {cat.product_count || 0} disponibles
+                    </div>
+                  </div>
+
+                  {/* Category Content */}
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '1.3rem' }}>{cat.icon || '💎'}</span>
+                      <h4 style={{ margin: 0, color: '#fff', fontSize: '0.95rem', fontWeight: '800' }}>
+                        {cat.name}
+                      </h4>
+                    </div>
+
+                    <div style={{ marginTop: 'auto', paddingTop: '8px' }}>
+                      <button
+                        type="button"
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(30, 58, 138, 0.4) 100%)',
+                          border: '1px solid var(--border-cyan)',
+                          color: 'var(--accent-cyan)',
+                          fontWeight: '800',
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span>Explorar</span>
+                        <span>➔</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          gap: '12px',
-          marginBottom: '32px'
-        }}>
-          {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      )}
+        /* VIEW 2: PRODUCTS GRID */
+        <div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
+              <div className="spinner-large" style={{ margin: '0 auto 16px auto' }} />
+              Cargando productos oficiales...
+            </div>
+          ) : products.length === 0 ? (
+            <div className="glass-panel" style={{
+              textAlign: 'center',
+              padding: '60px 20px',
+              borderRadius: 'var(--radius-lg)',
+              margin: '20px 0',
+              border: '1px solid var(--border-glass)'
+            }}>
+              <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🛍️</div>
+              <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No hay productos en esta categoría</h3>
+              <button
+                onClick={() => handleCategoryChange('categories')}
+                className="btn-cyan"
+                style={{ marginTop: '12px', padding: '8px 16px', fontSize: '0.85rem' }}
+              >
+                ⬅️ Ver Otras Categorías
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: '12px',
+              marginBottom: '32px'
+            }}>
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          )}
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          gap: '8px',
-          marginTop: '20px',
-          marginBottom: '40px'
-        }}>
-          <button
-            onClick={() => {
-              setCurrentPage(p => Math.max(1, p - 1));
-              document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            disabled={currentPage === 1}
-            className="btn-glass"
-            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
-          >
-            ← Anterior
-          </button>
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '20px',
+              marginBottom: '40px'
+            }}>
+              <button
+                onClick={() => {
+                  setCurrentPage(p => Math.max(1, p - 1));
+                  document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                disabled={currentPage === 1}
+                className="btn-glass"
+                style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+              >
+                ← Anterior
+              </button>
 
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 8px' }}>
-            Página <strong style={{ color: '#fff' }}>{currentPage}</strong> de {totalPages}
-          </span>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 8px' }}>
+                Página <strong style={{ color: '#fff' }}>{currentPage}</strong> de {totalPages}
+              </span>
 
-          <button
-            onClick={() => {
-              setCurrentPage(p => Math.min(totalPages, p + 1));
-              document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            disabled={currentPage === totalPages}
-            className="btn-glass"
-            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
-          >
-            Siguiente →
-          </button>
+              <button
+                onClick={() => {
+                  setCurrentPage(p => Math.min(totalPages, p + 1));
+                  document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                disabled={currentPage === totalPages}
+                className="btn-glass"
+                style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+              >
+                Siguiente →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
