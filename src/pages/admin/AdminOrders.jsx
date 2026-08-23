@@ -109,7 +109,7 @@ export default function AdminOrders() {
     Rejected: { label: 'Rechazado', bg: 'rgba(248, 113, 113, 0.15)', color: '#f87171', border: 'rgba(248, 113, 113, 0.4)' }
   };
 
-  // Update Status in Supabase, Auto-Dispatch Recharge via API & Reduce Product Stock
+  // Handle Status Update & Automatic Stock Deduction
   const handleUpdateOrderStatus = async (newStatus) => {
     if (!selectedOrder) return;
     setUpdatingStatus(true);
@@ -117,23 +117,17 @@ export default function AdminOrders() {
     try {
       let supplierTxId = null;
 
-      // When marked as Completed, execute automated API recharge and deduct stock
-      if (newStatus === 'Completed' && selectedOrder.status !== 'Completed') {
-        // 1. Deduct product stock
-        for (const item of (selectedOrder.order_items || [])) {
-          if (item.product_id) {
-            const { data: currentProd } = await supabase
-              .from('products')
-              .select('stock')
-              .eq('id', item.product_id)
-              .single();
-
-            if (currentProd) {
-              const newStock = Math.max(0, (currentProd.stock || 0) - (item.quantity || 1));
-              await supabase
-                .from('products')
-                .update({ stock: newStock })
-                .eq('id', item.product_id);
+      // 1. If marking as Completed, trigger automatic actions
+      if (newStatus === 'Completed') {
+        // Descontar stock
+        if (selectedOrder.order_items) {
+          for (const item of selectedOrder.order_items) {
+            if (item.products?.id) {
+              const { data: prodData } = await supabase.from('products').select('stock').eq('id', item.products.id).single();
+              if (prodData && prodData.stock !== null) {
+                const newStock = Math.max(0, prodData.stock - (item.quantity || 1));
+                await supabase.from('products').update({ stock: newStock }).eq('id', item.products.id);
+              }
             }
           }
         }
@@ -179,17 +173,24 @@ export default function AdminOrders() {
       if (newStatus === 'Completed' && isWalletRecharge && selectedOrder.user_id) {
         try {
           const { data: userProfile } = await supabase.from('profiles').select('wallet_balance').eq('id', selectedOrder.user_id).single();
-          const currentBal = Number(userProfile?.wallet_balance || 0);
-          const newBal = currentBal + Number(selectedOrder.total_usdt);
+          const localBal = getLocalUserBalance(selectedOrder.user_id);
+          const currentBal = localBal !== null ? localBal : Number(userProfile?.wallet_balance || 0);
+          const newBal = Number((currentBal + Number(selectedOrder.total_usdt)).toFixed(2));
 
-          await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', selectedOrder.user_id);
-          await supabase.from('transactions').insert({
-            user_id: selectedOrder.user_id,
-            type: 'Deposit',
-            amount_usdt: Number(selectedOrder.total_usdt),
-            status: 'Completed',
-            notes: `Recarga manual en Quetzales acreditada por Administración (Orden #${selectedOrder.id.slice(0, 8)})`
-          });
+          setLocalUserBalance(selectedOrder.user_id, newBal);
+          try {
+            await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', selectedOrder.user_id);
+          } catch (e) {}
+
+          try {
+            await supabase.from('transactions').insert({
+              user_id: selectedOrder.user_id,
+              type: 'Deposit',
+              amount_usdt: Number(selectedOrder.total_usdt),
+              status: 'Completed',
+              notes: `Recarga manual en Quetzales acreditada por Administración (Orden #${selectedOrder.id.slice(0, 8)})`
+            });
+          } catch (e) {}
         } catch (depositErr) {
           console.error('Error acreditando saldo manual:', depositErr);
         }
@@ -200,7 +201,7 @@ export default function AdminOrders() {
       if (supplierTxId) {
         const prevReceipt = selectedOrder.bank_receipt_url || '';
         updatePayload.bank_receipt_url = prevReceipt ? `${prevReceipt} | SUPPLIER:${supplierTxId}` : `SUPPLIER:${supplierTxId}`;
-      }
+      }    
 
       const { error } = await supabase
         .from('orders')
@@ -665,6 +666,31 @@ export default function AdminOrders() {
                   {selectedOrder.customer_notes || 'Sin notas del cliente'}
                 </div>
               </div>
+
+              {/* Bank Deposit Receipt / Comprobante de Pago */}
+              {selectedOrder.bank_receipt_url && (
+                <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>
+                  <strong style={{ fontSize: '0.8rem', color: '#34d399' }}>📸 Comprobante de Pago Adjunto:</strong>
+                  {selectedOrder.bank_receipt_url.startsWith('data:image') || selectedOrder.bank_receipt_url.startsWith('http') ? (
+                    <div style={{ marginTop: '6px' }}>
+                      <a href={selectedOrder.bank_receipt_url} target="_blank" rel="noopener noreferrer" title="Clic para ver en grande">
+                        <img
+                          src={selectedOrder.bank_receipt_url}
+                          alt="Comprobante de depósito"
+                          style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', border: '1px solid var(--border-cyan)', objectFit: 'contain', cursor: 'zoom-in' }}
+                        />
+                      </a>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        🔍 Haz clic en el comprobante para abrirlo en tamaño completo
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: '#070b09', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginTop: '4px', color: '#fbbf24' }}>
+                      {selectedOrder.bank_receipt_url}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Streaming Account / Delivery Credentials Field */}

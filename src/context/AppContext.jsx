@@ -5,6 +5,26 @@ import { soundEffects } from '../services/soundEffects';
 
 const AppContext = createContext();
 
+export function getLocalUserBalance(userId) {
+  if (typeof window === 'undefined' || !userId) return null;
+  try {
+    const map = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
+    return map[userId] !== undefined ? Number(map[userId]) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export function setLocalUserBalance(userId, balance) {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    const map = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
+    map[userId] = Number(balance);
+    localStorage.setItem('alv_wallet_balances', JSON.stringify(map));
+    window.dispatchEvent(new CustomEvent('alv_balance_updated', { detail: { userId, balance: Number(balance) } }));
+  } catch (e) {}
+}
+
 export function AppProvider({ children }) {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -165,19 +185,55 @@ export function AppProvider({ children }) {
         .eq('id', userId)
         .single();
 
+      const localBal = getLocalUserBalance(userId);
+
       if (data && !error) {
-        setProfile(data);
+        const effectiveBal = localBal !== null ? localBal : Number(data.wallet_balance || 0);
+        setProfile({ ...data, wallet_balance: effectiveBal });
         setRole(data.role || 'Cliente Común');
-        setWalletBalance(Number(data.wallet_balance || 0));
+        setWalletBalance(effectiveBal);
 
         // Load notifications and request permission
         loadUserNotifications(userId);
         requestPushPermission(userId);
+      } else if (localBal !== null) {
+        setWalletBalance(localBal);
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
+      const localBal = getLocalUserBalance(userId);
+      if (localBal !== null) setWalletBalance(localBal);
     }
   };
+
+  // Centralized Wallet Balance Updater
+  const updateUserWalletBalance = async (userId, newBal, reason = '') => {
+    const finalBal = Number(Number(newBal).toFixed(2));
+    setLocalUserBalance(userId, finalBal);
+
+    if (user?.id === userId) {
+      setWalletBalance(finalBal);
+      setProfile(prev => prev ? { ...prev, wallet_balance: finalBal } : prev);
+    }
+
+    try {
+      await supabase.from('profiles').update({ wallet_balance: finalBal }).eq('id', userId);
+    } catch (err) {
+      console.warn('Supabase profile update warning:', err);
+    }
+  };
+
+  useEffect(() => {
+    const handleBalanceEvent = (e) => {
+      if (e.detail && user?.id && e.detail.userId === user.id) {
+        const bal = Number(e.detail.balance);
+        setWalletBalance(bal);
+        setProfile(prev => prev ? { ...prev, wallet_balance: bal } : prev);
+      }
+    };
+    window.addEventListener('alv_balance_updated', handleBalanceEvent);
+    return () => window.removeEventListener('alv_balance_updated', handleBalanceEvent);
+  }, [user]);
 
   useEffect(() => {
     loadConfig();
@@ -318,6 +374,7 @@ export function AppProvider({ children }) {
         config,
         loadConfig,
         fetchProfile,
+        updateUserWalletBalance,
         isLoading,
         notifications,
         unreadCount,

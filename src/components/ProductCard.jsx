@@ -70,16 +70,17 @@ export default function ProductCard({ product }) {
       </div>
 
       {/* Product Info */}
-      <div style={{ padding: '14px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div style={{ padding: '10px 10px 12px 10px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' }}>
+          <div style={{ fontSize: '0.65rem', color: 'var(--accent-cyan)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '3px', letterSpacing: '0.04em' }}>
             {product.subcategories?.name || 'Recarga Digital'}
           </div>
           <h4 style={{
-            fontSize: '0.95rem',
+            fontSize: '0.88rem',
             fontWeight: '700',
-            lineHeight: 1.3,
-            marginBottom: '6px',
+            lineHeight: 1.25,
+            marginBottom: '4px',
+            minHeight: '2.2em',
             display: '-webkit-box',
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
@@ -89,18 +90,18 @@ export default function ProductCard({ product }) {
           </h4>
 
           {/* Rating */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '10px' }}>
-            <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>★</span>
-            <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-main)' }}>4.9</span>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(+40)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '8px' }}>
+            <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>★</span>
+            <span style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-main)' }}>4.9</span>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>(+40)</span>
           </div>
         </div>
 
         {/* Price & Action Button */}
         <div>
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Desde</div>
-            <div style={{ fontSize: '1.15rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
+          <div style={{ marginBottom: '6px' }}>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Desde</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>
               {formatPrice(product.price_public)}
             </div>
           </div>
@@ -110,10 +111,14 @@ export default function ProductCard({ product }) {
             className="btn-cyan"
             style={{
               width: '100%',
-              padding: '8px 12px',
-              fontSize: '0.85rem',
+              padding: '7px 8px',
+              fontSize: '0.8rem',
+              fontWeight: '800',
               borderRadius: 'var(--radius-sm)',
-              textDecoration: 'none'
+              textDecoration: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
             {actionButtonText} ➔

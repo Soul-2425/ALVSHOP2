@@ -15,7 +15,7 @@ export default function Home() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const ITEMS_PER_PAGE = 6; // Strict 2 columns x 3 rows
+  const ITEMS_PER_PAGE = 12; // Cuadrícula estricta de 2 columnas x 6 filas (12 productos)
 
   // Fetch only categories and subcategories that have ACTIVE products
   useEffect(() => {
@@ -358,8 +358,8 @@ export default function Home() {
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '16px',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: '12px',
           marginBottom: '32px'
         }}>
           {products.map((product) => (

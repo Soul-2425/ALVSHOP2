@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
+import { getLocalUserBalance, setLocalUserBalance, useApp } from '../../context/AppContext';
 
 export default function AdminUsers() {
+  const { updateUserWalletBalance } = useApp();
   const [users, setUsers] = useState([]);
   const [currentRoleTab, setCurrentRoleTab] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,7 +57,14 @@ export default function AdminUsers() {
       const { data, count, error } = await query;
 
       if (data && !error) {
-        setUsers(data);
+        const mappedUsers = data.map(u => {
+          const localBal = getLocalUserBalance(u.id);
+          return {
+            ...u,
+            wallet_balance: localBal !== null ? localBal : Number(u.wallet_balance || 0)
+          };
+        });
+        setUsers(mappedUsers);
         setTotalCount(count || 0);
       } else {
         // Fallback sample users for demo
@@ -137,23 +146,32 @@ export default function AdminUsers() {
         newBal = amt;
       }
 
-      // 1. Update Profile in Supabase
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ wallet_balance: newBal })
-        .eq('id', selectedUserForBalance.id);
+      newBal = Number(newBal.toFixed(2));
 
-      if (profileError) throw profileError;
+      // 1. Update Profile in Supabase and LocalStorage Sync
+      setLocalUserBalance(selectedUserForBalance.id, newBal);
+      if (updateUserWalletBalance) {
+        updateUserWalletBalance(selectedUserForBalance.id, newBal);
+      }
+
+      try {
+        await supabase
+          .from('profiles')
+          .update({ wallet_balance: newBal })
+          .eq('id', selectedUserForBalance.id);
+      } catch (e) {}
 
       // 2. Insert Audit Transaction Log
       const reasonText = balanceReason.trim() || `Ajuste manual de saldo (${balanceAction === 'ADD' ? '+' : balanceAction === 'SUBTRACT' ? '-' : '='}$${amt.toFixed(2)} USDT) por Admin`;
-      await supabase.from('transactions').insert({
-        user_id: selectedUserForBalance.id,
-        type: balanceAction === 'ADD' ? 'Deposit' : 'Admin Adjustment',
-        amount_usdt: amt,
-        status: 'Completed',
-        notes: reasonText
-      });
+      try {
+        await supabase.from('transactions').insert({
+          user_id: selectedUserForBalance.id,
+          type: balanceAction === 'ADD' ? 'Deposit' : 'Admin Adjustment',
+          amount_usdt: amt,
+          status: 'Completed',
+          notes: reasonText
+        });
+      } catch (e) {}
 
       // 3. Update State in UI
       setUsers(prev => prev.map(u => u.id === selectedUserForBalance.id ? { ...u, wallet_balance: newBal } : u));

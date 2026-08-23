@@ -43,9 +43,26 @@ export default function Profile() {
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showBinanceModal, setShowBinanceModal] = useState(false);
   const [binanceDepositAmount, setBinanceDepositAmount] = useState('10');
+  const [receiptPreview, setReceiptPreview] = useState('');
+  const [receiptRef, setReceiptRef] = useState('');
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
+
+  // Handle Receipt Image Selection
+  const handleReceiptChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen no debe superar los 5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setReceiptPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Sync tab from URL params if present
   useEffect(() => {
@@ -62,7 +79,17 @@ export default function Profile() {
       setLoadingOrders(true);
       const { data, error } = await supabase
         .from('orders')
-        .select('*, order_items(*, products(name, image_url))')
+        .select(`
+          *,
+          order_items (
+            id,
+            quantity,
+            unit_price,
+            credentials_delivered,
+            fields_data,
+            products (id, name, image_url)
+          )
+        `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -75,7 +102,7 @@ export default function Profile() {
     if (user) {
       loadOrders();
     }
-  }, [user]);
+  }, [user, activeTab]);
 
   // Handle Authentication
   const handleAuth = async (e) => {
@@ -128,8 +155,9 @@ export default function Profile() {
     setDepositLoading(true);
 
     try {
-      const currentRate = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
+      const currentRate = Number(config?.usdt_gtq_rate || 7.80);
       const totalGtq = Number((amount * currentRate).toFixed(2));
+      const noteDetails = receiptRef.trim() ? `Recarga de Billetera Interna | Ref: ${receiptRef.trim()}` : 'Recarga de Billetera Interna';
 
       const { data, error } = await supabase.from('orders').insert({
         user_id: user.id,
@@ -137,12 +165,15 @@ export default function Profile() {
         total_gtq: totalGtq,
         status: 'Verification',
         payment_method: 'Manual',
-        customer_notes: 'Recarga de Billetera Interna'
+        customer_notes: noteDetails,
+        bank_receipt_url: receiptPreview || null
       }).select().single();
 
       if (error) throw error;
-      alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (Q${totalGtq.toFixed(2)} GTQ) enviada con éxito!\nRealiza tu transferencia bancaria y un asesor validará tu pago para acreditar tu saldo.`);
+      alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (Q${totalGtq.toFixed(2)} GTQ) enviada con éxito!\nUn asesor validará tu comprobante para acreditar tu saldo de inmediato.`);
       setDepositAmount('');
+      setReceiptPreview('');
+      setReceiptRef('');
       setActiveTab('orders');
     } catch (err) {
       alert('Error: ' + err.message);
@@ -778,6 +809,102 @@ export default function Profile() {
                   </div>
                 </div>
               )}
+
+              {/* Upload Payment Receipt (Boleta) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  📸 Comprobante de Pago / Boleta (Foto o Captura):
+                </label>
+                
+                {receiptPreview ? (
+                  <div style={{ position: 'relative', display: 'inline-block', marginBottom: '8px' }}>
+                    <img
+                      src={receiptPreview}
+                      alt="Vista previa boleta"
+                      style={{
+                        width: '100%',
+                        maxWidth: '220px',
+                        maxHeight: '160px',
+                        objectFit: 'contain',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border-cyan)',
+                        background: '#0d111a',
+                        padding: '4px'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setReceiptPreview('')}
+                      style={{
+                        position: 'absolute',
+                        top: '-8px',
+                        right: '-8px',
+                        background: '#f87171',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '50%',
+                        width: '24px',
+                        height: '24px',
+                        cursor: 'pointer',
+                        fontWeight: '900',
+                        fontSize: '0.8rem'
+                      }}
+                      title="Eliminar comprobante"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <label style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '16px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px dashed var(--border-cyan)',
+                    background: 'rgba(6, 182, 212, 0.03)',
+                    cursor: 'pointer',
+                    gap: '6px'
+                  }}>
+                    <span style={{ fontSize: '1.4rem' }}>📎</span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                      Toca aquí para seleccionar tu comprobante
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      (Formatos: JPG, PNG, captura de pantalla)
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleReceiptChange}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* Reference Number Input */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  No. de Boleta o Referencia (Opcional):
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. 12938475"
+                  value={receiptRef}
+                  onChange={(e) => setReceiptRef(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontSize: '0.85rem'
+                  }}
+                />
+              </div>
 
               <button type="submit" disabled={depositLoading} className="btn-cyan" style={{ padding: '12px', fontWeight: '800' }}>
                 {depositLoading ? 'Enviando Solicitud...' : 'Solicitar Recarga Manual ➔'}

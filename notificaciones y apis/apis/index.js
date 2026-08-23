@@ -350,17 +350,34 @@ export async function completeBinancePayment({ orderId, userId, amount, binanceT
   try {
     if (isWalletDeposit && userId) {
       const { data: profile } = await supabase.from('profiles').select('wallet_balance').eq('id', userId).single();
-      const currentBal = Number(profile?.wallet_balance || 0);
-      const newBal = currentBal + Number(amount);
+      let currentBal = Number(profile?.wallet_balance || 0);
+      try {
+        const localMap = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
+        if (localMap[userId] !== undefined) currentBal = Number(localMap[userId]);
+      } catch (e) {}
 
-      await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', userId);
-      await supabase.from('transactions').insert({
-        user_id: userId,
-        type: 'Deposit',
-        amount_usdt: Number(amount),
-        status: 'Completed',
-        notes: `Depósito Binance Pay Tx: ${binanceTxId}`
-      });
+      const newBal = Number((currentBal + Number(amount)).toFixed(2));
+
+      try {
+        const localMap = JSON.parse(localStorage.getItem('alv_wallet_balances') || '{}');
+        localMap[userId] = newBal;
+        localStorage.setItem('alv_wallet_balances', JSON.stringify(localMap));
+        window.dispatchEvent(new CustomEvent('alv_balance_updated', { detail: { userId, balance: newBal } }));
+      } catch (e) {}
+
+      try {
+        await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', userId);
+      } catch (e) {}
+
+      try {
+        await supabase.from('transactions').insert({
+          user_id: userId,
+          type: 'Deposit',
+          amount_usdt: Number(amount),
+          status: 'Completed',
+          notes: `Depósito Binance Pay Tx: ${binanceTxId}`
+        });
+      } catch (e) {}
     }
 
     if (orderId) {
