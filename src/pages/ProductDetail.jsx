@@ -291,10 +291,16 @@ export default function ProductDetail() {
             total_usdt: finalPriceUsdt,
             total_gtq: Number(finalPriceGtq),
             status: 'Pending',
-            payment_method: 'Binance Pay',
+            payment_method: 'Manual', // Uses valid PostgreSQL enum ('Manual' or 'Wallet')
             coupon_id: appliedCoupon?.id || null,
             discount_amount_usdt: discountUsdt,
-            customer_notes: JSON.stringify({ ...formData, payment_gateway: 'Binance Pay' })
+            customer_notes: JSON.stringify({
+              ...formData,
+              payment_gateway: 'Binance Pay',
+              method_label: 'Binance Pay (QR Automático)',
+              validated_nickname: playerNickname || '',
+              target_uid: formData['ID de Jugador (UID)'] || formData.uid || ''
+            })
           })
           .select()
           .single();
@@ -331,12 +337,14 @@ export default function ProductDetail() {
             total_usdt: finalPriceUsdt,
             total_gtq: Number(finalPriceGtq),
             status: newOrderStatus,
-            payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Transferencia Bancaria GTQ',
+            payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Manual', // Valid enum value
             bank_receipt_url: uploadedReceiptUrl,
             coupon_id: appliedCoupon?.id || null,
             discount_amount_usdt: discountUsdt,
             customer_notes: JSON.stringify({
               ...formData,
+              payment_gateway: paymentMethod === 'Wallet' ? 'Billetera' : 'Quetzales (GTQ)',
+              method_label: paymentMethod === 'Wallet' ? 'Billetera ALV' : 'Transferencia Quetzales (GTQ)',
               validated_nickname: playerNickname || '',
               target_uid: formData['ID de Jugador (UID)'] || formData.uid || ''
             })
@@ -358,7 +366,7 @@ export default function ProductDetail() {
           total_usdt: finalPriceUsdt,
           total_gtq: Number(finalPriceGtq),
           status: newOrderStatus,
-          payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Transferencia Bancaria GTQ',
+          payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Manual',
           created_at: new Date().toISOString()
         };
       }
@@ -997,16 +1005,68 @@ export default function ProductDetail() {
                       Monto a transferir: <strong>Q{finalPriceGtq} GTQ</strong>
                     </div>
 
-                    <div style={{ marginTop: '12px' }}>
-                      <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '4px', color: 'var(--text-muted)', fontWeight: '700' }}>
+                    <div style={{ marginTop: '14px' }}>
+                      <label style={{ display: 'block', fontSize: '0.78rem', marginBottom: '6px', color: '#fff', fontWeight: '700' }}>
                         📎 Adjuntar Foto / Screenshot del Comprobante:
                       </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => setReceiptFile(e.target.files[0])}
-                        style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}
-                      />
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <label style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '10px 16px',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(30, 58, 138, 0.5) 100%)',
+                          border: '1px solid var(--border-cyan)',
+                          color: 'var(--accent-cyan)',
+                          fontSize: '0.85rem',
+                          fontWeight: '800',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 0 15px rgba(6, 182, 212, 0.2)'
+                        }}>
+                          <span>📸</span>
+                          <span>{receiptFile ? 'Cambiar Comprobante' : 'Subir Comprobante'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => setReceiptFile(e.target.files[0])}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+
+                        {receiptFile ? (
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '0.8rem',
+                            color: '#34d399',
+                            fontWeight: '700',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            padding: '6px 12px',
+                            borderRadius: 'var(--radius-sm)'
+                          }}>
+                            <span>✅</span>
+                            <span style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {receiptFile.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setReceiptFile(null)}
+                              style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem', padding: '0 2px' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Ningún archivo seleccionado
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

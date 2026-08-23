@@ -342,60 +342,6 @@ export default function Home() {
             );
           })}
         </div>
-
-        {/* Clean Subcategory Filter (Only unique active subcategories) */}
-        {selectedCategory !== 'all' && selectedCategory !== 'categories' && activeSubcategories.length > 1 && (
-          <div style={{
-            display: 'flex',
-            gap: '6px',
-            overflowX: 'auto',
-            marginTop: '10px',
-            paddingBottom: '4px',
-            scrollbarWidth: 'none'
-          }}>
-            <button
-              onClick={() => { setSelectedSubcategory('all'); setCurrentPage(1); }}
-              style={{
-                padding: '5px 12px',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                fontWeight: '700',
-                cursor: 'pointer',
-                background: selectedSubcategory === 'all' ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.03)',
-                color: selectedSubcategory === 'all' ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                border: selectedSubcategory === 'all' ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)'
-              }}
-            >
-              Todos en {activeCategoryObj?.name || ''}
-            </button>
-
-            {activeSubcategories.map((sub) => {
-              const isSubSelected = selectedSubcategory === sub.name || selectedSubcategory === sub.id;
-              return (
-                <button
-                  key={sub.name}
-                  onClick={() => { setSelectedSubcategory(sub.name); setCurrentPage(1); }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    fontSize: '0.78rem',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    background: isSubSelected ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.03)',
-                    color: isSubSelected ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                    border: isSubSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)'
-                  }}
-                >
-                  {sub.image_url && <img src={sub.image_url} alt="" style={{ width: '12px', height: '12px', borderRadius: '2px', objectFit: 'cover' }} />}
-                  <span>{sub.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* VIEW 1: CATEGORIES SHOWCASE GRID */}
