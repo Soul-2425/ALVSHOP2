@@ -568,7 +568,13 @@ export default function ProductDetail() {
                     required={field.is_required}
                     placeholder={`Ingresa tu ${field.field_name}...`}
                     value={formData[field.field_name] || ''}
-                    onChange={(e) => handleInputChange(field.field_name, e.target.value)}
+                    onChange={(e) => {
+                      handleInputChange(field.field_name, e.target.value);
+                      if (field.field_name.toLowerCase().includes('uid')) {
+                        clearTimeout(uidDebounceTimeout.current);
+                        uidDebounceTimeout.current = setTimeout(() => handleUidValidation(e.target.value), 200);
+                      }
+                    }}
                     style={{
                       width: '100%',
                       padding: '10px 14px',
@@ -605,20 +611,18 @@ export default function ProductDetail() {
                 boxShadow: '0 4px 20px rgba(52, 211, 153, 0.15)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '10px',
-                    background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
-                    border: '1px solid #34d399',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.4rem',
-                    flexShrink: 0
-                  }}>
-                    🎮
-                  </div>
+                  <img
+                    src={`https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(playerNickname)}`}
+                    alt="Player"
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '10px',
+                      background: 'rgba(6, 78, 59, 0.5)',
+                      border: '1px solid #34d399',
+                      flexShrink: 0
+                    }}
+                  />
                   <div>
                     <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       <span>✓ Cuenta Oficial Verificada</span>

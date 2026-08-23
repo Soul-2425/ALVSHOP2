@@ -184,55 +184,7 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'LATAM
 
   console.log(`[API VALIDADORA] Consultando nickname para UID Free Fire: ${cleanUid} (Región: ${region})`);
 
-  // 1. Motor 0xMe / jinix6: Servidor de Validación Personalizado (si está configurado o corriendo localmente)
-  const customValidator = getCustomValidatorUrl();
-  const customEndpointsToTry = [];
-
-  if (customValidator) {
-    customEndpointsToTry.push(
-      `${customValidator.replace(/\/$/, '')}/get_player_personal_show?server=${region}&uid=${cleanUid}`,
-      `${customValidator.replace(/\/$/, '')}/api/v1/account?region=${region}&uid=${cleanUid}`,
-      `${customValidator.replace(/\/$/, '')}/api?uid=${cleanUid}&region=${region}`
-    );
-  }
-
-  // Probar servidor local 0xMe si está activo en puerto 5000
-  customEndpointsToTry.push(
-    `http://localhost:5000/get_player_personal_show?server=${region}&uid=${cleanUid}`,
-    `http://127.0.0.1:5000/get_player_personal_show?server=${region}&uid=${cleanUid}`
-  );
-
-  for (const endp of customEndpointsToTry) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1800);
-      const res = await fetch(endp, { headers: { 'Accept': 'application/json' }, signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const json = await res.json();
-        const nickname = json?.basicInfo?.nickname || json?.AccountInfo?.Nickname || json?.nickname || json?.name;
-        if (nickname) {
-          const result = {
-            success: true,
-            nickname: nickname,
-            account_level: json?.basicInfo?.level || json?.AccountInfo?.Level || 68,
-            region: json?.basicInfo?.region || json?.AccountInfo?.Region || region,
-            currentLikes: json?.basicInfo?.liked || json?.AccountInfo?.Liked || 15420,
-            badgeCnt: json?.basicInfo?.badgeCnt || 120,
-            guildName: json?.guildInfo?.guildName || json?.GuildInfo?.GuildName || null,
-            source: '0xMe / jinix6 Engine'
-          };
-          uidCache.set(cacheKey, { data: result, timestamp: Date.now() });
-          return result;
-        }
-      }
-    } catch (e) {
-      // Siguiente
-    }
-  }
-
-  // 2. Motor Oficial Recargas América (/pins/validate)
+  // 1. Motor Oficial de Alta Velocidad: Recargas América (/pins/validate)
   try {
     const headers = await getRecargasAmericaHeaders();
     const res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/pins/validate`, {
@@ -263,6 +215,47 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'LATAM
     }
   } catch (err) {
     console.warn('[API VALIDADORA] Error consultando Recargas América:', err);
+  }
+
+  // 2. Motor 0xMe / jinix6: Servidor de Validación Personalizado (si está configurado)
+  const customValidator = getCustomValidatorUrl();
+  if (customValidator) {
+    const customEndpointsToTry = [
+      `${customValidator.replace(/\/$/, '')}/get_player_personal_show?server=${region}&uid=${cleanUid}`,
+      `${customValidator.replace(/\/$/, '')}/api/v1/account?region=${region}&uid=${cleanUid}`,
+      `${customValidator.replace(/\/$/, '')}/api?uid=${cleanUid}&region=${region}`
+    ];
+
+    for (const endp of customEndpointsToTry) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+        const res = await fetch(endp, { headers: { 'Accept': 'application/json' }, signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const json = await res.json();
+          const nickname = json?.basicInfo?.nickname || json?.AccountInfo?.Nickname || json?.nickname || json?.name;
+          if (nickname) {
+            const result = {
+              success: true,
+              nickname: nickname,
+              account_level: json?.basicInfo?.level || json?.AccountInfo?.Level || null,
+              region: json?.basicInfo?.region || json?.AccountInfo?.Region || region,
+              currentLikes: json?.basicInfo?.liked || json?.AccountInfo?.Liked || null,
+              badgeCnt: json?.basicInfo?.badgeCnt || null,
+              guildName: json?.guildInfo?.guildName || json?.GuildInfo?.GuildName || null,
+              isVerified: true,
+              source: '0xMe / jinix6 Engine'
+            };
+            uidCache.set(cacheKey, { data: result, timestamp: Date.now() });
+            return result;
+          }
+        }
+      } catch (e) {
+        // Siguiente
+      }
+    }
   }
 
   // 3. Si no se encontró en ningún servidor, retornar mensaje formal
