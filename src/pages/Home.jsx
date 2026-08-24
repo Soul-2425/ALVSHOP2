@@ -370,18 +370,34 @@ export default function Home() {
         position: 'relative',
         borderRadius: 'var(--radius-lg)',
         overflow: 'hidden',
-        padding: '32px 24px',
+        padding: '36px 28px',
         marginBottom: '28px',
-        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(30, 58, 138, 0.25) 50%, rgba(13, 17, 26, 0.95) 100%)',
+        backgroundImage: `
+          linear-gradient(90deg, rgba(10, 13, 20, 0.95) 0%, rgba(10, 13, 20, 0.75) 50%, rgba(10, 13, 20, 0.35) 100%),
+          url('${config?.branding?.banner_url || '/gamer-banner.jpg'}')
+        `,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center right',
         border: '1px solid var(--border-cyan)',
-        boxShadow: '0 0 35px rgba(6, 182, 212, 0.2)'
+        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.7), 0 0 25px rgba(6, 182, 212, 0.18)'
       }}>
-        <div style={{ position: 'relative', zIndex: 2, maxWidth: '580px' }}>
+        {/* Subtle Top Cyber Glow */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: '10%',
+          right: '10%',
+          height: '2px',
+          background: 'linear-gradient(90deg, transparent, var(--accent-cyan), transparent)',
+          boxShadow: '0 0 16px var(--accent-cyan)'
+        }} />
+
+        <div style={{ position: 'relative', zIndex: 2, maxWidth: '560px' }}>
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: '8px',
-            background: 'rgba(6, 182, 212, 0.15)',
+            background: 'rgba(6, 182, 212, 0.2)',
             border: '1px solid var(--border-cyan)',
             padding: '4px 12px',
             borderRadius: 'var(--radius-full)',
@@ -394,22 +410,24 @@ export default function Home() {
           </div>
 
           <h1 style={{
-            fontSize: 'clamp(1.6rem, 4vw, 2.4rem)',
+            fontSize: 'clamp(1.7rem, 4.5vw, 2.5rem)',
             fontWeight: '900',
             lineHeight: 1.15,
             margin: '0 0 10px 0',
-            color: '#fff'
+            color: '#fff',
+            textShadow: '0 2px 10px rgba(0, 0, 0, 0.9)'
           }}>
-            Tienda Oficial ALVSHOP
+            {config?.site_title || 'Tienda Oficial ALVSHOP'}
           </h1>
 
           <p style={{
-            color: 'var(--text-muted)',
+            color: '#cbd5e1',
             fontSize: '0.9rem',
             lineHeight: 1.5,
-            margin: '0 0 20px 0'
+            margin: '0 0 20px 0',
+            textShadow: '0 1px 6px rgba(0, 0, 0, 0.9)'
           }}>
-            Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.
+            {config?.site_tagline || 'Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.'}
           </p>
 
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -421,27 +439,13 @@ export default function Home() {
                 fontSize: '0.88rem',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '8px'
+                gap: '8px',
+                boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
               }}
             >
               <span>👍</span>
               <span>Subir Likes FF</span>
             </Link>
-
-            <button
-              onClick={() => handleCategoryClick('all')}
-              className="btn-glass"
-              style={{
-                padding: '10px 18px',
-                fontSize: '0.88rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <span>🛒</span>
-              <span>Ver Todos los Productos</span>
-            </button>
           </div>
         </div>
       </div>
