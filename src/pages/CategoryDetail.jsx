@@ -313,10 +313,29 @@ export default function CategoryDetail() {
     };
   }, [allCategories, id]);
 
-  // Subcategories for this category
+  // Subcategories for this category (from database or extracted from products)
   const categorySubcategories = useMemo(() => {
-    return allSubcategories.filter(s => String(s.category_id) === String(currentCategory?.id));
-  }, [allSubcategories, currentCategory]);
+    const fromTable = allSubcategories.filter(s => String(s.category_id) === String(currentCategory?.id));
+    if (fromTable.length > 0) return fromTable;
+
+    // Auto extract unique subcategories from products in this category
+    const subMap = new Map();
+    allProducts.forEach(p => {
+      const pCatId = String(p.subcategories?.category_id || p.subcategory_id || '');
+      const isMatch = pCatId === String(currentCategory?.id) || 
+                      (currentCategory?.name && p.name && p.name.toLowerCase().includes(currentCategory.name.toLowerCase().replace(/ff/g, '').trim()));
+      
+      if (isMatch && p.subcategories?.name) {
+        subMap.set(p.subcategories.name, {
+          id: p.subcategory_id || p.subcategories.name,
+          name: p.subcategories.name,
+          category_id: currentCategory?.id
+        });
+      }
+    });
+
+    return Array.from(subMap.values());
+  }, [allSubcategories, currentCategory, allProducts]);
 
   // Products belonging to this category
   const categoryProducts = useMemo(() => {
@@ -354,8 +373,9 @@ export default function CategoryDetail() {
     return categoryProducts.filter(p => {
       // Subcategory filter
       if (selectedSubcategory !== 'all') {
-        const pSubId = String(p.subcategory_id || p.subcategories?.id || '');
-        if (pSubId !== selectedSubcategory) return false;
+        const pSubId = String(p.subcategory_id || p.subcategories?.id || p.subcategories?.name || '');
+        const pSubName = String(p.subcategories?.name || '');
+        if (pSubId !== selectedSubcategory && pSubName !== selectedSubcategory) return false;
       }
 
       // Search query filter
@@ -533,15 +553,18 @@ export default function CategoryDetail() {
                 Todos ({categoryProducts.length})
               </button>
 
-              {subcategories.map(sub => {
-                const isSelected = selectedSubcategory === String(sub.id);
-                const subCount = categoryProducts.filter(p => String(p.subcategory_id || p.subcategories?.id) === String(sub.id)).length;
+              {categorySubcategories.map(sub => {
+                const isSelected = selectedSubcategory === String(sub.id) || selectedSubcategory === sub.name;
+                const subCount = categoryProducts.filter(p => 
+                  String(p.subcategory_id || p.subcategories?.id) === String(sub.id) ||
+                  p.subcategories?.name === sub.name
+                ).length;
 
                 return (
                   <button
-                    key={sub.id}
+                    key={sub.id || sub.name}
                     type="button"
-                    onClick={() => setSelectedSubcategory(String(sub.id))}
+                    onClick={() => setSelectedSubcategory(String(sub.id || sub.name))}
                     style={{
                       padding: '8px 16px',
                       borderRadius: 'var(--radius-full)',
