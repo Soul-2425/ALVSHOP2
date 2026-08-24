@@ -6,10 +6,11 @@ import { useApp } from '../context/AppContext';
 import { getLikesPackages, DEFAULT_LIKES_PACKAGES } from '../services/likesPackagesService';
 
 export default function Likes() {
-  const { user, profile, config, updateUserWalletBalance, formatPrice, currency } = useApp();
+  const { user, profile, config, updateUserWalletBalance, formatPrice, currency, exchangeRate } = useApp();
   const navigate = useNavigate();
 
-  // Wallet
+  // Rate & Wallet
+  const currentRateGtq = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
   const walletBalance = Number(profile?.wallet_balance || 0);
 
   // Tab: 'fixed' (Paquetes Fijos) vs 'scheduled' (Programado Diario)
@@ -48,7 +49,7 @@ export default function Likes() {
   const currentPriceUsdt = activeTab === 'fixed'
     ? Number(selectedPackage?.priceUsdt || 7.09)
     : (autoQtyPerDay / 1000 * 0.70 * autoDays);
-  const currentPriceGtq = (currentPriceUsdt * exchangeRate).toFixed(2);
+  const currentPriceGtq = (currentPriceUsdt * currentRateGtq).toFixed(2);
   const hasSufficientBalance = walletBalance >= currentPriceUsdt;
 
   // Real Validation using SiamBhau Free Fire v5.0 API
@@ -397,7 +398,6 @@ export default function Likes() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {packagesList.map((pkg) => {
                   const isSelected = selectedPackage?.id === pkg.id;
-                  const priceGtq = (pkg.priceUsdt * exchangeRate).toFixed(2);
 
                   return (
                     <div
@@ -711,14 +711,14 @@ export default function Likes() {
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TU SALDO DISPONIBLE EN BILLETERA:</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: '900', color: hasSufficientBalance ? 'var(--accent-cyan)' : '#f87171' }}>
-                  ${walletBalance.toFixed(2)} USDT <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>(Q{(walletBalance * exchangeRate).toFixed(2)} GTQ)</span>
+                  ${walletBalance.toFixed(2)} USDT <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>({formatPrice(walletBalance)})</span>
                 </div>
               </div>
 
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TOTAL A PAGAR:</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#fff' }}>
-                  ${currentPriceUsdt.toFixed(2)} USDT
+                  {formatPrice(currentPriceUsdt)}
                 </div>
               </div>
             </div>
