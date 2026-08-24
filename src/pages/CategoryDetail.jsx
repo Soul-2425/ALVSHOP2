@@ -345,7 +345,6 @@ export default function CategoryDetail() {
     if (isLikesCat) return [];
 
     const catIdStr = String(currentCategory.id);
-    const subIds = categorySubcategories.map(s => String(s.id));
     const catNameClean = (currentCategory.name || '').toLowerCase().replace(/ff/g, '').trim();
 
     return allProducts.filter(p => {
@@ -354,7 +353,6 @@ export default function CategoryDetail() {
       const pSubId = String(p.subcategory_id || p.subcategories?.id || '');
       const pCatId = String(p.subcategories?.category_id || p.subcategories?.categories?.id || '');
 
-      const matchesSubId = subIds.includes(pSubId);
       const matchesCatId = pCatId === catIdStr || pSubId === catIdStr;
       const matchesName = catNameClean && p.name && p.name.toLowerCase().includes(catNameClean);
 
@@ -364,31 +362,20 @@ export default function CategoryDetail() {
       const isRegalosMatch = (catIdStr === 'regalos-ff-id' || catNameClean.includes('regalo')) && (p.name?.toLowerCase().includes('caja') || p.name?.toLowerCase().includes('skin') || p.name?.toLowerCase().includes('pase'));
       const isBioMatch = (catIdStr === 'bio-larga-id' || catNameClean.includes('bio')) && p.name?.toLowerCase().includes('bio');
 
-      return matchesSubId || matchesCatId || matchesName || isPinMatch || isDiamantesMatch || isRegalosMatch || isBioMatch;
+      return matchesCatId || matchesName || isPinMatch || isDiamantesMatch || isRegalosMatch || isBioMatch;
     });
-  }, [currentCategory, categorySubcategories, allProducts]);
+  }, [currentCategory, allProducts]);
 
-  // Subcategory & Search Filtering
+  // Search Filtering
   const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return categoryProducts;
+    const q = searchQuery.toLowerCase().trim();
     return categoryProducts.filter(p => {
-      // Subcategory filter
-      if (selectedSubcategory !== 'all') {
-        const pSubId = String(p.subcategory_id || p.subcategories?.id || p.subcategories?.name || '');
-        const pSubName = String(p.subcategories?.name || '');
-        if (pSubId !== selectedSubcategory && pSubName !== selectedSubcategory) return false;
-      }
-
-      // Search query filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const nameMatch = p.name?.toLowerCase().includes(q);
-        const subMatch = p.subcategories?.name?.toLowerCase().includes(q);
-        return nameMatch || subMatch;
-      }
-
-      return true;
+      const nameMatch = p.name?.toLowerCase().includes(q);
+      const subMatch = p.subcategories?.name?.toLowerCase().includes(q);
+      return nameMatch || subMatch;
     });
-  }, [categoryProducts, selectedSubcategory, searchQuery]);
+  }, [categoryProducts, searchQuery]);
 
   const isLikesCategory = currentCategory?.name?.toLowerCase().includes('like');
 
@@ -517,7 +504,7 @@ export default function CategoryDetail() {
         </div>
       ) : (
         <>
-          {/* Subcategories Filter & Search Bar */}
+          {/* Header & Quick Search Bar */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -526,62 +513,11 @@ export default function CategoryDetail() {
             gap: '14px',
             marginBottom: '24px'
           }}>
-            {/* Subcategories Pills */}
-            <div style={{
-              display: 'flex',
-              gap: '8px',
-              overflowX: 'auto',
-              scrollbarWidth: 'none',
-              paddingBottom: '4px'
-            }}>
-              <button
-                type="button"
-                onClick={() => setSelectedSubcategory('all')}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 'var(--radius-full)',
-                  fontSize: '0.82rem',
-                  fontWeight: '800',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  background: selectedSubcategory === 'all' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
-                  color: selectedSubcategory === 'all' ? '#000' : 'var(--text-main)',
-                  border: selectedSubcategory === 'all' ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                Todos ({categoryProducts.length})
-              </button>
-
-              {categorySubcategories.map(sub => {
-                const isSelected = selectedSubcategory === String(sub.id) || selectedSubcategory === sub.name;
-                const subCount = categoryProducts.filter(p => 
-                  String(p.subcategory_id || p.subcategories?.id) === String(sub.id) ||
-                  p.subcategories?.name === sub.name
-                ).length;
-
-                return (
-                  <button
-                    key={sub.id || sub.name}
-                    type="button"
-                    onClick={() => setSelectedSubcategory(String(sub.id || sub.name))}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: 'var(--radius-full)',
-                      fontSize: '0.82rem',
-                      fontWeight: '800',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      background: isSelected ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
-                      color: isSelected ? '#000' : 'var(--text-main)',
-                      border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {sub.name} {subCount > 0 && `(${subCount})`}
-                  </button>
-                );
-              })}
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: '900', margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🛍️</span>
+                <span>Todos los Productos ({filteredProducts.length})</span>
+              </h2>
             </div>
 
             {/* Quick In-Category Search */}
@@ -593,7 +529,7 @@ export default function CategoryDetail() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
                   width: '100%',
-                  padding: '8px 12px 8px 34px',
+                  padding: '9px 14px 9px 36px',
                   borderRadius: 'var(--radius-full)',
                   background: '#0d111a',
                   border: '1px solid var(--border-glass)',
@@ -601,7 +537,7 @@ export default function CategoryDetail() {
                   fontSize: '0.82rem'
                 }}
               />
-              <span style={{ position: 'absolute', left: '12px', top: '9px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 🔍
               </span>
               {searchQuery && (
@@ -610,7 +546,7 @@ export default function CategoryDetail() {
                   style={{
                     position: 'absolute',
                     right: '10px',
-                    top: '8px',
+                    top: '9px',
                     background: 'transparent',
                     border: 'none',
                     color: 'var(--text-muted)',
@@ -645,13 +581,10 @@ export default function CategoryDetail() {
                   ? `No hay resultados que coincidan con "${searchQuery}".`
                   : 'Aún no hay productos registrados en esta sección.'}
               </p>
-              {(searchQuery || selectedSubcategory !== 'all') && (
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedSubcategory('all');
-                    setSearchQuery('');
-                  }}
+                  onClick={() => setSearchQuery('')}
                   className="btn-cyan"
                   style={{ padding: '8px 18px', fontSize: '0.82rem' }}
                 >
