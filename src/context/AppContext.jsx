@@ -67,11 +67,27 @@ export function AppProvider({ children }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
 
-  // Currency Toggle: 'USDT' or 'GTQ'
-  const [currency, setCurrency] = useState('USDT');
+  // Currency Selection: 'USDT', 'GTQ', 'MXN', 'COP'
+  const [currency, setCurrencyState] = useState(() => {
+    try {
+      return localStorage.getItem('alv_selected_currency') || 'USDT';
+    } catch (e) {
+      return 'USDT';
+    }
+  });
+
+  const setCurrency = (newCurr) => {
+    setCurrencyState(newCurr);
+    try {
+      localStorage.setItem('alv_selected_currency', newCurr);
+    } catch (e) {}
+  };
+
   const [exchangeRate, setExchangeRate] = useState(7.80);
+  const [rateMxn, setRateMxn] = useState(19.50);
+  const [rateCop, setRateCop] = useState(4100.00);
   
-  // Dynamic Configuration (Branding, Colors, Bank Accounts, Socials)
+  // Dynamic Configuration (Branding, Colors, Bank Accounts, Socials, Payment Methods)
   const [config, setConfig] = useState({
     site_title: 'ALVSHOP - Recargas & Cuentas Digitales',
     logo_url: '',
@@ -80,8 +96,20 @@ export function AppProvider({ children }) {
     primary_color: '#1e3a8a',
     accent_color: '#06b6d4',
     banners: [],
+    usdt_gtq_rate: 7.80,
+    usdt_mxn_rate: 19.50,
+    usdt_cop_rate: 4100.00,
     bank_accounts: [{ bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }],
-    social_links: { instagram: '', tiktok: '', whatsapp: '50250000000', facebook: '' },
+    mxn_accounts: [{ bank: 'BBVA / SPEI', account_number: '012180015487965412', type: 'CLABE Interbancaria', name: 'Jonathan Alvares' }],
+    cop_accounts: [{ bank: 'Bancolombia / Nequi', account_number: '3124567890', type: 'Ahorros / Celular', name: 'Jonathan Alvares' }],
+    payment_methods_visibility: {
+      binance: true,
+      gtq: true,
+      mxn: true,
+      cop: true,
+      payment_links: true
+    },
+    social_links: { instagram: '', tiktok: '', whatsapp: '50243130763', facebook: '' },
     binance_pay_id: '527653920',
     binance_name: 'AlvJona',
     binance_qr_url: '/binance-qr.jpg',
@@ -168,16 +196,44 @@ export function AppProvider({ children }) {
         const binanceDeeplink = data.social_links?.binance_deeplink_url || data.binance_deeplink_url || 'https://app.binance.com/uni-qr/T567z1pn';
         const binanceUsdtAddress = data.social_links?.binance_usdt_address || '';
 
+        const rateGtq = data.usdt_gtq_rate ? Number(data.usdt_gtq_rate) : 7.80;
+        const rateMxnVal = data.usdt_mxn_rate || data.social_links?.usdt_mxn_rate ? Number(data.usdt_mxn_rate || data.social_links?.usdt_mxn_rate) : 19.50;
+        const rateCopVal = data.usdt_cop_rate || data.social_links?.usdt_cop_rate ? Number(data.usdt_cop_rate || data.social_links?.usdt_cop_rate) : 4100.00;
+
+        const mxnAccounts = data.mxn_accounts || data.social_links?.mxn_accounts || [
+          { bank: 'BBVA / SPEI', account_number: '012180015487965412', type: 'CLABE Interbancaria', name: 'Jonathan Alvares' }
+        ];
+
+        const copAccounts = data.cop_accounts || data.social_links?.cop_accounts || [
+          { bank: 'Bancolombia / Nequi', account_number: '3124567890', type: 'Ahorros / Celular', name: 'Jonathan Alvares' }
+        ];
+
+        const paymentVisibility = data.payment_methods_visibility || data.social_links?.payment_methods_visibility || {
+          binance: true,
+          gtq: true,
+          mxn: true,
+          cop: true,
+          payment_links: true
+        };
+
         setConfig(prev => ({
           ...prev,
           ...data,
+          usdt_gtq_rate: rateGtq,
+          usdt_mxn_rate: rateMxnVal,
+          usdt_cop_rate: rateCopVal,
+          mxn_accounts: mxnAccounts,
+          cop_accounts: copAccounts,
+          payment_methods_visibility: paymentVisibility,
           binance_pay_id: binancePayId,
           binance_name: binanceName,
           binance_qr_url: binanceQrUrl,
           binance_deeplink_url: binanceDeeplink,
           binance_usdt_address: binanceUsdtAddress
         }));
-        if (data.usdt_gtq_rate) setExchangeRate(Number(data.usdt_gtq_rate));
+        setExchangeRate(rateGtq);
+        setRateMxn(rateMxnVal);
+        setRateCop(rateCopVal);
 
         // Inject Dynamic Colors into CSS Root
         const root = document.documentElement;
@@ -417,8 +473,8 @@ export function AppProvider({ children }) {
     };
   }, [user, role, addNotification]);
 
-  // Format Price with Currency Toggle (USDT or GTQ)
-  const formatPrice = (usdtAmount, customRole = null) => {
+  // Format Price with Multi-Currency Support (USDT, GTQ, MXN, COP)
+  const formatPrice = (usdtAmount, customRole = null, forceCurrency = null) => {
     let price = Number(usdtAmount || 0);
     const effectiveRole = customRole || role;
 
@@ -429,15 +485,52 @@ export function AppProvider({ children }) {
       price = price * (1 - (config.discount_special_pct / 100));
     }
 
-    if (currency === 'GTQ') {
-      const gtqAmount = price * exchangeRate;
-      return `Q${gtqAmount.toFixed(2)}`;
+    const activeCurr = forceCurrency || currency;
+
+    if (activeCurr === 'GTQ') {
+      const gtqAmount = price * (config.usdt_gtq_rate || exchangeRate || 7.80);
+      return `Q${gtqAmount.toFixed(2)} GTQ`;
+    }
+    if (activeCurr === 'MXN') {
+      const mxnAmount = price * (config.usdt_mxn_rate || rateMxn || 19.50);
+      return `$${mxnAmount.toFixed(2)} MXN`;
+    }
+    if (activeCurr === 'COP') {
+      const copAmount = price * (config.usdt_cop_rate || rateCop || 4100.00);
+      return `$${Math.round(copAmount).toLocaleString('es-CO')} COP`;
     }
     return `$${price.toFixed(2)} USDT`;
   };
 
+  const convertPrice = (usdtAmount, targetCurrency = null) => {
+    const price = Number(usdtAmount || 0);
+    const activeCurr = targetCurrency || currency;
+
+    if (activeCurr === 'GTQ') {
+      const rate = Number(config.usdt_gtq_rate || exchangeRate || 7.80);
+      const val = price * rate;
+      return { amountFormatted: `Q${val.toFixed(2)}`, amountNumber: Number(val.toFixed(2)), symbol: 'Q', code: 'GTQ', rate };
+    }
+    if (activeCurr === 'MXN') {
+      const rate = Number(config.usdt_mxn_rate || rateMxn || 19.50);
+      const val = price * rate;
+      return { amountFormatted: `$${val.toFixed(2)} MXN`, amountNumber: Number(val.toFixed(2)), symbol: '$', code: 'MXN', rate };
+    }
+    if (activeCurr === 'COP') {
+      const rate = Number(config.usdt_cop_rate || rateCop || 4100.00);
+      const val = Math.round(price * rate);
+      return { amountFormatted: `$${val.toLocaleString('es-CO')} COP`, amountNumber: val, symbol: '$', code: 'COP', rate };
+    }
+    return { amountFormatted: `$${price.toFixed(2)} USDT`, amountNumber: price, symbol: '$', code: 'USDT', rate: 1.00 };
+  };
+
   const toggleCurrency = () => {
-    setCurrency(prev => prev === 'USDT' ? 'GTQ' : 'USDT');
+    setCurrency(prev => {
+      if (prev === 'USDT') return 'GTQ';
+      if (prev === 'GTQ') return 'MXN';
+      if (prev === 'MXN') return 'COP';
+      return 'USDT';
+    });
   };
 
   return (
@@ -454,7 +547,12 @@ export function AppProvider({ children }) {
         setCurrency,
         exchangeRate,
         setExchangeRate,
+        rateMxn,
+        setRateMxn,
+        rateCop,
+        setRateCop,
         formatPrice,
+        convertPrice,
         toggleCurrency,
         config,
         loadConfig,

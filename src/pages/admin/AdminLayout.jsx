@@ -56,6 +56,7 @@ export default function AdminLayout() {
     { to: '/admin', end: true, label: 'Dashboard & Analítica', icon: '📊' },
     { to: '/admin/orders', label: 'Gestión de Pedidos', icon: '📦' },
     { to: '/admin/likes', label: 'Gestión de Likes FF', icon: '👍' },
+    { to: '/admin/payment-links', label: 'Pool Links de Pago', icon: '🔗' },
     { to: '/admin/integrations', label: 'Integraciones & APIs', icon: '⚡' },
     { to: '/admin/users', label: 'Usuarios y Roles', icon: '👥' },
     { to: '/admin/products', label: 'Productos & 3 Precios', icon: '🏷️' },

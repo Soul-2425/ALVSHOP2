@@ -5,10 +5,36 @@ import { useApp } from '../../context/AppContext';
 export default function AdminFinance() {
   const { config, loadConfig } = useApp();
 
-  const [rate, setRate] = useState('7.80');
+  // Exchange Rates vs 1 USDT
+  const [rateGtq, setRateGtq] = useState('7.80');
+  const [rateMxn, setRateMxn] = useState('19.50');
+  const [rateCop, setRateCop] = useState('4100.00');
+
+  // Role Discounts
   const [discountOffer, setDiscountOffer] = useState('5');
   const [discountSpecial, setDiscountSpecial] = useState('10');
-  const [bankAccounts, setBankAccounts] = useState([]);
+
+  // Payment Methods Visibility Switches
+  const [visibility, setVisibility] = useState({
+    binance: true,
+    gtq: true,
+    mxn: true,
+    cop: true,
+    payment_links: true
+  });
+
+  // Bank Accounts
+  const [bankAccountsGtq, setBankAccountsGtq] = useState([
+    { bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }
+  ]);
+
+  const [bankAccountsMxn, setBankAccountsMxn] = useState([
+    { bank: 'BBVA / SPEI', account_number: '012180015487965412', type: 'CLABE Interbancaria', name: 'Jonathan Alvares' }
+  ]);
+
+  const [bankAccountsCop, setBankAccountsCop] = useState([
+    { bank: 'Bancolombia / Nequi', account_number: '3124567890', type: 'Ahorros / Celular', name: 'Jonathan Alvares' }
+  ]);
 
   // Binance Pay Configuration
   const [binancePayId, setBinancePayId] = useState('527653920');
@@ -22,10 +48,20 @@ export default function AdminFinance() {
 
   useEffect(() => {
     if (config) {
-      if (config.usdt_gtq_rate) setRate(String(config.usdt_gtq_rate));
+      if (config.usdt_gtq_rate) setRateGtq(String(config.usdt_gtq_rate));
+      if (config.usdt_mxn_rate) setRateMxn(String(config.usdt_mxn_rate));
+      if (config.usdt_cop_rate) setRateCop(String(config.usdt_cop_rate));
+
       if (config.discount_offer_pct) setDiscountOffer(String(config.discount_offer_pct));
       if (config.discount_special_pct) setDiscountSpecial(String(config.discount_special_pct));
-      if (config.bank_accounts) setBankAccounts(config.bank_accounts);
+
+      if (config.payment_methods_visibility) {
+        setVisibility(prev => ({ ...prev, ...config.payment_methods_visibility }));
+      }
+
+      if (config.bank_accounts && config.bank_accounts.length > 0) setBankAccountsGtq(config.bank_accounts);
+      if (config.mxn_accounts && config.mxn_accounts.length > 0) setBankAccountsMxn(config.mxn_accounts);
+      if (config.cop_accounts && config.cop_accounts.length > 0) setBankAccountsCop(config.cop_accounts);
 
       if (config.binance_pay_id) setBinancePayId(config.binance_pay_id);
       if (config.binance_name) setBinanceName(config.binance_name);
@@ -35,18 +71,43 @@ export default function AdminFinance() {
     }
   }, [config]);
 
-  const handleAddAccount = () => {
-    setBankAccounts([...bankAccounts, { bank: '', account_number: '', type: 'Ahorro', name: '' }]);
+  // Account Handlers GTQ
+  const handleAddAccountGtq = () => {
+    setBankAccountsGtq([...bankAccountsGtq, { bank: '', account_number: '', type: 'Ahorro', name: '' }]);
   };
-
-  const handleAccountChange = (index, field, value) => {
-    const updated = [...bankAccounts];
+  const handleAccountChangeGtq = (index, field, value) => {
+    const updated = [...bankAccountsGtq];
     updated[index][field] = value;
-    setBankAccounts(updated);
+    setBankAccountsGtq(updated);
+  };
+  const handleRemoveAccountGtq = (index) => {
+    setBankAccountsGtq(bankAccountsGtq.filter((_, idx) => idx !== index));
   };
 
-  const handleRemoveAccount = (index) => {
-    setBankAccounts(bankAccounts.filter((_, idx) => idx !== index));
+  // Account Handlers MXN
+  const handleAddAccountMxn = () => {
+    setBankAccountsMxn([...bankAccountsMxn, { bank: 'BBVA / SPEI', account_number: '', type: 'CLABE', name: '' }]);
+  };
+  const handleAccountChangeMxn = (index, field, value) => {
+    const updated = [...bankAccountsMxn];
+    updated[index][field] = value;
+    setBankAccountsMxn(updated);
+  };
+  const handleRemoveAccountMxn = (index) => {
+    setBankAccountsMxn(bankAccountsMxn.filter((_, idx) => idx !== index));
+  };
+
+  // Account Handlers COP
+  const handleAddAccountCop = () => {
+    setBankAccountsCop([...bankAccountsCop, { bank: 'Nequi / Bancolombia', account_number: '', type: 'Ahorro', name: '' }]);
+  };
+  const handleAccountChangeCop = (index, field, value) => {
+    const updated = [...bankAccountsCop];
+    updated[index][field] = value;
+    setBankAccountsCop(updated);
+  };
+  const handleRemoveAccountCop = (index) => {
+    setBankAccountsCop(bankAccountsCop.filter((_, idx) => idx !== index));
   };
 
   // Subir nueva imagen de Código QR
@@ -65,7 +126,6 @@ export default function AdminFinance() {
         .upload(filePath, file);
 
       if (uploadError) {
-        // Si no hay bucket avatars, usar base64 local
         const reader = new FileReader();
         reader.onload = (uploadEvent) => {
           setBinanceQrUrl(uploadEvent.target.result);
@@ -95,21 +155,31 @@ export default function AdminFinance() {
         binance_name: binanceName.trim(),
         binance_qr_url: binanceQrUrl.trim(),
         binance_deeplink_url: binanceDeeplinkUrl.trim(),
-        binance_usdt_address: binanceUsdtAddress.trim()
+        binance_usdt_address: binanceUsdtAddress.trim(),
+        usdt_mxn_rate: Number(rateMxn),
+        usdt_cop_rate: Number(rateCop),
+        mxn_accounts: bankAccountsMxn,
+        cop_accounts: bankAccountsCop,
+        payment_methods_visibility: visibility
       };
 
       const { error } = await supabase.from('config').update({
-        usdt_gtq_rate: Number(rate),
+        usdt_gtq_rate: Number(rateGtq),
+        usdt_mxn_rate: Number(rateMxn),
+        usdt_cop_rate: Number(rateCop),
         discount_offer_pct: Number(discountOffer),
         discount_special_pct: Number(discountSpecial),
-        bank_accounts: bankAccounts,
+        bank_accounts: bankAccountsGtq,
+        mxn_accounts: bankAccountsMxn,
+        cop_accounts: bankAccountsCop,
+        payment_methods_visibility: visibility,
         social_links: updatedSocial
       }).eq('id', 1);
 
       if (error) throw error;
 
       await loadConfig();
-      alert('¡Configuración financiera y datos de Binance Pay guardados con éxito!');
+      alert('¡Configuración financiera, tasas multi-moneda y métodos de pago guardados con éxito!');
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -118,18 +188,117 @@ export default function AdminFinance() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '760px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '820px' }}>
       <div>
-        <h3 style={{ fontSize: '1.25rem', margin: 0 }}>Configuración Financiera, Binance Pay & Cuentas Bancarias</h3>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          Gestiona la tasa de conversión USDT a Quetzales, los datos receptores de Binance Pay (ID y QR) y cuentas de banco.
+        <h3 style={{ fontSize: '1.35rem', margin: 0, color: '#fff' }}>Configuración Financiera, Multi-Moneda & Métodos de Pago</h3>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          Gestiona las tasas de cambio de USDT a Quetzales (GTQ), Pesos Mexicanos (MXN) y Pesos Colombianos (COP), y activa o desactiva qué métodos aparecen al público.
         </p>
       </div>
 
-      <form onSubmit={handleSaveFinance} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <form onSubmit={handleSaveFinance} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         
         {/* ========================================================================= */}
-        {/* BINANCE PAY RECEPTOR CONFIGURATION */}
+        {/* 1. SECCIÓN DE TASAS DE CAMBIO (USDT BASE) */}
+        {/* ========================================================================= */}
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-cyan)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.5rem' }}>💱</span>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '1.05rem', color: '#fff' }}>Tasas de Conversión Multi-Moneda (Base: 1.00 USDT)</h4>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Los clientes verán los precios convertidos en tiempo real según la moneda que elijan en la barra superior.</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+            {/* Tasa GTQ */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                🇬🇹 Tasa Quetzales (GTQ):
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '10px', color: '#fbbf24', fontWeight: '800' }}>Q</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={rateGtq}
+                  onChange={(e) => setRateGtq(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 32px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontWeight: '800',
+                    fontSize: '1rem'
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>1 USDT = Q{Number(rateGtq).toFixed(2)} GTQ</div>
+            </div>
+
+            {/* Tasa MXN */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                🇲🇽 Tasa Pesos Mexicanos (MXN):
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '10px', color: '#34d399', fontWeight: '800' }}>$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={rateMxn}
+                  onChange={(e) => setRateMxn(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 32px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontWeight: '800',
+                    fontSize: '1rem'
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>1 USDT = ${Number(rateMxn).toFixed(2)} MXN</div>
+            </div>
+
+            {/* Tasa COP */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>
+                🇨🇴 Tasa Pesos Colombianos (COP):
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', top: '10px', color: '#f59e0b', fontWeight: '800' }}>$</span>
+                <input
+                  type="number"
+                  step="1"
+                  required
+                  value={rateCop}
+                  onChange={(e) => setRateCop(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 32px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fff',
+                    fontWeight: '800',
+                    fontSize: '1rem'
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>1 USDT = ${Math.round(Number(rateCop)).toLocaleString('es-CO')} COP</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 2. BINANCE PAY (USDT MANUAL) + SWITCH */}
         {/* ========================================================================= */}
         <div className="glass-panel" style={{
           padding: '24px',
@@ -137,321 +306,427 @@ export default function AdminFinance() {
           border: '1px solid #f0b90b',
           background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.08) 0%, rgba(13, 17, 26, 0.9) 100%)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-            <span style={{ fontSize: '1.6rem' }}>🟡</span>
-            <div>
-              <h4 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>
-                Datos de Recepción Binance Pay (USDT)
-              </h4>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Aquí defines la ID de Binance y el Código QR donde tus clientes pagarán con criptomonedas.
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.6rem' }}>🟡</span>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#f0b90b', fontWeight: '900' }}>
+                  Binance Pay (Pago Manual USDT)
+                </h4>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  El cliente transfiere a tu Binance Pay ID o escanea tu QR y adjunta captura de comprobante.
+                </div>
               </div>
             </div>
+
+            {/* Switch On/Off */}
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-glass)' }}>
+              <input
+                type="checkbox"
+                checked={visibility.binance}
+                onChange={(e) => setVisibility({ ...visibility, binance: e.target.checked })}
+                style={{ width: '16px', height: '16px', accentColor: '#f0b90b', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.8rem', fontWeight: '800', color: visibility.binance ? '#f0b90b' : 'var(--text-muted)' }}>
+                {visibility.binance ? '🟢 Visible al público' : '🔴 Oculto al público'}
+              </span>
+            </label>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginBottom: '14px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Binance Pay ID (Receptor) *
+                Binance Pay ID:
               </label>
               <input
                 type="text"
-                required
-                placeholder="Ej. 527653920"
                 value={binancePayId}
                 onChange={(e) => setBinancePayId(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: '#0d111a',
-                  border: '1px solid #f0b90b',
-                  color: '#f0b90b',
-                  fontSize: '1.05rem',
-                  fontWeight: '800',
-                  letterSpacing: '0.05em'
-                }}
+                placeholder="Ej. 527653920"
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#f0b90b', fontWeight: '800' }}
               />
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                El número de ID de tu cuenta Binance.
-              </div>
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Nombre / Alias de la Cuenta Binance *
+                Nombre de Titular en Binance:
               </label>
               <input
                 type="text"
-                required
-                placeholder="Ej. AlvJona"
                 value={binanceName}
                 onChange={(e) => setBinanceName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: '#0d111a',
-                  border: '1px solid var(--border-glass)',
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontWeight: '700'
-                }}
+                placeholder="Ej. AlvJona"
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '700' }}
               />
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Aparece debajo del QR (Titular de la cuenta).
-              </div>
             </div>
           </div>
 
-          {/* QR Code Upload & Preview */}
-          <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '16px', alignItems: 'center' }}>
-            <div style={{
-              background: '#0d111a',
-              border: '1px solid rgba(240, 185, 11, 0.4)',
-              borderRadius: 'var(--radius-md)',
-              padding: '6px',
-              textAlign: 'center'
-            }}>
-              <img
-                src={binanceQrUrl}
-                alt="QR Binance Pay"
-                style={{ width: '120px', height: '120px', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Deep Link directo a App de Binance (Opcional):
+              </label>
+              <input
+                type="text"
+                value={binanceDeeplinkUrl}
+                onChange={(e) => setBinanceDeeplinkUrl(e.target.value)}
+                placeholder="https://app.binance.com/uni-qr/..."
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
               />
-              <div style={{ fontSize: '0.65rem', color: '#f0b90b', fontWeight: '700', marginTop: '4px' }}>{binanceName}</div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  URL de la Imagen del Código QR:
-                </label>
-                <input
-                  type="text"
-                  value={binanceQrUrl}
-                  onChange={(e) => setBinanceQrUrl(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: '#0d111a',
-                    border: '1px solid var(--border-glass)',
-                    color: '#fff',
-                    fontSize: '0.8rem'
-                  }}
-                />
-              </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Dirección de Billetera USDT (TRC20 / Polygon - Opcional):
+              </label>
+              <input
+                type="text"
+                value={binanceUsdtAddress}
+                onChange={(e) => setBinanceUsdtAddress(e.target.value)}
+                placeholder="Ej. TLa9..."
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+              />
+            </div>
+          </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  O Subir Nuevo Archivo de Código QR:
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleUploadQr}
-                  style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}
-                />
-                {uploadingQr && <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Subiendo QR...</span>}
-              </div>
+          {/* QR Upload & Preview */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '8px', background: '#000', border: '1px solid #f0b90b', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {binanceQrUrl ? (
+                <img src={binanceQrUrl} alt="Binance QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontSize: '1.8rem' }}>📱</span>
+              )}
+            </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  Enlace Universal / Deeplink de Binance App (Abre la app directamente):
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://app.binance.com/uni-qr/T567z1pn"
-                  value={binanceDeeplinkUrl}
-                  onChange={(e) => setBinanceDeeplinkUrl(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: '#0d111a',
-                    border: '1px solid var(--border-glass)',
-                    color: '#f0b90b',
-                    fontSize: '0.8rem',
-                    fontFamily: 'monospace'
-                  }}
-                />
-              </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Código QR de Binance Pay</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Sube tu imagen de QR para que los clientes puedan escanearlo desde la app móvil.</div>
+              <label style={{ display: 'inline-block', padding: '6px 14px', background: '#f0b90b', color: '#000', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', fontWeight: '800', cursor: 'pointer' }}>
+                {uploadingQr ? 'Subiendo...' : '📷 Subir Foto de QR'}
+                <input type="file" accept="image/*" onChange={handleUploadQr} style={{ display: 'none' }} />
+              </label>
             </div>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* EXCHANGE RATE CARD */}
+        {/* 3. GUATEMALA (GTQ) + SWITCH & CUENTAS */}
         {/* ========================================================================= */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-cyan)' }}>
-          <h4 style={{ fontSize: '1.05rem', marginBottom: '8px', color: 'var(--accent-cyan)' }}>
-            💱 Tasa de Cambio Dinámica (1 USDT = X Quetzales)
-          </h4>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            Esta tasa recalculará automáticamente todos los precios en la tienda cuando el cliente active la vista en Quetzales (GTQ).
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.6rem' }}>🇬🇹</span>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff', fontWeight: '900' }}>
+                  Cuentas Bancarias en Quetzales (Guatemala - GTQ)
+                </h4>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Banrural, Banco Industrial, G&T, etc.</div>
+              </div>
+            </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ fontSize: '1.1rem', fontWeight: '800' }}>1.00 USDT =</div>
-            <input
-              type="number"
-              step="0.01"
-              required
-              value={rate}
-              onChange={(e) => setRate(e.target.value)}
-              style={{
-                width: '120px',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-sm)',
-                background: '#0d111a',
-                border: '1px solid var(--border-cyan)',
-                color: '#fff',
-                fontSize: '1.2rem',
-                fontWeight: '900'
-              }}
-            />
-            <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>GTQ (Quetzales)</div>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-glass)' }}>
+              <input
+                type="checkbox"
+                checked={visibility.gtq}
+                onChange={(e) => setVisibility({ ...visibility, gtq: e.target.checked })}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.8rem', fontWeight: '800', color: visibility.gtq ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
+                {visibility.gtq ? '🟢 Visible al público' : '🔴 Oculto al público'}
+              </span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+            {bankAccountsGtq.map((acc, index) => (
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr auto', gap: '8px', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 'var(--radius-sm)' }}>
+                <input
+                  type="text"
+                  placeholder="Banco (ej. Banrural)"
+                  value={acc.bank}
+                  onChange={(e) => handleAccountChangeGtq(index, 'bank', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="No. de Cuenta"
+                  value={acc.account_number}
+                  onChange={(e) => handleAccountChangeGtq(index, 'account_number', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem', fontWeight: '700' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Tipo (Ahorro/Monetaria)"
+                  value={acc.type}
+                  onChange={(e) => handleAccountChangeGtq(index, 'type', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre Titular"
+                  value={acc.name}
+                  onChange={(e) => handleAccountChangeGtq(index, 'name', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAccountGtq(index)}
+                  style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#ef4444', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: '800' }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddAccountGtq}
+            className="btn-glass"
+            style={{ fontSize: '0.78rem', padding: '6px 14px' }}
+          >
+            ➕ Agregar otra cuenta GTQ
+          </button>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 4. MÉXICO (MXN) + SWITCH & CUENTAS */}
+        {/* ========================================================================= */}
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid #34d399' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.6rem' }}>🇲🇽</span>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#34d399', fontWeight: '900' }}>
+                  Cuentas & SPEI en Pesos Mexicanos (México - MXN)
+                </h4>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>BBVA, Santander, Banamex, CLABE Interbancaria, OXXO Pay.</div>
+              </div>
+            </div>
+
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-glass)' }}>
+              <input
+                type="checkbox"
+                checked={visibility.mxn}
+                onChange={(e) => setVisibility({ ...visibility, mxn: e.target.checked })}
+                style={{ width: '16px', height: '16px', accentColor: '#34d399', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.8rem', fontWeight: '800', color: visibility.mxn ? '#34d399' : 'var(--text-muted)' }}>
+                {visibility.mxn ? '🟢 Visible al público' : '🔴 Oculto al público'}
+              </span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+            {bankAccountsMxn.map((acc, index) => (
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.5fr 2fr auto', gap: '8px', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 'var(--radius-sm)' }}>
+                <input
+                  type="text"
+                  placeholder="Banco/Plataforma (ej. BBVA / SPEI)"
+                  value={acc.bank}
+                  onChange={(e) => handleAccountChangeMxn(index, 'bank', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="CLABE Interbancaria (18 dígitos) o Tarjeta"
+                  value={acc.account_number}
+                  onChange={(e) => handleAccountChangeMxn(index, 'account_number', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem', fontWeight: '700' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Tipo (CLABE/Tarjeta)"
+                  value={acc.type}
+                  onChange={(e) => handleAccountChangeMxn(index, 'type', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre Titular"
+                  value={acc.name}
+                  onChange={(e) => handleAccountChangeMxn(index, 'name', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAccountMxn(index)}
+                  style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#ef4444', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: '800' }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddAccountMxn}
+            className="btn-glass"
+            style={{ fontSize: '0.78rem', padding: '6px 14px' }}
+          >
+            ➕ Agregar otra cuenta México (MXN)
+          </button>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 5. COLOMBIA (COP) + SWITCH & CUENTAS */}
+        {/* ========================================================================= */}
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid #f59e0b' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.6rem' }}>🇨🇴</span>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#f59e0b', fontWeight: '900' }}>
+                  Cuentas & Nequi en Pesos Colombianos (Colombia - COP)
+                </h4>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Bancolombia, Nequi, Daviplata, Dale, etc.</div>
+              </div>
+            </div>
+
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-glass)' }}>
+              <input
+                type="checkbox"
+                checked={visibility.cop}
+                onChange={(e) => setVisibility({ ...visibility, cop: e.target.checked })}
+                style={{ width: '16px', height: '16px', accentColor: '#f59e0b', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.8rem', fontWeight: '800', color: visibility.cop ? '#f59e0b' : 'var(--text-muted)' }}>
+                {visibility.cop ? '🟢 Visible al público' : '🔴 Oculto al público'}
+              </span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+            {bankAccountsCop.map((acc, index) => (
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.5fr 2fr auto', gap: '8px', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 'var(--radius-sm)' }}>
+                <input
+                  type="text"
+                  placeholder="Banco (ej. Nequi / Bancolombia)"
+                  value={acc.bank}
+                  onChange={(e) => handleAccountChangeCop(index, 'bank', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="No. Celular Nequi o No. Cuenta"
+                  value={acc.account_number}
+                  onChange={(e) => handleAccountChangeCop(index, 'account_number', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem', fontWeight: '700' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Tipo (Ahorro/Celular)"
+                  value={acc.type}
+                  onChange={(e) => handleAccountChangeCop(index, 'type', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre Titular"
+                  value={acc.name}
+                  onChange={(e) => handleAccountChangeCop(index, 'name', e.target.value)}
+                  style={{ padding: '8px', borderRadius: '4px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAccountCop(index)}
+                  style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid #ef4444', color: '#ef4444', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: '800' }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddAccountCop}
+            className="btn-glass"
+            style={{ fontSize: '0.78rem', padding: '6px 14px' }}
+          >
+            ➕ Agregar otra cuenta Colombia (COP)
+          </button>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 6. POOL DE LINKS DE PAGO + SWITCH */}
+        {/* ========================================================================= */}
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid #a855f7' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.6rem' }}>🔗</span>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#a855f7', fontWeight: '900' }}>
+                  Enlaces de Pago Desechables (Recurrente / Tarjetas)
+                </h4>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Controla si la opción de recargar por Enlace Seguro aparece en la billetera de los clientes.
+                </div>
+              </div>
+            </div>
+
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(0,0,0,0.4)', padding: '6px 12px', borderRadius: 'var(--radius-full)', border: '1px solid var(--border-glass)' }}>
+              <input
+                type="checkbox"
+                checked={visibility.payment_links}
+                onChange={(e) => setVisibility({ ...visibility, payment_links: e.target.checked })}
+                style={{ width: '16px', height: '16px', accentColor: '#a855f7', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.8rem', fontWeight: '800', color: visibility.payment_links ? '#a855f7' : 'var(--text-muted)' }}>
+                {visibility.payment_links ? '🟢 Visible al público' : '🔴 Oculto al público'}
+              </span>
+            </label>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* ROLE DISCOUNTS CARD */}
+        {/* 7. DESCUENTOS POR ROL */}
         {/* ========================================================================= */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
-          <h4 style={{ fontSize: '1.05rem', marginBottom: '8px' }}>
-            🏷️ Descuentos Automáticos por Rol (% sobre Precio Público)
-          </h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <h4 style={{ margin: '0 0 16px 0', fontSize: '1.05rem', color: '#fff' }}>Descuentos Automáticos por Rol</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Descuento Rol "Cliente Oferta" (%)
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                Descuento Rol "Cliente Oferta" (%):
               </label>
               <input
                 type="number"
-                step="0.5"
+                min="0"
+                max="100"
                 value={discountOffer}
                 onChange={(e) => setDiscountOffer(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '800' }}
               />
             </div>
+
             <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Descuento Rol "Cliente Especial" (%)
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                Descuento Rol "Cliente Especial" (%):
               </label>
               <input
                 type="number"
-                step="0.5"
+                min="0"
+                max="100"
                 value={discountSpecial}
                 onChange={(e) => setDiscountSpecial(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontWeight: '800' }}
               />
             </div>
           </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* BANK ACCOUNTS CARD (RESPONSIVE & CLEAN NO-OVERFLOW) */}
-        {/* ========================================================================= */}
-        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-            <h4 style={{ fontSize: '1.05rem', margin: 0 }}>🏦 Cuentas Bancarias para Transferencias Manuales (GTQ)</h4>
-            <button type="button" onClick={handleAddAccount} className="btn-glass" style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700' }}>
-              ➕ Agregar Nueva Cuenta
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {bankAccounts.length === 0 ? (
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '12px', textAlign: 'center' }}>
-                No hay cuentas bancarias registradas. Haz clic en "Agregar Nueva Cuenta" para añadir una.
-              </div>
-            ) : (
-              bankAccounts.map((acc, idx) => (
-                <div key={idx} style={{
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid var(--border-glass)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '14px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '10px'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
-                      💳 Cuenta #{idx + 1}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveAccount(idx)}
-                      style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700' }}
-                    >
-                      ✕ Eliminar Cuenta
-                    </button>
-                  </div>
-
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                    gap: '10px'
-                  }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                        Banco:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ej. Banrural"
-                        value={acc.bank}
-                        onChange={(e) => handleAccountChange(idx, 'bank', e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                        No. de Cuenta:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ej. 4313076359"
-                        value={acc.account_number}
-                        onChange={(e) => handleAccountChange(idx, 'account_number', e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                        Tipo de Cuenta:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ej. Ahorro / Monetario"
-                        value={acc.type}
-                        onChange={(e) => handleAccountChange(idx, 'type', e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                        Nombre Titular:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ej. Jonathan Alvares"
-                        value={acc.name}
-                        onChange={(e) => handleAccountChange(idx, 'name', e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <button type="submit" disabled={saving} className="btn-cyan" style={{ padding: '14px', fontSize: '0.95rem', fontWeight: '800' }}>
-          {saving ? 'Guardando...' : '💾 Guardar Toda la Configuración Financiera'}
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={saving}
+          className="btn-cyan"
+          style={{ padding: '14px', fontSize: '1rem', fontWeight: '900', boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)' }}
+        >
+          {saving ? '💾 Guardando Cambios...' : '💾 Guardar Configuración Financiera'}
         </button>
+
       </form>
     </div>
   );

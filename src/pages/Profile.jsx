@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
-import BinancePayModal from '../components/BinancePayModal';
-import { requestPushPermission, getPushPermissionStatus } from '../../notificaciones y apis/notificaciones/pushService';
+import { requestPushPermission, getPushPermissionStatus, notifyAdminNewOrder } from '../../notificaciones y apis/notificaciones/pushService';
+import { reservePaymentLink } from '../services/paymentLinksService';
 
 export default function Profile() {
   const [searchParams] = useSearchParams();
@@ -37,7 +37,7 @@ export default function Profile() {
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
 
-  // Wallet Top-up State
+  // Wallet Top-up State (Manual & Binance)
   const [depositAmount, setDepositAmount] = useState('');
   const [depositLoading, setDepositLoading] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
@@ -45,6 +45,13 @@ export default function Profile() {
   const [binanceDepositAmount, setBinanceDepositAmount] = useState('10');
   const [receiptPreview, setReceiptPreview] = useState('');
   const [receiptRef, setReceiptRef] = useState('');
+
+  // Single-Use Payment Link Pool State (Recurrente)
+  const [linkDepositAmount, setLinkDepositAmount] = useState(5);
+  const [reservedLink, setReservedLink] = useState(null);
+  const [reservingLink, setReservingLink] = useState(false);
+  const [linkReceiptPreview, setLinkReceiptPreview] = useState('');
+  const [linkSubmitting, setLinkSubmitting] = useState(false);
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
@@ -60,6 +67,20 @@ export default function Profile() {
     const reader = new FileReader();
     reader.onloadend = () => {
       setReceiptPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLinkReceiptChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen no debe superar los 5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setLinkReceiptPreview(reader.result);
     };
     reader.readAsDataURL(file);
   };
@@ -151,7 +172,10 @@ export default function Profile() {
     await supabase.auth.signOut();
   };
 
-  // Handle Wallet Recharge Request (Manual Quetzales)
+  // Selected deposit currency for manual transfer: 'GTQ' | 'MXN' | 'COP' | 'Binance'
+  const [depositCurrency, setDepositCurrency] = useState('GTQ');
+
+  // Handle Wallet Recharge Request (Manual Multi-Currency: GTQ, MXN, COP, Binance)
   const handleRequestDeposit = async (e) => {
     e.preventDefault();
     const amount = Number(depositAmount);
@@ -162,14 +186,43 @@ export default function Profile() {
     setDepositLoading(true);
 
     try {
-      const currentRate = Number(config?.usdt_gtq_rate || 7.80);
-      const totalGtq = Number((amount * currentRate).toFixed(2));
-      const noteDetails = receiptRef.trim() ? `Recarga de Billetera Interna | Ref: ${receiptRef.trim()}` : 'Recarga de Billetera Interna';
+      let totalConverted = amount;
+      let currencyLabel = 'USDT';
+      let methodTitle = 'Recarga Manual';
+
+      if (depositCurrency === 'GTQ') {
+        const rate = Number(config?.usdt_gtq_rate || 7.80);
+        totalConverted = Number((amount * rate).toFixed(2));
+        currencyLabel = `Q${totalConverted.toFixed(2)} GTQ`;
+        methodTitle = 'Transferencia GTQ (Quetzales)';
+      } else if (depositCurrency === 'MXN') {
+        const rate = Number(config?.usdt_mxn_rate || 19.50);
+        totalConverted = Number((amount * rate).toFixed(2));
+        currencyLabel = `$${totalConverted.toFixed(2)} MXN`;
+        methodTitle = 'Transferencia MXN (Pesos Mexicanos)';
+      } else if (depositCurrency === 'COP') {
+        const rate = Number(config?.usdt_cop_rate || 4100);
+        totalConverted = Math.round(amount * rate);
+        currencyLabel = `$${totalConverted.toLocaleString('es-CO')} COP`;
+        methodTitle = 'Transferencia COP (Pesos Colombianos)';
+      } else if (depositCurrency === 'Binance') {
+        currencyLabel = `$${amount.toFixed(2)} USDT`;
+        methodTitle = 'Binance Pay (Manual USDT)';
+      }
+
+      const noteDetails = JSON.stringify({
+        type: 'wallet_deposit',
+        deposit_currency: depositCurrency,
+        amount_usdt: amount,
+        converted_text: currencyLabel,
+        reference_id: receiptRef.trim() || '',
+        user_email: user.email
+      });
 
       const { data, error } = await supabase.from('orders').insert({
         user_id: user.id,
         total_usdt: amount,
-        total_gtq: totalGtq,
+        total_gtq: depositCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
         status: 'Verification',
         payment_method: 'Manual',
         customer_notes: noteDetails,
@@ -177,7 +230,16 @@ export default function Profile() {
       }).select().single();
 
       if (error) throw error;
-      alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (Q${totalGtq.toFixed(2)} GTQ) enviada con éxito!\nUn asesor validará tu comprobante para acreditar tu saldo de inmediato.`);
+
+      // Push notification to Admin
+      notifyAdminNewOrder({
+        orderId: data.id,
+        amount: amount,
+        customerName: profile?.full_name || user.email,
+        paymentMethod: `Recarga Billetera: ${methodTitle} (${currencyLabel})`
+      });
+
+      alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (${currencyLabel}) enviada con éxito!\nUn asesor validará tu comprobante para acreditar tu saldo de inmediato.`);
       setDepositAmount('');
       setReceiptPreview('');
       setReceiptRef('');
@@ -186,6 +248,74 @@ export default function Profile() {
       alert('Error: ' + err.message);
     } finally {
       setDepositLoading(false);
+    }
+  };
+
+  // Handle Single-Use Payment Link Reservation (Recurrente Pool)
+  const handleGetPaymentLink = async () => {
+    setReservingLink(true);
+    try {
+      const link = await reservePaymentLink(linkDepositAmount, user?.id);
+      if (!link) {
+        alert(`⚠️ En este momento no hay enlaces de pago disponibles para $${linkDepositAmount} USD.\nPor favor intenta con otra cantidad ($5, $10, $20, $30) o usa Binance Pay / Transferencia.`);
+        setReservedLink(null);
+      } else {
+        setReservedLink(link);
+        setLinkReceiptPreview('');
+      }
+    } catch (err) {
+      alert('Error obteniendo link de pago: ' + err.message);
+    } finally {
+      setReservingLink(false);
+    }
+  };
+
+  // Submit Payment Link Receipt for Admin Verification & Burn
+  const handleSubmitLinkPayment = async (e) => {
+    e.preventDefault();
+    if (!reservedLink) {
+      alert('Por favor solicita un link de pago primero.');
+      return;
+    }
+    if (!linkReceiptPreview) {
+      alert('⚠️ Por favor adjunta la captura o comprobante de tu pago.');
+      return;
+    }
+
+    setLinkSubmitting(true);
+    try {
+      const currentRate = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
+      const amtUsd = Number(reservedLink.amount_usd);
+      const totalGtq = Number((amtUsd * currentRate).toFixed(2));
+
+      const customerNotesObj = {
+        service_type: 'Wallet Deposit (Link Recurrente)',
+        link_id: reservedLink.id,
+        link_tag: reservedLink.identifier_tag,
+        link_url: reservedLink.url,
+        amount_usd: amtUsd
+      };
+
+      const { data, error } = await supabase.from('orders').insert({
+        user_id: user.id,
+        total_usdt: amtUsd,
+        total_gtq: totalGtq,
+        status: 'Verification',
+        payment_method: 'Recurrente / Link',
+        customer_notes: JSON.stringify(customerNotesObj),
+        bank_receipt_url: linkReceiptPreview
+      }).select().single();
+
+      if (error) throw error;
+
+      alert(`¡Comprobante enviado con éxito para el enlace ${reservedLink.identifier_tag}!\nUn asesor verificará tu pago y tu saldo de $${amtUsd} USD será acreditado inmediatamente.`);
+      setReservedLink(null);
+      setLinkReceiptPreview('');
+      setActiveTab('orders');
+    } catch (err) {
+      alert('Error enviando comprobante: ' + err.message);
+    } finally {
+      setLinkSubmitting(false);
     }
   };
 
@@ -670,87 +800,416 @@ export default function Profile() {
 
       {/* Tab 3: Wallet Recharge */}
       {activeTab === 'wallet' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Binance Pay Automated Instant Recharge */}
-          <div className="glass-panel" style={{
-            borderRadius: 'var(--radius-md)',
-            padding: '24px',
-            border: '1px solid #f0b90b',
-            background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.08) 0%, rgba(13, 17, 26, 0.8) 100%)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-              <span style={{ fontSize: '1.5rem' }}>🟡</span>
-              <div>
-                <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Instantánea con Binance Pay (USDT)</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Acreditación automática en menos de 1 minuto</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* MÉTODO 1: Recarga con Tarjeta de Crédito / Débito (Enlace Seguro Recurrente) */}
+          {(config?.payment_methods_visibility?.payment_links !== false) && (
+            <div className="glass-panel" style={{
+              borderRadius: 'var(--radius-lg)',
+              padding: '24px',
+              border: '2px solid var(--border-cyan)',
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(13, 17, 26, 0.95) 100%)',
+              boxShadow: '0 0 25px rgba(6, 182, 212, 0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '1.8rem' }}>💳</span>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#fff', fontWeight: '900' }}>
+                    Recarga con Tarjeta de Crédito / Débito (Enlace Seguro)
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)' }}>
+                    Acepta Visa, Mastercard y tarjetas internacionales vía Recurrente
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Ingresa el monto que deseas recargar a tu billetera (mínimo $5.00 USDT) y escanea el código con tu App de Binance:
-            </p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                Elige el monto que deseas recargar. El sistema te generará un enlace de pago único y exclusivo de un solo uso:
+              </p>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', width: '150px' }}>
-                <input
-                  type="number"
-                  step="1"
-                  min="5"
-                  value={binanceDepositAmount}
-                  onChange={(e) => setBinanceDepositAmount(e.target.value)}
+              {/* Presets Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                {[5, 10, 20, 30, 50].map((amt) => {
+                  const isSelected = linkDepositAmount === amt;
+                  const gtqVal = (amt * Number(config?.usdt_gtq_rate || 7.80)).toFixed(2);
+
+                  return (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => {
+                        setLinkDepositAmount(amt);
+                        setReservedLink(null);
+                        setLinkReceiptPreview('');
+                      }}
+                      style={{
+                        padding: '12px 8px',
+                        borderRadius: 'var(--radius-md)',
+                        background: isSelected ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
+                        color: isSelected ? '#000' : '#fff',
+                        border: isSelected ? 'none' : '1px solid var(--border-glass)',
+                        fontWeight: '900',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isSelected ? '0 0 15px rgba(6, 182, 212, 0.4)' : 'none'
+                      }}
+                    >
+                      <span style={{ fontSize: '1.1rem' }}>${amt} USD</span>
+                      <span style={{ fontSize: '0.68rem', color: isSelected ? '#111' : '#fbbf24', fontWeight: 'bold' }}>Q{gtqVal} GTQ</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!reservedLink ? (
+                <button
+                  type="button"
+                  onClick={handleGetPaymentLink}
+                  disabled={reservingLink}
+                  className="btn-cyan"
                   style={{
                     width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: '#0d111a',
-                    border: '1px solid var(--border-glass)',
-                    color: '#f0b90b',
-                    fontSize: '1.1rem',
-                    fontWeight: '800'
+                    padding: '14px',
+                    fontSize: '0.95rem',
+                    fontWeight: '900',
+                    letterSpacing: '0.03em'
                   }}
-                />
-                <span style={{ position: 'absolute', right: '12px', top: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  USDT
-                </span>
+                >
+                  {reservingLink ? 'Obteniendo enlace disponible...' : `🔗 Obtener Enlace de Pago por $${linkDepositAmount}.00 USD ➔`}
+                </button>
+              ) : (
+                /* Reserved Payment Link Interactive Box */
+                <div style={{
+                  background: '#0d111a',
+                  border: '1px solid var(--border-cyan)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Enlace asignado (Uso Único): </span>
+                      <strong style={{ color: '#fbbf24', fontSize: '0.95rem' }}>{reservedLink.identifier_tag || 'Link Activo'}</strong>
+                    </div>
+                    <span style={{ fontSize: '1.1rem', fontWeight: '900', color: '#34d399' }}>
+                      ${reservedLink.amount_usd}.00 USD
+                    </span>
+                  </div>
+
+                  {/* Step 1: Open Payment Link */}
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '8px' }}>
+                      PASO 1: HAZ CLIC PARA PAGAR EN EL ENLACE SEGURO
+                    </div>
+                    <a
+                      href={reservedLink.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-cyan"
+                      style={{
+                        display: 'block',
+                        textAlign: 'center',
+                        padding: '14px',
+                        textDecoration: 'none',
+                        fontSize: '0.95rem',
+                        fontWeight: '900',
+                        background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                        color: '#fff',
+                        boxShadow: '0 0 20px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      💳 Abrir Enlace y Pagar ${reservedLink.amount_usd}.00 USD ➔
+                    </a>
+                  </div>
+
+                  {/* Step 2: Upload Screenshot */}
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '8px' }}>
+                      PASO 2: SUBE LA CAPTURA DEL COMPROBANTE DE PAGO
+                    </div>
+
+                    {linkReceiptPreview ? (
+                      <div style={{ position: 'relative', display: 'inline-block' }}>
+                        <img
+                          src={linkReceiptPreview}
+                          alt="Comprobante enlace"
+                          style={{
+                            maxWidth: '220px',
+                            maxHeight: '160px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid #34d399',
+                            padding: '4px',
+                            background: '#000'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setLinkReceiptPreview('')}
+                          style={{
+                            position: 'absolute',
+                            top: '-8px',
+                            right: '-8px',
+                            background: '#f87171',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '24px',
+                            height: '24px',
+                            cursor: 'pointer',
+                            fontWeight: '900'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <label style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '16px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px dashed var(--border-cyan)',
+                        background: 'rgba(6, 182, 212, 0.05)',
+                        cursor: 'pointer',
+                        gap: '6px'
+                      }}>
+                        <span style={{ fontSize: '1.4rem' }}>📸</span>
+                        <span style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                          Adjuntar captura de pantalla del pago
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLinkReceiptChange}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Optional WhatsApp Button */}
+                  <a
+                    href={`https://wa.me/${(config?.social_links?.whatsapp || '50243130763').replace(/\+/g, '')}?text=${encodeURIComponent(`Hola ALVSHOP, acabo de pagar mi recarga de $${reservedLink.amount_usd} USD en el enlace ${reservedLink.identifier_tag || ''}. Adjunto comprobante. Mi cuenta: ${user.email}`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '10px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: '#25D366',
+                      color: '#fff',
+                      textDecoration: 'none',
+                      fontWeight: '800',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <span>💬</span> Enviar también por WhatsApp al Asesor
+                  </a>
+
+                  {/* Step 3: Confirm and Send */}
+                  <button
+                    type="button"
+                    onClick={handleSubmitLinkPayment}
+                    disabled={linkSubmitting || !linkReceiptPreview}
+                    className="btn-cyan"
+                    style={{
+                      padding: '14px',
+                      fontSize: '0.95rem',
+                      fontWeight: '900'
+                    }}
+                  >
+                    {linkSubmitting ? 'Registrando Solicitud...' : '📤 Enviar Comprobante y Acreditar Saldo ➔'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MÉTODO 2: Binance Pay Manual USDT Recharge */}
+          {(config?.payment_methods_visibility?.binance !== false) && (
+            <div className="glass-panel" style={{
+              borderRadius: 'var(--radius-md)',
+              padding: '24px',
+              border: '1px solid #f0b90b',
+              background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.08) 0%, rgba(13, 17, 26, 0.8) 100%)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.5rem' }}>🟡</span>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Manual con Binance Pay (USDT)</h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Transfiere a nuestro Pay ID o QR y sube tu comprobante</div>
+                </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const amt = Number(binanceDepositAmount);
-                  if (!binanceDepositAmount || isNaN(amt) || amt < 5) {
-                    alert('⚠️ El monto mínimo para recargar con Binance Pay es de $5.00 USDT.');
-                    return;
-                  }
-                  setShowBinanceModal(true);
-                }}
-                className="btn-cyan"
-                style={{
-                  background: '#f0b90b',
-                  color: '#000',
-                  fontWeight: '800',
-                  padding: '11px 20px',
-                  boxShadow: '0 0 15px rgba(240, 185, 11, 0.4)'
-                }}
-              >
-                ⚡ Recargar con Binance Pay ➔
-              </button>
-            </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-              ⚠️ Monto mínimo de recarga: $5.00 USDT
-            </div>
-          </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '16px', background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: 'var(--radius-md)' }}>
+                {(config?.binance_qr_url || '/binance-qr.jpg') && (
+                  <div style={{ width: '90px', height: '90px', borderRadius: '8px', background: '#000', border: '1px solid #f0b90b', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={config?.binance_qr_url || '/binance-qr.jpg'} alt="Binance QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  </div>
+                )}
+                <div>
+                  <div><strong>Binance Pay ID:</strong> <span style={{ color: '#f0b90b', fontWeight: '800', fontSize: '1rem' }}>{config?.binance_pay_id || '527653920'}</span></div>
+                  <div><strong>Titular:</strong> {config?.binance_name || 'AlvJona'}</div>
+                  {config?.binance_deeplink_url && (
+                    <a
+                      href={config.binance_deeplink_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'inline-block', marginTop: '6px', padding: '4px 10px', background: '#f0b90b', color: '#000', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '800', textDecoration: 'none' }}
+                    >
+                      ⚡ Abrir en Binance App ➔
+                    </a>
+                  )}
+                </div>
+              </div>
 
-          {/* Manual Bank Transfer Deposit */}
+              <form onSubmit={(e) => {
+                setDepositCurrency('Binance');
+                handleRequestDeposit(e);
+              }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Monto en USDT a Recargar:
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="5"
+                    required
+                    placeholder="Mínimo 5.00 USDT"
+                    value={depositCurrency === 'Binance' ? depositAmount : ''}
+                    onChange={(e) => {
+                      setDepositCurrency('Binance');
+                      setDepositAmount(e.target.value);
+                    }}
+                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#f0b90b', fontSize: '1rem', fontWeight: '800' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    ID de Transacción / Orden Binance (Opcional):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. 12938475"
+                    value={receiptRef}
+                    onChange={(e) => setReceiptRef(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                  />
+                </div>
+
+                {/* Upload Receipt */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    📸 Captura del Pago en Binance:
+                  </label>
+                  {receiptPreview ? (
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <img src={receiptPreview} alt="Comprobante" style={{ maxWidth: '200px', maxHeight: '140px', borderRadius: '6px', border: '1px solid #f0b90b' }} />
+                      <button type="button" onClick={() => setReceiptPreview('')} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f87171', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontWeight: '900' }}>✕</button>
+                    </div>
+                  ) : (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(240, 185, 11, 0.15)', border: '1px solid #f0b90b', color: '#f0b90b', fontSize: '0.8rem', fontWeight: '800', cursor: 'pointer' }}>
+                      <span>📸</span> Subir Captura
+                      <input type="file" accept="image/*" onChange={handleReceiptChange} style={{ display: 'none' }} />
+                    </label>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={depositLoading}
+                  className="btn-cyan"
+                  style={{ background: '#f0b90b', color: '#000', fontWeight: '900', padding: '12px', boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)' }}
+                >
+                  {depositLoading ? 'Enviando Solicitud...' : '📤 Enviar Comprobante Binance y Acreditar Saldo ➔'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* MÉTODO 3: Multi-Currency Bank Transfers (GTQ, MXN, COP) */}
           <div className="glass-panel" style={{
             borderRadius: 'var(--radius-md)',
             padding: '24px',
             border: '1px solid var(--border-cyan)'
           }}>
-            <h3 style={{ fontSize: '1.1rem', marginBottom: '8px' }}>Recarga con Transferencia Bancaria (Quetzales)</h3>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>Recarga con Transferencia Bancaria Directa</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Transfiere en Quetzales a nuestras cuentas y un asesor validará tu boleta para acreditar tus USDT inmediatamente.
+              Transfiere en tu moneda local y un asesor validará tu comprobante para acreditar tu saldo de inmediato.
             </p>
+
+            {/* Currency Selector Pills for Recharge */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              {(config?.payment_methods_visibility?.gtq !== false) && (
+                <button
+                  type="button"
+                  onClick={() => setDepositCurrency('GTQ')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 'var(--radius-full)',
+                    background: depositCurrency === 'GTQ' ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.05)',
+                    color: depositCurrency === 'GTQ' ? '#000' : '#fff',
+                    border: '1px solid var(--border-glass)',
+                    fontWeight: '800',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🇬🇹 Guatemala (Quetzales GTQ)
+                </button>
+              )}
+
+              {(config?.payment_methods_visibility?.mxn !== false) && (
+                <button
+                  type="button"
+                  onClick={() => setDepositCurrency('MXN')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 'var(--radius-full)',
+                    background: depositCurrency === 'MXN' ? '#34d399' : 'rgba(255,255,255,0.05)',
+                    color: depositCurrency === 'MXN' ? '#000' : '#fff',
+                    border: '1px solid var(--border-glass)',
+                    fontWeight: '800',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🇲🇽 México (Pesos MXN / SPEI)
+                </button>
+              )}
+
+              {(config?.payment_methods_visibility?.cop !== false) && (
+                <button
+                  type="button"
+                  onClick={() => setDepositCurrency('COP')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 'var(--radius-full)',
+                    background: depositCurrency === 'COP' ? '#f59e0b' : 'rgba(255,255,255,0.05)',
+                    color: depositCurrency === 'COP' ? '#000' : '#fff',
+                    border: '1px solid var(--border-glass)',
+                    fontWeight: '800',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🇨🇴 Colombia (Pesos COP / Nequi)
+                </button>
+              )}
+            </div>
 
             <form onSubmit={handleRequestDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
@@ -768,7 +1227,7 @@ export default function Profile() {
                   min="5"
                   required
                   placeholder="Mínimo 5.00 USDT"
-                  value={depositAmount}
+                  value={depositCurrency !== 'Binance' ? depositAmount : ''}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   style={{
                     width: '100%',
@@ -783,7 +1242,7 @@ export default function Profile() {
                 />
               </div>
 
-              {depositAmount && (
+              {depositAmount && depositCurrency !== 'Binance' && (
                 <div style={{
                   background: 'rgba(255, 255, 255, 0.03)',
                   padding: '14px',
@@ -795,23 +1254,39 @@ export default function Profile() {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Total a transferir:</span>
-                    <strong style={{ fontSize: '1.1rem', color: '#fbbf24' }}>
-                      Q{(Number(depositAmount) * Number(config?.usdt_gtq_rate || exchangeRate || 7.80)).toFixed(2)} GTQ
+                    <strong style={{ fontSize: '1.1rem', color: depositCurrency === 'MXN' ? '#34d399' : depositCurrency === 'COP' ? '#f59e0b' : '#fbbf24' }}>
+                      {depositCurrency === 'GTQ' && `Q${(Number(depositAmount) * Number(config?.usdt_gtq_rate || 7.80)).toFixed(2)} GTQ`}
+                      {depositCurrency === 'MXN' && `$${(Number(depositAmount) * Number(config?.usdt_mxn_rate || 19.50)).toFixed(2)} MXN`}
+                      {depositCurrency === 'COP' && `$${Math.round(Number(depositAmount) * Number(config?.usdt_cop_rate || 4100)).toLocaleString('es-CO')} COP`}
                     </strong>
                   </div>
                   
+                  {/* Account details */}
                   <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    <div style={{ fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Cuentas Disponibles para Transferir:</div>
-                    {config?.bank_accounts && config.bank_accounts.length > 0 ? (
-                      config.bank_accounts.map((acc, idx) => (
+                    <div style={{ fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Cuentas Disponibles:</div>
+                    
+                    {depositCurrency === 'GTQ' && (
+                      (config?.bank_accounts || [{ bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }]).map((acc, idx) => (
                         <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
-                          🏦 <strong>{acc.bank}</strong> ({acc.type || 'Ahorro'}): <span style={{ color: 'var(--accent-cyan)' }}>{acc.account_number}</span> — {acc.name}
+                          🏦 <strong>{acc.bank}</strong> ({acc.type}): <span style={{ color: 'var(--accent-cyan)' }}>{acc.account_number}</span> — {acc.name}
                         </div>
                       ))
-                    ) : (
-                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
-                        🏦 <strong>Banrural Cuenta de Ahorro:</strong> <span style={{ color: 'var(--accent-cyan)' }}>4313076359</span> (Jonathan Alvares)
-                      </div>
+                    )}
+
+                    {depositCurrency === 'MXN' && (
+                      (config?.mxn_accounts || [{ bank: 'BBVA / SPEI', account_number: '012180015487965412', type: 'CLABE', name: 'Jonathan Alvares' }]).map((acc, idx) => (
+                        <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
+                          🇲🇽 <strong>{acc.bank}</strong> ({acc.type}): <span style={{ color: '#34d399' }}>{acc.account_number}</span> — {acc.name}
+                        </div>
+                      ))
+                    )}
+
+                    {depositCurrency === 'COP' && (
+                      (config?.cop_accounts || [{ bank: 'Bancolombia / Nequi', account_number: '3124567890', type: 'Celular', name: 'Jonathan Alvares' }]).map((acc, idx) => (
+                        <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
+                          🇨🇴 <strong>{acc.bank}</strong> ({acc.type}): <span style={{ color: '#f59e0b' }}>{acc.account_number}</span> — {acc.name}
+                        </div>
+                      ))
                     )}
                   </div>
                 </div>
@@ -920,21 +1395,6 @@ export default function Profile() {
           </div>
         </div>
       )}
-
-      {/* Binance Pay Deposit Modal */}
-      <BinancePayModal
-        isOpen={showBinanceModal}
-        onClose={() => setShowBinanceModal(false)}
-        orderData={{ id: `WALLET-DEP-${Date.now()}` }}
-        amountUsdt={Number(binanceDepositAmount || 10)}
-        description="Recarga de Billetera ALVSHOP"
-        isWalletDeposit={true}
-        onPaymentSuccess={({ amount }) => {
-          alert(`¡Recarga de $${amount} USDT acreditada a tu billetera con éxito!`);
-          setShowBinanceModal(false);
-          if (user?.id) fetchProfile(user.id);
-        }}
-      />
     </div>
   );
 }

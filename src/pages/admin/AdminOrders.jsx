@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { processGameRecharge } from '../../../notificaciones y apis/apis/index';
 import { notifyOrderCompleted } from '../../../notificaciones y apis/notificaciones/pushService';
+import { burnPaymentLink, releasePaymentLink } from '../../services/paymentLinksService';
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState([]);
@@ -168,8 +169,30 @@ export default function AdminOrders() {
       }
 
       // 2. Acreditación automática si es un depósito/recarga de saldo de billetera
+      let parsedNotes = {};
+      try {
+        parsedNotes = typeof selectedOrder.customer_notes === 'string'
+          ? JSON.parse(selectedOrder.customer_notes)
+          : selectedOrder.customer_notes || {};
+      } catch (e) {}
+
       const isWalletRecharge = (typeof selectedOrder.customer_notes === 'string' && selectedOrder.customer_notes.includes('Recarga de Billetera')) ||
+        selectedOrder.payment_method === 'Recurrente / Link' ||
         (!selectedOrder.order_items || selectedOrder.order_items.length === 0);
+
+      // Si se completa y viene de un enlace de pago único, quemar el link (marcar used)
+      if (newStatus === 'Completed' && parsedNotes.link_id) {
+        try {
+          await burnPaymentLink(parsedNotes.link_id, selectedOrder.id);
+        } catch (e) {}
+      }
+
+      // Si se rechaza y viene de un enlace de pago, liberar el link de vuelta al pool
+      if (newStatus === 'Rejected' && parsedNotes.link_id) {
+        try {
+          await releasePaymentLink(parsedNotes.link_id);
+        } catch (e) {}
+      }
 
       if (newStatus === 'Completed' && isWalletRecharge && selectedOrder.user_id) {
         try {
@@ -207,7 +230,7 @@ export default function AdminOrders() {
               type: 'Deposit',
               amount_usdt: Number(selectedOrder.total_usdt),
               status: 'Completed',
-              notes: `Recarga manual en Quetzales acreditada por Administración (Orden #${selectedOrder.id.slice(0, 8)})`
+              notes: `Recarga acreditada por Administración (Orden #${selectedOrder.id.slice(0, 8)}${parsedNotes.link_tag ? ` - Link: ${parsedNotes.link_tag}` : ''})`
             });
           } catch (e) {}
         } catch (depositErr) {

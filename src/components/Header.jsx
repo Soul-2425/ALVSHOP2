@@ -6,7 +6,10 @@ export default function Header({ onToggleSidebar }) {
   const {
     walletBalance,
     currency,
-    toggleCurrency,
+    setCurrency,
+    exchangeRate,
+    rateMxn,
+    rateCop,
     config,
     user,
     profile,
@@ -18,6 +21,7 @@ export default function Header({ onToggleSidebar }) {
 
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const navigate = useNavigate();
 
   // Helper to get notification type label & badge styling
@@ -262,42 +266,30 @@ export default function Header({ onToggleSidebar }) {
               )}
             </div>
 
-            {/* Currency Pill Switcher */}
-            <div
-              onClick={toggleCurrency}
+            {/* Currency Selector Button with Arrow */}
+            <button
+              onClick={() => setShowCurrencyModal(true)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
+                gap: '5px',
                 background: 'rgba(255, 255, 255, 0.06)',
                 borderRadius: 'var(--radius-full)',
-                padding: '2px',
+                padding: '5px 10px',
                 border: '1px solid var(--border-glass)',
                 cursor: 'pointer',
-                fontSize: '0.68rem'
+                fontSize: '0.74rem',
+                fontWeight: '800',
+                color: 'var(--text-main)',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap'
               }}
-              title="Cambiar moneda (USDT / GTQ Quetzales)"
+              title="Seleccionar moneda de pago (USDT, GTQ, MXN, COP)"
             >
-              <div style={{
-                padding: '3px 7px',
-                borderRadius: 'var(--radius-full)',
-                fontWeight: '800',
-                background: currency === 'USDT' ? 'var(--accent-cyan)' : 'transparent',
-                color: currency === 'USDT' ? '#000' : 'var(--text-muted)',
-                transition: 'all 0.2s ease'
-              }}>
-                USDT
-              </div>
-              <div style={{
-                padding: '3px 7px',
-                borderRadius: 'var(--radius-full)',
-                fontWeight: '800',
-                background: currency === 'GTQ' ? 'var(--accent-cyan)' : 'transparent',
-                color: currency === 'GTQ' ? '#000' : 'var(--text-muted)',
-                transition: 'all 0.2s ease'
-              }}>
-                GTQ
-              </div>
-            </div>
+              <span>{currency === 'GTQ' ? '🇬🇹' : currency === 'MXN' ? '🇲🇽' : currency === 'COP' ? '🇨🇴' : '🇺🇸'}</span>
+              <span style={{ color: 'var(--accent-cyan)' }}>{currency}</span>
+              <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>▼</span>
+            </button>
 
             {/* Permanent Wallet Balance Indicator (Responsive Compact) */}
             <button
@@ -398,6 +390,106 @@ export default function Header({ onToggleSidebar }) {
               >
                 📦 Ver Historial de Pedidos
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Currency Selection Modal */}
+      {showCurrencyModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 100,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div className="glass-panel animate-fade" style={{
+            width: '100%',
+            maxWidth: '420px',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            border: '1px solid var(--border-cyan)',
+            background: 'rgba(13, 17, 26, 0.98)',
+            boxShadow: '0 0 35px rgba(6, 182, 212, 0.25)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🌐</span> Selecciona tu Moneda de Pago
+              </h3>
+              <button
+                onClick={() => setShowCurrencyModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.4 }}>
+              Los precios de los productos y paquetes se convertirán automáticamente:
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {[
+                { code: 'USDT', name: 'Dólar Cripto (USDT)', flag: '🇺🇸', symbol: '$', rateText: 'Moneda Base Internacional (1 USDT = $1.00 USD)' },
+                { code: 'GTQ', name: 'Quetzales (Guatemala)', flag: '🇬🇹', symbol: 'Q', rateText: `1 USDT = Q${(config?.usdt_gtq_rate || exchangeRate || 7.80).toFixed(2)} GTQ` },
+                { code: 'MXN', name: 'Pesos Mexicanos (México)', flag: '🇲🇽', symbol: '$', rateText: `1 USDT = $${(config?.usdt_mxn_rate || rateMxn || 19.50).toFixed(2)} MXN` },
+                { code: 'COP', name: 'Pesos Colombianos (Colombia)', flag: '🇨🇴', symbol: '$', rateText: `1 USDT = $${Math.round(config?.usdt_cop_rate || rateCop || 4100).toLocaleString('es-CO')} COP` }
+              ].map((item) => {
+                const isSelected = currency === item.code;
+                return (
+                  <div
+                    key={item.code}
+                    onClick={() => {
+                      setCurrency(item.code);
+                      setShowCurrencyModal(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      background: isSelected ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '1.5rem' }}>{item.flag}</span>
+                      <div>
+                        <div style={{ fontWeight: '800', fontSize: '0.9rem', color: isSelected ? 'var(--accent-cyan)' : '#fff' }}>
+                          {item.name}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          {item.rateText}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      border: isSelected ? '2px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
+                      background: isSelected ? 'var(--accent-cyan)' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#000',
+                      fontSize: '0.75rem',
+                      fontWeight: '900'
+                    }}>
+                      {isSelected && '✓'}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
