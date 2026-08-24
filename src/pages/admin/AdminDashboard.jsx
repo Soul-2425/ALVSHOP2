@@ -16,13 +16,38 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     async function loadAnalytics() {
-      setLoading(true);
-
       try {
-        // 1. Fetch Orders from Supabase
-        const { data: orders, error: ordErr } = await supabase
-          .from('orders')
-          .select('*, profiles(id, full_name, role), order_items(*, products(name, cost))');
+        const fetchPromise = Promise.all([
+          supabase.from('orders').select('*'),
+          supabase.from('profiles').select('id, full_name, role'),
+          supabase.from('order_items').select('*'),
+          supabase.from('products').select('id, name, cost')
+        ]);
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        );
+
+        const [ordRes, profRes, itemsRes, prodsRes] = await Promise.race([fetchPromise, timeoutPromise]);
+
+        const profMap = new Map((profRes?.data || []).map(p => [p.id, p]));
+        const prodMap = new Map((prodsRes?.data || []).map(p => [p.id, p]));
+        const items = (itemsRes?.data || []).map(i => ({
+          ...i,
+          products: prodMap.get(i.product_id)
+        }));
+
+        const itemsByOrder = new Map();
+        items.forEach(i => {
+          if (!itemsByOrder.has(i.order_id)) itemsByOrder.set(i.order_id, []);
+          itemsByOrder.get(i.order_id).push(i);
+        });
+
+        const orders = (ordRes?.data || []).map(o => ({
+          ...o,
+          profiles: profMap.get(o.user_id),
+          order_items: itemsByOrder.get(o.id) || []
+        }));
 
         let grossSales = 0;
         let totalCost = 0;
@@ -30,57 +55,52 @@ export default function AdminDashboard() {
         const productCounts = {};
         const resellerMap = {};
 
-        if (orders && !ordErr) {
-          orders.forEach(ord => {
-            if (ord.status === 'Completed') {
-              const orderTotal = Number(ord.total_usdt || 0);
-              grossSales += orderTotal;
-              completedCount++;
+        orders.forEach(ord => {
+          if (ord.status === 'Completed') {
+            const orderTotal = Number(ord.total_usdt || 0);
+            grossSales += orderTotal;
+            completedCount++;
 
-              // Track Reseller sales
-              if (ord.profiles?.role === 'Revendedor') {
-                const resId = ord.profiles.id;
-                if (!resellerMap[resId]) {
-                  resellerMap[resId] = {
-                    name: ord.profiles.full_name || 'Revendedor #' + resId.slice(0, 5),
-                    totalSales: 0,
-                    totalCost: 0,
-                    ordersCount: 0
-                  };
-                }
-                resellerMap[resId].totalSales += orderTotal;
-                resellerMap[resId].ordersCount += 1;
+            // Track Reseller sales
+            if (ord.profiles?.role === 'Revendedor') {
+              const resId = ord.profiles.id;
+              if (!resellerMap[resId]) {
+                resellerMap[resId] = {
+                  name: ord.profiles.full_name || 'Revendedor #' + resId.slice(0, 5),
+                  totalSales: 0,
+                  totalCost: 0,
+                  ordersCount: 0
+                };
+              }
+              resellerMap[resId].totalSales += orderTotal;
+              resellerMap[resId].ordersCount += 1;
+            }
+
+            // Calculate costs and product sales
+            ord.order_items?.forEach(item => {
+              const qty = item.quantity || 1;
+              const unitCost = Number(item.cost_usdt || item.products?.cost || 0);
+              const itemCost = unitCost * qty;
+              totalCost += itemCost;
+
+              if (ord.profiles?.role === 'Revendedor' && ord.profiles?.id && resellerMap[ord.profiles.id]) {
+                resellerMap[ord.profiles.id].totalCost += itemCost;
               }
 
-              // Calculate costs and product sales
-              ord.order_items?.forEach(item => {
-                const qty = item.quantity || 1;
-                const unitCost = Number(item.cost_usdt || item.products?.cost || 0);
-                const itemCost = unitCost * qty;
-                totalCost += itemCost;
-
-                if (ord.profiles?.role === 'Revendedor' && ord.profiles?.id && resellerMap[ord.profiles.id]) {
-                  resellerMap[ord.profiles.id].totalCost += itemCost;
-                }
-
-                const prodName = item.products?.name || 'Producto #' + (item.product_id || 'item');
-                if (!productCounts[prodName]) {
-                  productCounts[prodName] = { name: prodName, unitsSold: 0, revenue: 0 };
-                }
-                productCounts[prodName].unitsSold += qty;
-                productCounts[prodName].revenue += Number(item.price_usdt || 0) * qty;
-              });
-            }
-          });
-        }
+              const prodName = item.products?.name || 'Producto #' + (item.product_id || 'item');
+              if (!productCounts[prodName]) {
+                productCounts[prodName] = { name: prodName, unitsSold: 0, revenue: 0 };
+              }
+              productCounts[prodName].unitsSold += qty;
+              productCounts[prodName].revenue += Number(item.price_usdt || 0) * qty;
+            });
+          }
+        });
 
         const netProfit = grossSales - totalCost;
 
         // 2. Fetch Resellers Count
-        const { count: resCount } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true })
-          .eq('role', 'Revendedor');
+        const resCount = (profRes?.data || []).filter(p => p.role === 'Revendedor').length;
 
         // Set Real Metrics (Defaults to 0)
         setMetrics({

@@ -25,31 +25,43 @@ export default function AdminOrders() {
 
   // Load Orders from Supabase
   const loadOrders = async () => {
-    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          profiles(full_name, email, phone, role),
-          order_items(
-            id,
-            product_id,
-            quantity,
-            price_usdt,
-            cost_usdt,
-            fields_data,
-            credentials_delivered,
-            products(name, image_url, subcategory_id)
-          )
-        `)
-        .order('created_at', { ascending: false });
+      const fetchPromise = Promise.all([
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id, full_name, email, phone, role'),
+        supabase.from('order_items').select('*'),
+        supabase.from('products').select('id, name, image_url, subcategory_id')
+      ]);
 
-      if (error) throw error;
-      setOrders(data || []);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 5000)
+      );
+
+      const [ordRes, profRes, itemsRes, prodsRes] = await Promise.race([fetchPromise, timeoutPromise]);
+
+      const profMap = new Map((profRes?.data || []).map(p => [p.id, p]));
+      const prodMap = new Map((prodsRes?.data || []).map(p => [p.id, p]));
+
+      const items = (itemsRes?.data || []).map(i => ({
+        ...i,
+        products: prodMap.get(i.product_id)
+      }));
+
+      const itemsByOrder = new Map();
+      items.forEach(i => {
+        if (!itemsByOrder.has(i.order_id)) itemsByOrder.set(i.order_id, []);
+        itemsByOrder.get(i.order_id).push(i);
+      });
+
+      const fullOrders = (ordRes?.data || []).map(o => ({
+        ...o,
+        profiles: profMap.get(o.user_id) || o.profiles,
+        order_items: itemsByOrder.get(o.id) || o.order_items || []
+      }));
+
+      setOrders(fullOrders);
     } catch (err) {
-      console.warn('Error loading orders:', err);
-      setOrders([]);
+      console.warn('Error loading orders (timeout/offline):', err);
     } finally {
       setLoading(false);
     }

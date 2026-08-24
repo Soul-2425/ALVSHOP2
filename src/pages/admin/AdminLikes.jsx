@@ -53,28 +53,40 @@ export default function AdminLikes() {
 
   // Load Orders
   const loadOrders = async () => {
-    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, profiles(id, email, full_name, phone, role)')
-        .order('created_at', { ascending: false });
+      const fetchPromise = Promise.all([
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id, email, full_name, phone, role')
+      ]);
 
-      if (!error && data) {
-        // Filter orders that are for Likes service
-        const likesOnly = data.filter(o => {
-          if (!o.customer_notes) return false;
-          try {
-            const parsed = typeof o.customer_notes === 'string' ? JSON.parse(o.customer_notes) : o.customer_notes;
-            return parsed.service_type === 'Free Fire Likes';
-          } catch (e) {
-            return false;
-          }
-        });
-        setOrders(likesOnly);
-      }
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 4000)
+      );
+
+      const [ordersRes, profsRes] = await Promise.race([fetchPromise, timeoutPromise]);
+
+      const profMap = new Map((profsRes?.data || []).map(p => [p.id, p]));
+      const rawOrders = ordersRes?.data || [];
+
+      const joinedOrders = rawOrders.map(o => ({
+        ...o,
+        profiles: profMap.get(o.user_id) || o.profiles
+      }));
+
+      // Filter orders that are for Likes service
+      const likesOnly = joinedOrders.filter(o => {
+        if (!o.customer_notes) return false;
+        try {
+          const parsed = typeof o.customer_notes === 'string' ? JSON.parse(o.customer_notes) : o.customer_notes;
+          return parsed.service_type === 'Free Fire Likes' || parsed.likes_to_add || o.id?.includes('LIKE');
+        } catch (e) {
+          return false;
+        }
+      });
+
+      setOrders(likesOnly);
     } catch (err) {
-      console.warn('Error loading likes orders:', err);
+      console.warn('Cargando pedidos de likes con fallback o memoria:', err);
     } finally {
       setLoading(false);
     }
@@ -82,8 +94,12 @@ export default function AdminLikes() {
 
   // Load Packages
   const loadPackages = async () => {
-    const list = await getLikesPackages();
-    setPackages(list || DEFAULT_LIKES_PACKAGES);
+    try {
+      const list = await getLikesPackages();
+      setPackages(list || DEFAULT_LIKES_PACKAGES);
+    } catch (e) {
+      setPackages(DEFAULT_LIKES_PACKAGES);
+    }
   };
 
   // Load API Config from Protected Backend
@@ -99,7 +115,7 @@ export default function AdminLikes() {
         }));
       }
     } catch (e) {
-      console.warn('Backend microservice not reachable:', e);
+      // Backend microservice offline / optional
     }
   };
 

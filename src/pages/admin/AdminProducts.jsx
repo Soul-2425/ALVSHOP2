@@ -17,11 +17,252 @@ const OFFICIAL_FF_CATALOG = [
   { name: 'Pin Digital Free Fire 5600 Diamantes', subcat: 'Pin 5600', price_public: 39.00, price_reseller: 35.50, cost: 33.88, is_active: false, type: 'pin' }
 ];
 
+const CACHE_KEY_CATS = 'alv_cache_categories_v2';
+const CACHE_KEY_SUBS = 'alv_cache_subcategories_v2';
+const CACHE_KEY_PRODS = 'alv_cache_products_v2';
+
+const DEFAULT_FALLBACK_CATEGORIES = [
+  {
+    id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b',
+    name: 'Diamantes FF',
+    icon: '💎',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=600&q=80',
+    product_count: 6
+  },
+  {
+    id: 'likes-ff-id',
+    name: 'Likes FF',
+    icon: '👍',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80',
+    product_count: 7
+  },
+  {
+    id: 'pines-ff-id',
+    name: 'Pines FF',
+    icon: '🎟️',
+    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=600&q=80',
+    product_count: 3
+  },
+  {
+    id: 'regalos-ff-id',
+    name: 'REGALOS POR ID',
+    icon: '🎁',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80',
+    product_count: 4
+  },
+  {
+    id: 'bio-larga-id',
+    name: 'Bio Larga FF',
+    icon: '📝',
+    image_url: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=600&q=80',
+    product_count: 1
+  }
+];
+
+const DEFAULT_SEED_PRODUCTS = [
+  {
+    id: 'ef5c0946-de86-428e-97f1-2222b5913184',
+    name: '100 + 10 Diamantes Free Fire (Recarga Directa)',
+    price_public: 1.09,
+    price_reseller: 0.99,
+    cost: 0.71,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
+  },
+  {
+    id: '86b169a9-65a8-4248-97c2-e9c0f2a4a832',
+    name: '310 + 31 Diamantes Free Fire (Recarga Directa)',
+    price_public: 3.29,
+    price_reseller: 3.09,
+    cost: 2.14,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
+  },
+  {
+    id: '4f7bb6b9-c17f-4bcb-84c2-a2b88d11d369',
+    name: '520 + 52 Diamantes Free Fire (Recarga Directa)',
+    price_public: 5.39,
+    price_reseller: 4.99,
+    cost: 3.62,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
+  },
+  {
+    id: '8f8537eb-98a2-4fef-a632-acf010cb3c85',
+    name: '1060 + 106 Diamantes Free Fire (Recarga Directa)',
+    price_public: 10.79,
+    price_reseller: 9.99,
+    cost: 6.71,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
+  },
+  {
+    id: '923c52eb-07af-4725-9f0a-bec1f705fddc',
+    name: '2180 + 218 Diamantes Free Fire (Recarga Directa)',
+    price_public: 21.49,
+    price_reseller: 19.99,
+    cost: 13.32,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
+  },
+  {
+    id: '17b06f94-9608-40e2-96a5-d24e207ddbb9',
+    name: '5600 + 560 Diamantes Free Fire (Recarga Directa)',
+    price_public: 52.99,
+    price_reseller: 49.99,
+    cost: 33.88,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
+  },
+  {
+    id: 'ac987ed2-e023-473a-9297-68ec32fc7d6b',
+    name: 'Pin Digital Free Fire 100 Diamantes',
+    price_public: 1.15,
+    price_reseller: 1.05,
+    cost: 0.71,
+    stock: 999,
+    is_active: true,
+    validation_type: 'PIN',
+    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
+  },
+  {
+    id: '9d7b55d3-f25e-411a-bc53-3894a79b9a70',
+    name: 'Pin Digital Free Fire 310 Diamantes',
+    price_public: 3.35,
+    price_reseller: 3.15,
+    cost: 2.14,
+    stock: 999,
+    is_active: true,
+    validation_type: 'PIN',
+    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
+  },
+  {
+    id: '773f16aa-1944-48cd-b511-395042d656ad',
+    name: 'Pin Digital Free Fire 520 Diamantes',
+    price_public: 5.45,
+    price_reseller: 5.15,
+    cost: 3.62,
+    stock: 999,
+    is_active: true,
+    validation_type: 'PIN',
+    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
+  },
+  {
+    id: '7ab4da9e-df66-4711-a77a-7e8d0b4365f7',
+    name: '99 CAJAS EVO',
+    price_public: 4.00,
+    price_reseller: 3.50,
+    cost: 2.50,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
+  },
+  {
+    id: 'e2bacb18-3220-4c13-b134-04a87e8cf034',
+    name: '99 Cajas de Fragmentos',
+    price_public: 3.00,
+    price_reseller: 2.50,
+    cost: 1.80,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
+  },
+  {
+    id: '672c5c36-414d-4e1e-a050-523a2809fadc',
+    name: 'Skin - 6k 💎',
+    price_public: 6.00,
+    price_reseller: 5.50,
+    cost: 4.00,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
+  },
+  {
+    id: 'f33d04f0-643d-4511-a72a-d40cf7f64960',
+    name: 'Pase FF',
+    price_public: 2.00,
+    price_reseller: 1.80,
+    cost: 1.20,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
+  },
+  {
+    id: '9f4137b0-70af-449c-97e9-520d7a105bbf',
+    name: 'Bio Larga FF',
+    price_public: 2.50,
+    price_reseller: 2.00,
+    cost: 1.00,
+    stock: 999,
+    is_active: true,
+    validation_type: 'Free Fire',
+    image_url: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=400&q=80',
+    subcategories: { name: 'Bio Larga', category_id: 'bio-larga-id' }
+  }
+];
+
 export default function AdminProducts() {
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_CATS);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_FALLBACK_CATEGORIES;
+  });
+
+  const [subcategories, setSubcategories] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_SUBS);
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [products, setProducts] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_PRODS);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_SEED_PRODUCTS;
+  });
+
+  const [loading, setLoading] = useState(false);
   const [syncingCatalog, setSyncingCatalog] = useState(false);
   const [filterType, setFilterType] = useState('all'); // 'all', 'direct', 'pin', 'other'
 
@@ -79,18 +320,23 @@ export default function AdminProducts() {
   const [savingSubcat, setSavingSubcat] = useState(false);
 
   const loadData = async () => {
-    setLoading(true);
     try {
-      // Parallel fast flat fetch
-      const [catsRes, subsRes, prodsRes] = await Promise.all([
+      // Parallel fast flat fetch with timeout protection
+      const fetchPromise = Promise.all([
         supabase.from('categories').select('*').order('name'),
         supabase.from('subcategories').select('*').order('name'),
         supabase.from('products').select('*').order('created_at', { ascending: false })
       ]);
 
-      const catData = catsRes.data || [];
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Network Timeout')), 5000)
+      );
+
+      const [catsRes, subsRes, prodsRes] = await Promise.race([fetchPromise, timeoutPromise]);
+
+      const catData = (catsRes.data && catsRes.data.length > 0) ? catsRes.data : DEFAULT_FALLBACK_CATEGORIES;
       const subcatData = subsRes.data || [];
-      const rawProdData = prodsRes.data || [];
+      const rawProdData = (prodsRes.data && prodsRes.data.length > 0) ? prodsRes.data : DEFAULT_SEED_PRODUCTS;
 
       setCategories(catData);
       setSubcategories(subcatData);
@@ -100,7 +346,7 @@ export default function AdminProducts() {
       const subMap = new Map(subcatData.map(s => [s.id, { ...s, categories: catMap.get(s.category_id) }]));
       const prodData = rawProdData.map(p => ({
         ...p,
-        subcategories: subMap.get(p.subcategory_id)
+        subcategories: subMap.get(p.subcategory_id) || p.subcategories
       }));
 
       // Deduplicate in memory by product name
@@ -116,16 +362,17 @@ export default function AdminProducts() {
         }
       });
 
-      // Automatically delete duplicate entries from Supabase in the background
-      if (duplicatesToDelete.length > 0) {
-        supabase.from('products').delete().in('id', duplicatesToDelete).then(() => {
-          console.log('Duplicados de productos depurados en base de datos:', duplicatesToDelete.length);
-        });
-      }
+      const finalProducts = Array.from(uniqueMap.values());
+      setProducts(finalProducts);
 
-      setProducts(Array.from(uniqueMap.values()));
+      try {
+        localStorage.setItem(CACHE_KEY_CATS, JSON.stringify(catData));
+        localStorage.setItem(CACHE_KEY_SUBS, JSON.stringify(subcatData));
+        localStorage.setItem(CACHE_KEY_PRODS, JSON.stringify(finalProducts));
+      } catch (e) {}
+
     } catch (err) {
-      console.warn('Error loading products:', err);
+      console.warn('Usando catálogo en memoria/fallback debido a red lenta:', err);
     } finally {
       setLoading(false);
     }
