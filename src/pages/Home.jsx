@@ -354,16 +354,12 @@ export default function Home() {
   const isLikesActive = activeCategoryObj?.name?.toLowerCase().includes('like');
 
   const handleCategoryClick = (catId) => {
-    const targetCat = allCategories.find((c) => c.id === catId);
-    if (targetCat?.name?.toLowerCase().includes('like')) {
+    const targetCat = allCategories.find((c) => String(c.id) === String(catId));
+    if (targetCat?.name?.toLowerCase().includes('like') || String(catId) === 'likes-ff-id') {
       navigate('/likes');
       return;
     }
-    setSelectedCategory(catId);
-    setCurrentPage(1);
-    if (catId !== 'categories') {
-      document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' });
-    }
+    navigate(`/category/${catId}`);
   };
 
   return (
@@ -450,315 +446,115 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Catalog Filter Navigation */}
-      <div id="catalogo" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: '900', margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>{selectedCategory === 'categories' ? '📁' : '🛍️'}</span>
-            <span>
-              {selectedCategory === 'categories'
-                ? 'Catálogo de Categorías'
-                : selectedCategory === 'all'
-                ? 'Todos los Productos'
-                : activeCategoryObj?.name || 'Productos'}
-            </span>
-          </h2>
-
-          {selectedCategory !== 'categories' && (
-            <button
-              onClick={() => handleCategoryClick('categories')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '0.8rem',
-                fontWeight: '800',
-                background: 'rgba(6, 182, 212, 0.15)',
-                border: '1px solid var(--border-cyan)',
-                color: 'var(--accent-cyan)',
-                cursor: 'pointer'
-              }}
-            >
-              <span>⬅</span>
-              <span>Ver Categorías</span>
-            </button>
-          )}
+      {/* Catalog Categories Showcase */}
+      <div id="catalogo" style={{ marginBottom: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <h2 style={{ fontSize: '1.35rem', fontWeight: '900', margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>📁</span>
+              <span>Categorías de Productos</span>
+            </h2>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Selecciona una categoría para ver todos los productos y paquetes disponibles
+            </div>
+          </div>
         </div>
 
-        {/* Categories Tab Bar */}
+        {/* Categories Showcase Grid */}
         <div style={{
-          display: 'flex',
-          gap: '8px',
-          overflowX: 'auto',
-          paddingBottom: '8px',
-          scrollbarWidth: 'none'
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+          gap: '16px'
         }}>
-          <button
-            onClick={() => handleCategoryClick('categories')}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: 'var(--radius-full)',
-              fontSize: '0.85rem',
-              fontWeight: '800',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              background: selectedCategory === 'categories' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
-              color: selectedCategory === 'categories' ? '#000' : 'var(--text-main)',
-              border: selectedCategory === 'categories' ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <span>📁</span>
-            <span>Categorías</span>
-          </button>
-
-          <button
-            onClick={() => handleCategoryClick('all')}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: 'var(--radius-full)',
-              fontSize: '0.85rem',
-              fontWeight: '800',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              background: selectedCategory === 'all' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
-              color: selectedCategory === 'all' ? '#000' : 'var(--text-main)',
-              border: selectedCategory === 'all' ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <span>🔥</span>
-            <span>Todos los Productos ({allProducts.length})</span>
-          </button>
-
           {allCategories.map((cat) => {
-            const isSelected = selectedCategory === cat.id;
             const isLikes = cat.name?.toLowerCase().includes('like');
+            const defaultCatImg = isLikes
+              ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80'
+              : 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=600&q=80';
 
             return (
-              <button
+              <div
                 key={cat.id}
                 onClick={() => handleCategoryClick(cat.id)}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 16px',
-                  borderRadius: 'var(--radius-full)',
-                  fontSize: '0.85rem',
-                  fontWeight: '800',
+                  borderRadius: 'var(--radius-lg)',
+                  overflow: 'hidden',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border-glass)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  background: isSelected ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.04)',
-                  color: isSelected ? '#000' : 'var(--text-main)',
-                  border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-                  transition: 'all 0.15s ease'
+                  transition: 'all 0.25s ease',
+                  display: 'flex',
+                  flexDirection: 'column'
                 }}
+                className="glass-panel-interactive"
               >
-                {cat.image_url ? (
+                <div style={{ height: '140px', position: 'relative', overflow: 'hidden' }}>
                   <img
-                    src={cat.image_url}
-                    alt=""
-                    style={{ width: '18px', height: '18px', borderRadius: '4px', objectFit: 'cover' }}
+                    src={cat.image_url || defaultCatImg}
+                    alt={cat.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
-                ) : (
-                  <span>{cat.icon || (isLikes ? '👍' : '💎')}</span>
-                )}
-                <span>{cat.name}</span>
-              </button>
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(13, 17, 26, 0.92) 100%)'
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    background: 'rgba(0, 0, 0, 0.75)',
+                    backdropFilter: 'blur(6px)',
+                    padding: '3px 10px',
+                    borderRadius: '12px',
+                    fontSize: '0.72rem',
+                    color: 'var(--accent-cyan)',
+                    fontWeight: '800',
+                    border: '1px solid rgba(6, 182, 212, 0.4)'
+                  }}>
+                    {isLikes ? '7 Paquetes' : `${cat.product_count || 4} disponibles`}
+                  </div>
+                </div>
+
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>{cat.icon || (isLikes ? '👍' : '💎')}</span>
+                    <h3 style={{ margin: 0, color: '#fff', fontSize: '1.05rem', fontWeight: '800' }}>
+                      {cat.name}
+                    </h3>
+                  </div>
+
+                  <div style={{ marginTop: 'auto', paddingTop: '6px' }}>
+                    <button
+                      type="button"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(30, 58, 138, 0.45) 100%)',
+                        border: '1px solid var(--border-cyan)',
+                        color: 'var(--accent-cyan)',
+                        fontWeight: '800',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <span>{isLikes ? 'Ver Paquetes de Likes' : 'Explorar Productos'}</span>
+                      <span>➔</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>
       </div>
-
-      {/* VIEW 1: CATEGORIES SHOWCASE GRID */}
-      {selectedCategory === 'categories' ? (
-        <div style={{ marginBottom: '40px' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: '14px'
-          }}>
-            {allCategories.map((cat) => {
-              const isLikes = cat.name?.toLowerCase().includes('like');
-              const defaultCatImg = isLikes
-                ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80'
-                : 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=600&q=80';
-
-              return (
-                <div
-                  key={cat.id}
-                  onClick={() => handleCategoryClick(cat.id)}
-                  style={{
-                    borderRadius: 'var(--radius-lg)',
-                    overflow: 'hidden',
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid var(--border-glass)',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}
-                >
-                  <div style={{ height: '130px', position: 'relative', overflow: 'hidden' }}>
-                    <img
-                      src={cat.image_url || defaultCatImg}
-                      alt={cat.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    <div style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: 'linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(13, 17, 26, 0.9) 100%)'
-                    }} />
-                    <div style={{
-                      position: 'absolute',
-                      top: '10px',
-                      right: '10px',
-                      background: 'rgba(0, 0, 0, 0.65)',
-                      backdropFilter: 'blur(4px)',
-                      padding: '3px 8px',
-                      borderRadius: '12px',
-                      fontSize: '0.7rem',
-                      color: 'var(--accent-cyan)',
-                      fontWeight: '800',
-                      border: '1px solid rgba(6, 182, 212, 0.4)'
-                    }}>
-                      {isLikes ? '7 Paquetes' : `${cat.product_count || 4} disponibles`}
-                    </div>
-                  </div>
-
-                  <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '1.3rem' }}>{cat.icon || (isLikes ? '👍' : '💎')}</span>
-                      <h4 style={{ margin: 0, color: '#fff', fontSize: '1rem', fontWeight: '800' }}>
-                        {cat.name}
-                      </h4>
-                    </div>
-
-                    <div style={{ marginTop: 'auto', paddingTop: '8px' }}>
-                      <button
-                        type="button"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: 'var(--radius-sm)',
-                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(30, 58, 138, 0.4) 100%)',
-                          border: '1px solid var(--border-cyan)',
-                          color: 'var(--accent-cyan)',
-                          fontWeight: '800',
-                          fontSize: '0.8rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <span>{isLikes ? 'Ver Paquetes de Likes' : 'Explorar Productos'}</span>
-                        <span>➔</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : isLikesActive ? (
-        /* SPECIAL VIEW FOR LIKES CATEGORY */
-        <div className="glass-panel" style={{
-          borderRadius: 'var(--radius-lg)',
-          padding: '36px 20px',
-          textAlign: 'center',
-          border: '1px solid var(--border-cyan)',
-          boxShadow: '0 0 30px rgba(6, 182, 212, 0.2)',
-          marginBottom: '40px'
-        }}>
-          <div style={{ fontSize: '3rem', marginBottom: '10px' }}>👍</div>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#fff', marginBottom: '8px' }}>
-            Servicio Oficial de Likes Free Fire
-          </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', maxWidth: '480px', margin: '0 auto 20px auto' }}>
-            Paquetes desde 2K hasta 100K Likes con validación en vivo de cuenta (Nivel, Likes actuales) y entrega segura por UID.
-          </p>
-          <Link to="/likes" className="btn-cyan" style={{ padding: '12px 24px', fontSize: '0.92rem' }}>
-            🚀 Abrir Módulo de Likes (2K a 100K) ➔
-          </Link>
-        </div>
-      ) : (
-        /* VIEW 2: INSTANT PRODUCTS GRID */
-        <div style={{ marginBottom: '40px' }}>
-          {paginatedProducts.length === 0 ? (
-            <div className="glass-panel" style={{
-              textAlign: 'center',
-              padding: '60px 20px',
-              borderRadius: 'var(--radius-lg)',
-              margin: '20px 0',
-              border: '1px solid var(--border-glass)'
-            }}>
-              <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🛍️</div>
-              <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>No hay productos en esta categoría</h3>
-              <button
-                onClick={() => handleCategoryClick('categories')}
-                className="btn-cyan"
-                style={{ marginTop: '12px', padding: '8px 16px', fontSize: '0.85rem' }}
-              >
-                ⬅️ Ver Otras Categorías
-              </button>
-            </div>
-          ) : (
-            <>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                gap: '14px',
-                marginBottom: '24px'
-              }}>
-                {paginatedProducts.map((prod) => (
-                  <ProductCard key={prod.id} product={prod} />
-                ))}
-              </div>
-
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '20px' }}>
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="btn-glass"
-                    style={{ padding: '8px 14px', fontSize: '0.82rem' }}
-                  >
-                    ◀ Anterior
-                  </button>
-
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 12px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Página {currentPage} de {totalPages}
-                  </span>
-
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="btn-glass"
-                    style={{ padding: '8px 14px', fontSize: '0.82rem' }}
-                  >
-                    Siguiente ▶
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
     </div>
   );
