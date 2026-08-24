@@ -35,55 +35,49 @@ export default function AdminUsers() {
 
   useEffect(() => {
     async function loadUsers() {
-      setLoading(true);
-      const from = (currentPage - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
+      try {
+        const from = (currentPage - 1) * ITEMS_PER_PAGE;
+        const to = from + ITEMS_PER_PAGE - 1;
 
-      let query = supabase
-        .from('profiles')
-        .select('*', { count: 'exact' })
-        .order('full_name', { ascending: true })
-        .range(from, to);
+        let query = supabase
+          .from('profiles')
+          .select('*', { count: 'exact' })
+          .order('full_name', { ascending: true })
+          .range(from, to);
 
-      if (currentRoleTab !== 'ALL') {
-        query = query.eq('role', currentRoleTab);
-      }
+        if (currentRoleTab !== 'ALL') {
+          query = query.eq('role', currentRoleTab);
+        }
 
-      if (searchQuery.trim()) {
-        const term = `%${searchQuery.trim()}%`;
-        query = query.or(`full_name.ilike.${term},email.ilike.${term},phone.ilike.${term},country.ilike.${term},referral_code.ilike.${term}`);
-      }
+        if (searchQuery.trim()) {
+          const term = `%${searchQuery.trim()}%`;
+          query = query.or(`full_name.ilike.${term},email.ilike.${term},phone.ilike.${term},country.ilike.${term},referral_code.ilike.${term}`);
+        }
 
-      const { data, count, error } = await query;
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 4000)
+        );
 
-      if (data && !error) {
-        let serverBalances = {};
-        try {
-          serverBalances = await fetchServerBalances();
-        } catch (e) {}
+        const { data, count, error } = await Promise.race([query, timeoutPromise]);
 
-        const mappedUsers = data.map(u => {
-          const emailKey = (u.email || '').toLowerCase().trim();
-          let bal = null;
-          if (serverBalances) {
-            if (serverBalances[u.id] !== undefined) bal = Number(serverBalances[u.id]);
-            else if (emailKey && serverBalances[emailKey] !== undefined) bal = Number(serverBalances[emailKey]);
-          }
-          if (bal === null) {
-            const localBal = getLocalUserBalance(u.id) || (emailKey ? getLocalUserBalance(emailKey) : null);
-            if (localBal !== null) bal = localBal;
-          }
-          if (bal === null) {
-            bal = Number(u.wallet_balance || 0);
-          }
-          return {
-            ...u,
-            wallet_balance: Number(bal.toFixed(2))
-          };
-        });
-        setUsers(mappedUsers);
-        setTotalCount(count || 0);
-      } else {
+        if (data && !error && data.length > 0) {
+          const mappedUsers = data.map(u => {
+            const emailKey = (u.email || '').toLowerCase().trim();
+            let bal = getLocalUserBalance(u.id) || (emailKey ? getLocalUserBalance(emailKey) : null);
+            if (bal === null) {
+              bal = Number(u.wallet_balance || 0);
+            }
+            return {
+              ...u,
+              wallet_balance: Number(bal.toFixed(2))
+            };
+          });
+          setUsers(mappedUsers);
+          setTotalCount(count || mappedUsers.length);
+        } else {
+          throw new Error('No data or fallback');
+        }
+      } catch (err) {
         // Fallback sample users for demo
         const sampleList = [
           { id: 'u1', full_name: 'Jonathan Álvarez', email: 'jonathan@alvshop.com', role: 'Admin', phone: '+502 4313 0763', country: 'Guatemala', referral_code: 'ALV-ADMIN', wallet_balance: 500.00 },
@@ -109,8 +103,9 @@ export default function AdminUsers() {
         }
         setUsers(filtered);
         setTotalCount(filtered.length);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     loadUsers();

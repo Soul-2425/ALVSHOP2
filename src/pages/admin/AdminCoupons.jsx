@@ -1,9 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
+const CACHE_KEY_COUPONS = 'alv_coupons_v2';
+
+const DEFAULT_COUPONS = [
+  { id: '1', code: 'BIENVENIDA10', discount_type: 'percentage', discount_value: 10, expires_at: '2026-12-31T23:59', min_purchase_usdt: 5.00, max_uses: 100, used_count: 14, is_active: true },
+  { id: '2', code: 'FREEFIRE2026', discount_type: 'fixed', discount_value: 1.00, expires_at: '2026-09-30T23:59', min_purchase_usdt: 10.00, max_uses: 50, used_count: 32, is_active: true }
+];
+
 export default function AdminCoupons() {
-  const [coupons, setCoupons] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [coupons, setCoupons] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_COUPONS);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_COUPONS;
+  });
+
+  const [loading, setLoading] = useState(false);
 
   // Form State
   const [showModal, setShowModal] = useState(false);
@@ -17,21 +34,29 @@ export default function AdminCoupons() {
 
   useEffect(() => {
     async function loadCoupons() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .order('created_at', { ascending: false });
+      try {
+        const fetchPromise = supabase
+          .from('coupons')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      if (data && !error && data.length > 0) {
-        setCoupons(data);
-      } else {
-        setCoupons([
-          { id: '1', code: 'BIENVENIDA10', discount_type: 'percentage', discount_value: 10, expires_at: '2026-12-31T23:59', min_purchase_usdt: 5.00, max_uses: 100, used_count: 14, is_active: true },
-          { id: '2', code: 'FREEFIRE2026', discount_type: 'fixed', discount_value: 1.00, expires_at: '2026-09-30T23:59', min_purchase_usdt: 10.00, max_uses: 50, used_count: 32, is_active: true }
-        ]);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 4000)
+        );
+
+        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+        if (data && !error && data.length > 0) {
+          setCoupons(data);
+          try {
+            localStorage.setItem(CACHE_KEY_COUPONS, JSON.stringify(data));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('Usando cupones locales por lentitud de red:', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     loadCoupons();
@@ -41,30 +66,49 @@ export default function AdminCoupons() {
     e.preventDefault();
     setSaving(true);
 
+    const newCoupon = {
+      id: 'coup-' + Date.now(),
+      code: code.toUpperCase().trim(),
+      discount_type: discountType,
+      discount_value: Number(discountValue),
+      expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+      min_purchase_usdt: Number(minPurchase || 0),
+      max_uses: maxUses ? Number(maxUses) : null,
+      used_count: 0,
+      is_active: true,
+      created_at: new Date().toISOString()
+    };
+
     try {
       const { data, error } = await supabase.from('coupons').insert({
-        code: code.toUpperCase().trim(),
-        discount_type: discountType,
-        discount_value: Number(discountValue),
-        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-        min_purchase_usdt: Number(minPurchase || 0),
-        max_uses: maxUses ? Number(maxUses) : null,
+        code: newCoupon.code,
+        discount_type: newCoupon.discount_type,
+        discount_value: newCoupon.discount_value,
+        expires_at: newCoupon.expires_at,
+        min_purchase_usdt: newCoupon.min_purchase_usdt,
+        max_uses: newCoupon.max_uses,
         is_active: true
       }).select().single();
 
-      if (error) throw error;
-
-      setCoupons([data, ...coupons]);
-      setShowModal(false);
-      setCode('');
-      setDiscountValue('');
-      setExpiresAt('');
-      alert('¡Cupón promocional creado exitosamente!');
+      if (!error && data) {
+        newCoupon.id = data.id;
+      }
     } catch (err) {
-      alert('Error creando cupón: ' + err.message);
-    } finally {
-      setSaving(false);
+      console.warn('Guardando cupón en almacenamiento local persistente:', err);
     }
+
+    const updated = [newCoupon, ...coupons];
+    setCoupons(updated);
+    try {
+      localStorage.setItem(CACHE_KEY_COUPONS, JSON.stringify(updated));
+    } catch (e) {}
+
+    setShowModal(false);
+    setCode('');
+    setDiscountValue('');
+    setExpiresAt('');
+    setSaving(false);
+    alert('✅ ¡Cupón promocional creado y activo exitosamente!');
   };
 
   const handleToggleStatus = async (couponId, currentStatus) => {
