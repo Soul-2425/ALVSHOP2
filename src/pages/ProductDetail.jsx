@@ -32,6 +32,7 @@ export default function ProductDetail() {
   // Live UID Validation state (For Free Fire / Games)
   const [validatingUid, setValidatingUid] = useState(false);
   const [playerNickname, setPlayerNickname] = useState(null);
+  const [playerAvatar, setPlayerAvatar] = useState(null);
   const [playerLevel, setPlayerLevel] = useState(null);
   const [playerRegion, setPlayerRegion] = useState(null);
   const [playerLikes, setPlayerLikes] = useState(null);
@@ -130,12 +131,14 @@ export default function ProductDetail() {
       const result = await validatePlayerUid(cleanUid, product?.validation_type || 'Free Fire');
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
+        setPlayerAvatar(result.avatar_url || '/ff-avatar.png');
         setPlayerLevel(result.account_level || null);
         setPlayerRegion(result.region || 'LATAM');
         setPlayerLikes(result.currentLikes || null);
         setValidationError('');
       } else {
         setPlayerNickname(null);
+        setPlayerAvatar(null);
         setPlayerLevel(null);
         setPlayerLikes(null);
         setValidationError(result?.error || 'ID incorrecta. Por favor, verifica el ID ingresado.');
@@ -681,12 +684,17 @@ export default function ProductDetail() {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <img
-                    src={`https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(playerNickname)}`}
-                    alt="Player"
+                    src={playerAvatar || '/ff-avatar.png'}
+                    alt={playerNickname}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = '/ff-avatar.png';
+                    }}
                     style={{
                       width: '44px',
                       height: '44px',
                       borderRadius: '10px',
+                      objectFit: 'cover',
                       background: 'rgba(6, 78, 59, 0.5)',
                       border: '1px solid #34d399',
                       flexShrink: 0

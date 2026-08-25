@@ -686,11 +686,11 @@ export default function Likes() {
                     justifyContent: 'center'
                   }}>
                     <img
-                      src={playerData.avatar_url || 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/255.png'}
+                      src={playerData.avatar_url || '/ff-avatar.png'}
                       alt={playerData.nickname}
                       onError={(e) => {
                         e.target.onerror = null;
-                        e.target.src = 'https://api.iconify.design/game-icons:chicken.svg?color=%2306b6d4';
+                        e.target.src = '/ff-avatar.png';
                       }}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
