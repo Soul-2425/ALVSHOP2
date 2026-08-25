@@ -265,8 +265,6 @@ export function AppProvider({ children }) {
   // Fetch Current Profile
   const fetchProfile = async (userId, userEmailParam = '') => {
     try {
-      const serverBalances = await fetchServerBalances();
-
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -275,34 +273,33 @@ export function AppProvider({ children }) {
 
       let effectiveBal = null;
       const userEmail = (userEmailParam || data?.email || user?.email || '').toLowerCase().trim();
-      const referralCode = (data?.referral_code || '').trim();
 
-      if (serverBalances) {
-        if (userId && serverBalances[userId] !== undefined) effectiveBal = Number(serverBalances[userId]);
-        else if (userEmail && serverBalances[userEmail] !== undefined) effectiveBal = Number(serverBalances[userEmail]);
-        else if (referralCode && serverBalances[referralCode] !== undefined) effectiveBal = Number(serverBalances[referralCode]);
-      }
-
-      if (effectiveBal === null) {
-        const localBal = getLocalUserBalance(userId) || (userEmail ? getLocalUserBalance(userEmail) : null) || (referralCode ? getLocalUserBalance(referralCode) : null);
-        if (localBal !== null) effectiveBal = localBal;
-      }
-
-      if (effectiveBal === null && data) {
-        effectiveBal = Number(data.wallet_balance || 0);
+      // 1. Supabase is the PRIMARY source of truth
+      if (data && !error && data.wallet_balance !== undefined && data.wallet_balance !== null) {
+        effectiveBal = Number(data.wallet_balance);
+      } else {
+        // 2. Fallback to server balances / local cache if Supabase is offline or not yet created
+        const serverBalances = await fetchServerBalances();
+        if (serverBalances) {
+          if (userId && serverBalances[userId] !== undefined) effectiveBal = Number(serverBalances[userId]);
+          else if (userEmail && serverBalances[userEmail] !== undefined) effectiveBal = Number(serverBalances[userEmail]);
+        }
+        if (effectiveBal === null) {
+          const localBal = getLocalUserBalance(userId) || (userEmail ? getLocalUserBalance(userEmail) : null);
+          if (localBal !== null) effectiveBal = localBal;
+        }
       }
 
       const finalBal = effectiveBal !== null ? effectiveBal : 0.00;
+
+      // Sync local cache to latest balance
+      if (userId) setLocalUserBalance(userId, finalBal);
+      if (userEmail) setLocalUserBalance(userEmail, finalBal);
 
       if (data && !error) {
         setProfile({ ...data, wallet_balance: finalBal });
         setRole(data.role || 'Cliente Común');
         setWalletBalance(finalBal);
-
-        // Sync to Supabase profile with active user session
-        if (effectiveBal !== null && effectiveBal !== Number(data.wallet_balance || 0)) {
-          supabase.from('profiles').update({ wallet_balance: finalBal }).eq('id', userId).then(() => {});
-        }
 
         // Load notifications and request permission
         loadUserNotifications(userId);
@@ -373,7 +370,32 @@ export function AppProvider({ children }) {
       }
     };
     window.addEventListener('alv_balance_updated', handleBalanceEvent);
-    return () => window.removeEventListener('alv_balance_updated', handleBalanceEvent);
+
+    // Supabase Realtime Listener for Instant Balance Updates across all devices
+    let profileChannel = null;
+    if (user?.id) {
+      profileChannel = supabase
+        .channel(`realtime-profile-${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+          (payload) => {
+            if (payload.new && payload.new.wallet_balance !== undefined) {
+              const newBal = Number(payload.new.wallet_balance);
+              setWalletBalance(newBal);
+              setProfile(prev => ({ ...prev, ...payload.new, wallet_balance: newBal }));
+              setLocalUserBalance(user.id, newBal);
+              if (user.email) setLocalUserBalance(user.email, newBal);
+            }
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      window.removeEventListener('alv_balance_updated', handleBalanceEvent);
+      if (profileChannel) supabase.removeChannel(profileChannel);
+    };
   }, [user]);
 
   useEffect(() => {

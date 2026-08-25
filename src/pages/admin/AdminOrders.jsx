@@ -182,13 +182,21 @@ export default function AdminOrders() {
 
       // 2. Acreditación automática si es un depósito/recarga de saldo de billetera
       let parsedNotes = {};
+      const rawNotesStr = typeof selectedOrder.customer_notes === 'string'
+        ? selectedOrder.customer_notes
+        : JSON.stringify(selectedOrder.customer_notes || {});
+
       try {
         parsedNotes = typeof selectedOrder.customer_notes === 'string'
           ? JSON.parse(selectedOrder.customer_notes)
           : selectedOrder.customer_notes || {};
       } catch (e) {}
 
-      const isWalletRecharge = (typeof selectedOrder.customer_notes === 'string' && selectedOrder.customer_notes.includes('Recarga de Billetera')) ||
+      const isWalletRecharge = rawNotesStr.toLowerCase().includes('wallet_deposit') ||
+        rawNotesStr.toLowerCase().includes('wallet deposit') ||
+        rawNotesStr.toLowerCase().includes('recarga') ||
+        rawNotesStr.toLowerCase().includes('billetera') ||
+        rawNotesStr.toLowerCase().includes('deposit') ||
         selectedOrder.payment_method === 'Recurrente / Link' ||
         (!selectedOrder.order_items || selectedOrder.order_items.length === 0);
 
@@ -208,15 +216,31 @@ export default function AdminOrders() {
 
       if (newStatus === 'Completed' && isWalletRecharge && selectedOrder.user_id) {
         try {
-          const { data: userProfile } = await supabase.from('profiles').select('wallet_balance, email').eq('id', selectedOrder.user_id).single();
+          const { data: userProfile } = await supabase
+            .from('profiles')
+            .select('wallet_balance, email')
+            .eq('id', selectedOrder.user_id)
+            .single();
+
           const userEmail = userProfile?.email || selectedOrder.customer_email || '';
-          const localBal = getLocalUserBalance(selectedOrder.user_id) || (userEmail ? getLocalUserBalance(userEmail) : null);
-          const currentBal = localBal !== null ? localBal : Number(userProfile?.wallet_balance || 0);
-          const newBal = Number((currentBal + Number(selectedOrder.total_usdt)).toFixed(2));
+          const currentBal = Number(userProfile?.wallet_balance || 0);
+          const rechargeAmt = Number(selectedOrder.total_usdt || 0);
+          const newBal = Number((currentBal + rechargeAmt).toFixed(2));
 
           setLocalUserBalance(selectedOrder.user_id, newBal);
           if (userEmail) setLocalUserBalance(userEmail, newBal);
 
+          // Update Supabase profiles table directly
+          const { error: profileUpdateErr } = await supabase
+            .from('profiles')
+            .update({ wallet_balance: newBal })
+            .eq('id', selectedOrder.user_id);
+
+          if (profileUpdateErr) {
+            console.warn('Profiles direct update warning:', profileUpdateErr);
+          }
+
+          // Push to backend microservice to sync devices
           try {
             const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
             const endpoints = [`/api/v1/balance/update`, `http://${host}:5000/api/v1/balance/update`];
@@ -233,14 +257,10 @@ export default function AdminOrders() {
           } catch (e) {}
 
           try {
-            await supabase.from('profiles').update({ wallet_balance: newBal }).eq('id', selectedOrder.user_id);
-          } catch (e) {}
-
-          try {
             await supabase.from('transactions').insert({
               user_id: selectedOrder.user_id,
               type: 'Deposit',
-              amount_usdt: Number(selectedOrder.total_usdt),
+              amount_usdt: rechargeAmt,
               status: 'Completed',
               notes: `Recarga acreditada por Administración (Orden #${selectedOrder.id.slice(0, 8)}${parsedNotes.link_tag ? ` - Link: ${parsedNotes.link_tag}` : ''})`
             });
