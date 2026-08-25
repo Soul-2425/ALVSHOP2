@@ -685,15 +685,34 @@ export default function Likes() {
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}>
-                    <img
-                      src={playerData.avatar_url || '/ff-avatar.png'}
-                      alt={playerData.nickname}
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = '/ff-avatar.png';
+                    {playerData.avatar_url ? (
+                      <img
+                        src={playerData.avatar_url}
+                        alt={playerData.nickname}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fallback = e.target.parentElement.querySelector('.likes-badge-fallback');
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : null}
+                    <div
+                      className="likes-badge-fallback"
+                      style={{
+                        display: playerData.avatar_url ? 'none' : 'flex',
+                        width: '100%',
+                        height: '100%',
+                        background: 'linear-gradient(135deg, #1e3a8a 0%, #06b6d4 100%)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.4rem',
+                        fontWeight: '900',
+                        color: '#fff'
                       }}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
+                    >
+                      {(playerData.nickname || 'FF').replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || 'FF'}
+                    </div>
                   </div>
 
                   {/* Player Info */}

@@ -209,9 +209,23 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
         const json = await res.json();
         if (json?.basicInfo?.nickname || json?.basicInfo?.apodo) {
           const bInfo = json.basicInfo;
+          const headPicId = bInfo.headPic ? String(bInfo.headPic) : null;
+          let avatarUrl = bInfo.avatar_url || null;
+
+          if (!avatarUrl && headPicId) {
+            if (headPicId === '902052004') {
+              avatarUrl = '/avatars/902052004.png'; // Satoru Gojo (OB52 JJK)
+            } else if (headPicId === '902000094') {
+              avatarUrl = '/avatars/902000094.png'; // 8-Bit Chicken
+            } else {
+              avatarUrl = `/avatars/${headPicId}.png`;
+            }
+          }
+
           const result = {
             success: true,
             nickname: bInfo.nickname || bInfo.apodo,
+            avatar_url: avatarUrl,
             account_level: bInfo.level || bInfo.nivel || 1,
             currentLikes: bInfo.liked || bInfo['Me gusta'] || 0,
             rankingPoints: bInfo.rankingPoints || bInfo.ranking_points || 0,
@@ -219,7 +233,7 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
             region: bInfo.region || bInfo['región'] || reg,
             badgeCnt: bInfo.badgeCnt || 0,
             bannerId: bInfo.bannerId || null,
-            headPic: bInfo.headPic || null,
+            headPic: headPicId,
             releaseVersion: bInfo.releaseVersion || 'OB54',
             isVerified: true,
             source: 'Free Fire Official / SiamBhau v5.0'
