@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { useApp } from '../context/AppContext';
+import { useApp, getLocalUserBalance } from '../context/AppContext';
 import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { notifyAdminNewOrder, notifyOrderCompleted, sendPushNotification } from '../../notificaciones y apis/notificaciones/pushService';
 import { checkRateLimit } from '../services/securityShield';
@@ -219,7 +219,16 @@ export default function ProductDetail() {
 
   const finalPriceUsdt = Math.max(0, rawPriceUsdt - discountUsdt);
   const finalPriceGtq = (finalPriceUsdt * exchangeRate).toFixed(2);
-  const hasSufficientBalance = walletBalance >= finalPriceUsdt;
+
+  // Accurate real-time balance calculation with instant local fallback
+  const currentActualBalance = (() => {
+    if (!user?.id) return Number(walletBalance || 0);
+    const local = getLocalUserBalance(user.id) || (user.email ? getLocalUserBalance(user.email) : null);
+    if (local !== null && !isNaN(local)) return Number(local);
+    return Number(walletBalance || 0);
+  })();
+
+  const hasSufficientBalance = currentActualBalance >= finalPriceUsdt;
 
   // Submit Order Checkout with Triple Flow & Rate Limiting Shield
   const handleProceedPayment = async () => {
@@ -250,8 +259,9 @@ export default function ProductDetail() {
 
     // FLOW A: WALLET PAYMENT
     if (paymentMethod === 'Wallet') {
-      if (!hasSufficientBalance) {
-        alert(`Saldo insuficiente en tu billetera. Cuentas con $${walletBalance.toFixed(2)} USDT y el total es de $${finalPriceUsdt.toFixed(2)} USDT.`);
+      const realBal = currentActualBalance;
+      if (realBal < finalPriceUsdt) {
+        alert(`Saldo insuficiente en tu billetera. Cuentas con $${realBal.toFixed(2)} USDT y el total es de $${finalPriceUsdt.toFixed(2)} USDT.`);
         return;
       }
     }
@@ -437,6 +447,23 @@ export default function ProductDetail() {
           metadata: { orderId: orderData.id, url: '/profile?tab=orders' }
         });
       }
+
+      // Save order to user local order history cache for instant viewing in Profile
+      try {
+        const cacheKey = `alv_user_orders_${user.id}`;
+        const prevCached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        const orderToCache = {
+          ...orderData,
+          order_items: [{
+            id: `item-${Date.now()}`,
+            quantity: 1,
+            price_usdt: finalPriceUsdt,
+            fields_data: formData,
+            products: { id: product.id, name: product.name, image_url: product.image_url }
+          }]
+        };
+        localStorage.setItem(cacheKey, JSON.stringify([orderToCache, ...prevCached]));
+      } catch (e) {}
 
       // Notify Admins with PUSH ALERT & SOUND
       notifyAdminNewOrder({

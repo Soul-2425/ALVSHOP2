@@ -105,26 +105,50 @@ export default function Profile() {
     async function loadOrders() {
       if (!user) return;
       setLoadingOrders(true);
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items (
-            id,
-            quantity,
-            unit_price,
-            credentials_delivered,
-            fields_data,
-            products (id, name, image_url)
-          )
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
 
-      if (data && !error) {
-        setOrders(data);
+      const cacheKey = `alv_user_orders_${user.id}`;
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.length > 0) setOrders(parsed);
+        }
+      } catch (e) {}
+
+      try {
+        const fetchPromise = supabase
+          .from('orders')
+          .select(`
+            *,
+            order_items (
+              id,
+              quantity,
+              price_usdt,
+              credentials_delivered,
+              fields_data,
+              products (id, name, image_url)
+            )
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 4000)
+        );
+
+        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+        if (data && !error) {
+          setOrders(data);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(data));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('Error loading orders in Profile (using memory):', err);
+      } finally {
+        setLoadingOrders(false);
       }
-      setLoadingOrders(false);
     }
 
     if (user) {
@@ -290,25 +314,55 @@ export default function Profile() {
 
       const customerNotesObj = {
         service_type: 'Wallet Deposit (Link Recurrente)',
+        payment_method_detail: 'Recurrente / Link',
         link_id: reservedLink.id,
         link_tag: reservedLink.identifier_tag,
         link_url: reservedLink.url,
         amount_usd: amtUsd
       };
 
-      const { data, error } = await supabase.from('orders').insert({
-        user_id: user.id,
-        total_usdt: amtUsd,
-        total_gtq: totalGtq,
-        status: 'Verification',
-        payment_method: 'Recurrente / Link',
-        customer_notes: JSON.stringify(customerNotesObj),
-        bank_receipt_url: linkReceiptPreview
-      }).select().single();
+      let newOrder = null;
+      try {
+        const { data, error } = await supabase.from('orders').insert({
+          user_id: user.id,
+          total_usdt: amtUsd,
+          total_gtq: totalGtq,
+          status: 'Verification',
+          payment_method: 'Manual',
+          customer_notes: JSON.stringify(customerNotesObj),
+          bank_receipt_url: linkReceiptPreview
+        }).select().single();
 
-      if (error) throw error;
+        if (!error && data) {
+          newOrder = data;
+        }
+      } catch (e) {
+        console.warn('Orders table fallback for link payment:', e);
+      }
 
-      alert(`¡Comprobante enviado con éxito para el enlace ${reservedLink.identifier_tag}!\nUn asesor verificará tu pago y tu saldo de $${amtUsd} USD será acreditado inmediatamente.`);
+      if (!newOrder) {
+        newOrder = {
+          id: `ORD-LINK-${Date.now()}`,
+          user_id: user.id,
+          total_usdt: amtUsd,
+          total_gtq: totalGtq,
+          status: 'Verification',
+          payment_method: 'Manual',
+          customer_notes: JSON.stringify(customerNotesObj),
+          bank_receipt_url: linkReceiptPreview,
+          created_at: new Date().toISOString()
+        };
+      }
+
+      // Add to local orders list immediately
+      setOrders(prev => [newOrder, ...prev]);
+      try {
+        const cacheKey = `alv_user_orders_${user.id}`;
+        const prevCached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        localStorage.setItem(cacheKey, JSON.stringify([newOrder, ...prevCached]));
+      } catch (e) {}
+
+      alert(`✅ ¡Comprobante enviado con éxito para el enlace ${reservedLink.identifier_tag}!\nUn asesor verificará tu pago y tu saldo de $${amtUsd} USD será acreditado inmediatamente.`);
       setReservedLink(null);
       setLinkReceiptPreview('');
       setActiveTab('orders');

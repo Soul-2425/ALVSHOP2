@@ -593,11 +593,14 @@ export default function CategoryDetail() {
               )}
             </div>
           ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-              gap: '16px'
-            }}>
+            <div
+              className="products-grid-responsive"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '16px'
+              }}
+            >
               {filteredProducts.map(prod => (
                 <ProductCard key={prod.id} product={prod} />
               ))}
@@ -605,6 +608,16 @@ export default function CategoryDetail() {
           )}
         </>
       )}
+
+      {/* Responsive 2-column styling for Mobile */}
+      <style>{`
+        @media (max-width: 640px) {
+          .products-grid-responsive {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+          }
+        }
+      `}</style>
 
     </div>
   );

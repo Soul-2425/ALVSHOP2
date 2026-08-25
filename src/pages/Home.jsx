@@ -392,7 +392,7 @@ export default function Home() {
           boxShadow: '0 0 16px var(--accent-cyan)'
         }} />
 
-        <div style={{ position: 'relative', zIndex: 2, maxWidth: '560px' }}>
+        <div style={{ position: 'relative', zIndex: 2, maxWidth: '580px' }}>
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -417,36 +417,18 @@ export default function Home() {
             color: '#fff',
             textShadow: '0 2px 10px rgba(0, 0, 0, 0.9)'
           }}>
-            {config?.site_title || 'Tienda Oficial ALVSHOP'}
+            {config?.site_title || 'ALVSHOP - Recargas y Bienes Digitales'}
           </h1>
 
           <p style={{
             color: '#cbd5e1',
             fontSize: '0.9rem',
             lineHeight: 1.5,
-            margin: '0 0 20px 0',
+            margin: 0,
             textShadow: '0 1px 6px rgba(0, 0, 0, 0.9)'
           }}>
             {config?.site_tagline || 'Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.'}
           </p>
-
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <Link
-              to="/likes"
-              className="btn-cyan"
-              style={{
-                padding: '10px 20px',
-                fontSize: '0.88rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
-              }}
-            >
-              <span>👍</span>
-              <span>Subir Likes FF</span>
-            </Link>
-          </div>
         </div>
       </div>
 
@@ -464,17 +446,24 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Categories Showcase Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: '16px'
-        }}>
+        {/* Categories Showcase Grid (2 columns on mobile) */}
+        <div
+          className="category-grid-responsive"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: '16px'
+          }}
+        >
           {allCategories.map((cat) => {
             const isLikes = cat.name?.toLowerCase().includes('like');
             const defaultCatImg = isLikes
               ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80'
               : 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=600&q=80';
+
+            const buttonLabel = isLikes
+              ? 'Ver Likes FF'
+              : (config?.category_button_text || 'Explorar Productos');
 
             return (
               <div
@@ -493,7 +482,7 @@ export default function Home() {
                 }}
                 className="glass-panel-interactive"
               >
-                <div style={{ height: '140px', position: 'relative', overflow: 'hidden' }}>
+                <div className="category-card-img" style={{ height: '140px', position: 'relative', overflow: 'hidden' }}>
                   <img
                     src={cat.image_url || defaultCatImg}
                     alt={cat.name}
@@ -506,50 +495,51 @@ export default function Home() {
                   }} />
                   <div style={{
                     position: 'absolute',
-                    top: '10px',
-                    right: '10px',
+                    top: '8px',
+                    right: '8px',
                     background: 'rgba(0, 0, 0, 0.75)',
                     backdropFilter: 'blur(6px)',
-                    padding: '3px 10px',
-                    borderRadius: '12px',
-                    fontSize: '0.72rem',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontSize: '0.68rem',
                     color: 'var(--accent-cyan)',
                     fontWeight: '800',
                     border: '1px solid rgba(6, 182, 212, 0.4)'
                   }}>
-                    {isLikes ? '7 Paquetes' : `${cat.product_count || 4} disponibles`}
+                    {isLikes ? '7 Paquetes' : `${cat.product_count || 4} items`}
                   </div>
                 </div>
 
-                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '1.4rem' }}>{cat.icon || (isLikes ? '👍' : '💎')}</span>
-                    <h3 style={{ margin: 0, color: '#fff', fontSize: '1.05rem', fontWeight: '800' }}>
+                <div className="category-card-padding" style={{ padding: '14px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '1.2rem' }}>{cat.icon || (isLikes ? '👍' : '💎')}</span>
+                    <h3 className="category-card-title" style={{ margin: 0, color: '#fff', fontSize: '1rem', fontWeight: '800' }}>
                       {cat.name}
                     </h3>
                   </div>
 
-                  <div style={{ marginTop: 'auto', paddingTop: '6px' }}>
+                  <div style={{ marginTop: 'auto', paddingTop: '4px' }}>
                     <button
                       type="button"
+                      className="category-card-btn"
                       style={{
                         width: '100%',
-                        padding: '10px 14px',
+                        padding: '9px 12px',
                         borderRadius: 'var(--radius-sm)',
                         background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(30, 58, 138, 0.45) 100%)',
                         border: '1px solid var(--border-cyan)',
                         color: 'var(--accent-cyan)',
                         fontWeight: '800',
-                        fontSize: '0.85rem',
+                        fontSize: '0.82rem',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '6px',
+                        gap: '5px',
                         transition: 'all 0.2s ease'
                       }}
                     >
-                      <span>{isLikes ? 'Ver Paquetes de Likes' : 'Explorar Productos'}</span>
+                      <span>{buttonLabel}</span>
                       <span>➔</span>
                     </button>
                   </div>
@@ -559,6 +549,29 @@ export default function Home() {
           })}
         </div>
       </div>
+
+      {/* Responsive 2-column styling for Mobile */}
+      <style>{`
+        @media (max-width: 640px) {
+          .category-grid-responsive {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+          }
+          .category-card-img {
+            height: 105px !important;
+          }
+          .category-card-padding {
+            padding: 10px !important;
+          }
+          .category-card-title {
+            font-size: 0.84rem !important;
+          }
+          .category-card-btn {
+            padding: 6px 8px !important;
+            font-size: 0.72rem !important;
+          }
+        }
+      `}</style>
 
     </div>
   );

@@ -618,11 +618,26 @@ export default function AdminOrders() {
 
                     {/* Product */}
                     <td style={{ padding: '12px 8px' }}>
-                      {ord.order_items?.map((item) => (
-                        <div key={item.id} style={{ fontWeight: '600' }}>
-                          {item.products?.name || 'Recarga Digital'} (x{item.quantity})
-                        </div>
-                      ))}
+                      {ord.order_items && ord.order_items.length > 0 && ord.order_items[0].products?.name ? (
+                        ord.order_items.map((item) => (
+                          <div key={item.id} style={{ fontWeight: '600' }}>
+                            {item.products?.name} (x{item.quantity})
+                          </div>
+                        ))
+                      ) : (() => {
+                        let noteObj = {};
+                        try { noteObj = JSON.parse(ord.customer_notes); } catch (e) {}
+                        if (noteObj?.service_type === 'Free Fire Likes') {
+                          return <div style={{ fontWeight: '800', color: 'var(--accent-cyan)' }}>👍 Paquete Likes FF (+{noteObj.likes_to_add || 100})</div>;
+                        }
+                        if (noteObj?.service_type === 'Wallet Deposit (Link Recurrente)') {
+                          return <div style={{ fontWeight: '800', color: '#fbbf24' }}>🔗 Recarga Saldo (Link {noteObj.link_tag || ''})</div>;
+                        }
+                        if (noteObj?.type === 'wallet_deposit') {
+                          return <div style={{ fontWeight: '800', color: '#34d399' }}>🏦 Recarga Saldo ({noteObj.deposit_currency || 'Manual'})</div>;
+                        }
+                        return <div style={{ fontWeight: '600' }}>Recarga Digital</div>;
+                      })()}
                     </td>
 
                     {/* UID / Notes */}
@@ -639,7 +654,13 @@ export default function AdminOrders() {
 
                     {/* Payment Method */}
                     <td style={{ padding: '12px 8px', fontSize: '0.8rem' }}>
-                      {ord.payment_method === 'Wallet' ? '💎 Billetera' : ord.payment_method || 'Binance Pay'}
+                      {(() => {
+                        let noteObj = {};
+                        try { noteObj = JSON.parse(ord.customer_notes); } catch (e) {}
+                        if (noteObj?.payment_method_detail === 'Recurrente / Link') return '🔗 Link Recurrente';
+                        if (ord.payment_method === 'Wallet') return '💎 Billetera';
+                        return ord.payment_method || 'Manual';
+                      })()}
                     </td>
 
                     {/* Bank Receipt Column */}

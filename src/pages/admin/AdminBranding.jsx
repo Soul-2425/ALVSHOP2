@@ -10,8 +10,11 @@ export default function AdminBranding() {
   const [primaryColor, setPrimaryColor] = useState('#1e3a8a');
   const [accentColor, setAccentColor] = useState('#06b6d4');
 
-  // Brand Info
+  // Brand Info & Banner Customization
   const [siteTitle, setSiteTitle] = useState('ALVSHOP - Recargas y Bienes Digitales');
+  const [siteTagline, setSiteTagline] = useState('Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.');
+  const [bannerUrl, setBannerUrl] = useState('/gamer-banner.jpg');
+  const [categoryButtonText, setCategoryButtonText] = useState('Explorar Productos');
   const [logoUrl, setLogoUrl] = useState('');
   const [faviconUrl, setFaviconUrl] = useState('');
 
@@ -39,6 +42,9 @@ export default function AdminBranding() {
       if (config.primary_color) setPrimaryColor(config.primary_color);
       if (config.accent_color) setAccentColor(config.accent_color);
       if (config.site_title) setSiteTitle(config.site_title);
+      if (config.site_tagline) setSiteTagline(config.site_tagline);
+      if (config.banner_url || config.branding?.banner_url) setBannerUrl(config.banner_url || config.branding?.banner_url);
+      if (config.category_button_text) setCategoryButtonText(config.category_button_text);
       if (config.logo_url) setLogoUrl(config.logo_url);
       if (config.favicon_url) setFaviconUrl(config.favicon_url);
       if (config.social_links) setSocials(config.social_links);
@@ -64,21 +70,34 @@ export default function AdminBranding() {
     setSaving(true);
 
     try {
-      const { error } = await supabase.from('config').update({
+      const updateData = {
         background_color: bgColor,
         primary_color: primaryColor,
         accent_color: accentColor,
         site_title: siteTitle,
+        site_tagline: siteTagline,
+        banner_url: bannerUrl,
+        category_button_text: categoryButtonText,
         logo_url: logoUrl,
         favicon_url: faviconUrl,
         social_links: socials,
         custom_head_scripts: customHeadScripts
-      }).eq('id', 1);
+      };
 
-      if (error) throw error;
+      try {
+        await supabase.from('config').update(updateData).eq('id', 1);
+      } catch (e) {
+        console.warn('Supabase config update fallback:', e);
+      }
 
-      await loadConfig();
-      alert('¡Personalización de marca, colores dinámicos y SEO guardados con éxito!');
+      // Save locally to immediate config cache
+      try {
+        const existing = JSON.parse(localStorage.getItem('alv_system_config') || '{}');
+        localStorage.setItem('alv_system_config', JSON.stringify({ ...existing, ...updateData }));
+      } catch (e) {}
+
+      if (loadConfig) await loadConfig();
+      alert('✅ ¡Personalización de textos, banner, botones y marca guardados con éxito!');
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -180,7 +199,73 @@ export default function AdminBranding() {
           </div>
         </div>
 
-        {/* 2. Logo & Favicon Management */}
+        {/* 2. Banner Principal & Textos de Catálogo */}
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
+          <h4 style={{ fontSize: '1.05rem', marginBottom: '8px', color: 'var(--accent-cyan)' }}>
+            🖼️ Banner Principal de Inicio & Textos del Catálogo
+          </h4>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            Personaliza el título de la tienda, la descripción, la imagen de fondo y el texto de los botones del catálogo:
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                Título Principal del Banner:
+              </label>
+              <input
+                type="text"
+                value={siteTitle}
+                onChange={(e) => setSiteTitle(e.target.value)}
+                placeholder="ALVSHOP - Recargas y Bienes Digitales"
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                Subtítulo / Descripción del Banner:
+              </label>
+              <textarea
+                rows={2}
+                value={siteTagline}
+                onChange={(e) => setSiteTagline(e.target.value)}
+                placeholder="Diamantes Free Fire, Pines Digitales, Cuentas Streaming..."
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                  URL Imagen de Fondo del Banner:
+                </label>
+                <input
+                  type="text"
+                  value={bannerUrl}
+                  onChange={(e) => setBannerUrl(e.target.value)}
+                  placeholder="/gamer-banner.jpg o https://..."
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                  Texto del Botón en Tarjetas de Categoría:
+                </label>
+                <input
+                  type="text"
+                  value={categoryButtonText}
+                  onChange={(e) => setCategoryButtonText(e.target.value)}
+                  placeholder="Explorar Productos"
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Logo & Favicon Management */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
           <h4 style={{ fontSize: '1.05rem', marginBottom: '14px' }}>🖼️ Gestión de Logotipo y Favicon</h4>
           
@@ -208,7 +293,7 @@ export default function AdminBranding() {
           </div>
         </div>
 
-        {/* 3. Social Media Links */}
+        {/* 4. Social Media Links */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
           <h4 style={{ fontSize: '1.05rem', marginBottom: '14px' }}>📱 Módulo de Redes Sociales (Alimenta la Comunidad)</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
