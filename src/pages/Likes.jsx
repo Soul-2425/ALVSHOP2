@@ -677,42 +677,20 @@ export default function Likes() {
                     width: '68px',
                     height: '68px',
                     borderRadius: '16px',
-                    border: '3px solid var(--accent-cyan)',
-                    background: '#0d111a',
+                    border: '2px solid var(--accent-cyan)',
+                    background: 'linear-gradient(135deg, #1d4ed8 0%, #06b6d4 100%)',
                     overflow: 'hidden',
-                    boxShadow: '0 8px 20px rgba(0, 0, 0, 0.8)',
+                    boxShadow: '0 0 25px rgba(6, 182, 212, 0.4)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    fontSize: '1.8rem',
+                    fontWeight: '900',
+                    color: '#fff',
+                    letterSpacing: '-0.02em',
+                    flexShrink: 0
                   }}>
-                    {playerData.avatar_url ? (
-                      <img
-                        src={playerData.avatar_url}
-                        alt={playerData.nickname}
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          const fallback = e.target.parentElement.querySelector('.likes-badge-fallback');
-                          if (fallback) fallback.style.display = 'flex';
-                        }}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : null}
-                    <div
-                      className="likes-badge-fallback"
-                      style={{
-                        display: playerData.avatar_url ? 'none' : 'flex',
-                        width: '100%',
-                        height: '100%',
-                        background: 'linear-gradient(135deg, #1e3a8a 0%, #06b6d4 100%)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '1.4rem',
-                        fontWeight: '900',
-                        color: '#fff'
-                      }}
-                    >
-                      {(playerData.nickname || 'FF').replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || 'FF'}
-                    </div>
+                    FF
                   </div>
 
                   {/* Player Info */}

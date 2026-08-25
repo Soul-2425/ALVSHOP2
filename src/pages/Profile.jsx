@@ -1265,6 +1265,157 @@ export default function Profile() {
               )}
             </div>
 
+            {/* Cuentas Bancarias Oficiales - SIEMPRE VISIBLES */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(13, 17, 26, 0.95) 100%)',
+              border: '1px solid var(--border-cyan)',
+              borderRadius: 'var(--radius-md)',
+              padding: '16px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff' }}>
+                  {depositCurrency === 'GTQ' && '🇬🇹 Cuentas Bancarias en Guatemala (Quetzales):'}
+                  {depositCurrency === 'MXN' && '🇲🇽 Cuentas de Transferencia en México (SPEI):'}
+                  {depositCurrency === 'COP' && '🇨🇴 Cuentas en Colombia (Nequi / Bancolombia):'}
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.15)', padding: '3px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                  Tasa: 1 USDT = {depositCurrency === 'GTQ' ? `Q${Number(config?.usdt_gtq_rate || 7.80).toFixed(2)} GTQ` : depositCurrency === 'MXN' ? `$${Number(config?.usdt_mxn_rate || 19.50).toFixed(2)} MXN` : `$${Number(config?.usdt_cop_rate || 4100).toLocaleString('es-CO')} COP`}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {depositCurrency === 'GTQ' && (
+                  (config?.bank_accounts && config.bank_accounts.length > 0
+                    ? config.bank_accounts
+                    : [
+                        { bank: 'Banrural', account_number: '4313076359', type: 'Cuenta de Ahorro', name: 'Jonathan Alvares' },
+                        { bank: 'Banco Industrial', account_number: '0854921003', type: 'Cuenta Monetaria', name: 'Jonathan Alvares' }
+                      ]
+                  ).map((acc, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#fff', fontSize: '0.88rem' }}>
+                          🏦 {acc.bank} — <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{acc.type}</span>
+                        </div>
+                        <div style={{ fontSize: '0.95rem', color: 'var(--accent-cyan)', fontWeight: '900', letterSpacing: '0.04em', marginTop: '2px' }}>
+                          {acc.account_number}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Titular: <strong>{acc.name}</strong>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(acc.account_number);
+                          alert(`Número de cuenta ${acc.bank} copiado: ${acc.account_number}`);
+                        }}
+                        className="btn-glass"
+                        style={{ fontSize: '0.75rem', padding: '6px 12px', borderColor: 'var(--border-cyan)' }}
+                      >
+                        📋 Copiar No.
+                      </button>
+                    </div>
+                  ))
+                )}
+
+                {depositCurrency === 'MXN' && (
+                  (config?.mxn_accounts && config.mxn_accounts.length > 0
+                    ? config.mxn_accounts
+                    : [{ bank: 'BBVA / SPEI', account_number: '012180015487965412', type: 'CLABE Interbancaria', name: 'Jonathan Alvares' }]
+                  ).map((acc, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#fff', fontSize: '0.88rem' }}>
+                          🇲🇽 {acc.bank} — <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{acc.type}</span>
+                        </div>
+                        <div style={{ fontSize: '0.95rem', color: '#34d399', fontWeight: '900', letterSpacing: '0.04em', marginTop: '2px' }}>
+                          {acc.account_number}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Titular: <strong>{acc.name}</strong>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(acc.account_number);
+                          alert(`CLABE / Cuenta ${acc.bank} copiada: ${acc.account_number}`);
+                        }}
+                        className="btn-glass"
+                        style={{ fontSize: '0.75rem', padding: '6px 12px', borderColor: '#34d399' }}
+                      >
+                        📋 Copiar No.
+                      </button>
+                    </div>
+                  ))
+                )}
+
+                {depositCurrency === 'COP' && (
+                  (config?.cop_accounts && config.cop_accounts.length > 0
+                    ? config.cop_accounts
+                    : [{ bank: 'Bancolombia / Nequi', account_number: '3124567890', type: 'Nequi / Celular', name: 'Jonathan Alvares' }]
+                  ).map((acc, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#fff', fontSize: '0.88rem' }}>
+                          🇨🇴 {acc.bank} — <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{acc.type}</span>
+                        </div>
+                        <div style={{ fontSize: '0.95rem', color: '#f59e0b', fontWeight: '900', letterSpacing: '0.04em', marginTop: '2px' }}>
+                          {acc.account_number}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Titular: <strong>{acc.name}</strong>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(acc.account_number);
+                          alert(`Cuenta / Nequi ${acc.bank} copiada: ${acc.account_number}`);
+                        }}
+                        className="btn-glass"
+                        style={{ fontSize: '0.75rem', padding: '6px 12px', borderColor: '#f59e0b' }}
+                      >
+                        📋 Copiar No.
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             <form onSubmit={handleRequestDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
@@ -1298,51 +1449,21 @@ export default function Profile() {
 
               {depositAmount && depositCurrency !== 'Binance' && (
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  padding: '14px',
+                  background: 'rgba(6, 182, 212, 0.08)',
+                  border: '1px solid var(--border-cyan)',
+                  padding: '12px 16px',
                   borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.85rem',
+                  fontSize: '0.9rem',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px'
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Total a transferir:</span>
-                    <strong style={{ fontSize: '1.1rem', color: depositCurrency === 'MXN' ? '#34d399' : depositCurrency === 'COP' ? '#f59e0b' : '#fbbf24' }}>
-                      {depositCurrency === 'GTQ' && `Q${(Number(depositAmount) * Number(config?.usdt_gtq_rate || 7.80)).toFixed(2)} GTQ`}
-                      {depositCurrency === 'MXN' && `$${(Number(depositAmount) * Number(config?.usdt_mxn_rate || 19.50)).toFixed(2)} MXN`}
-                      {depositCurrency === 'COP' && `$${Math.round(Number(depositAmount) * Number(config?.usdt_cop_rate || 4100)).toLocaleString('es-CO')} COP`}
-                    </strong>
-                  </div>
-                  
-                  {/* Account details */}
-                  <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    <div style={{ fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Cuentas Disponibles:</div>
-                    
-                    {depositCurrency === 'GTQ' && (
-                      (config?.bank_accounts || [{ bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }]).map((acc, idx) => (
-                        <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
-                          🏦 <strong>{acc.bank}</strong> ({acc.type}): <span style={{ color: 'var(--accent-cyan)' }}>{acc.account_number}</span> — {acc.name}
-                        </div>
-                      ))
-                    )}
-
-                    {depositCurrency === 'MXN' && (
-                      (config?.mxn_accounts || [{ bank: 'BBVA / SPEI', account_number: '012180015487965412', type: 'CLABE', name: 'Jonathan Alvares' }]).map((acc, idx) => (
-                        <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
-                          🇲🇽 <strong>{acc.bank}</strong> ({acc.type}): <span style={{ color: '#34d399' }}>{acc.account_number}</span> — {acc.name}
-                        </div>
-                      ))
-                    )}
-
-                    {depositCurrency === 'COP' && (
-                      (config?.cop_accounts || [{ bank: 'Bancolombia / Nequi', account_number: '3124567890', type: 'Celular', name: 'Jonathan Alvares' }]).map((acc, idx) => (
-                        <div key={idx} style={{ marginBottom: '4px', background: 'rgba(0,0,0,0.3)', padding: '6px 10px', borderRadius: '4px' }}>
-                          🇨🇴 <strong>{acc.bank}</strong> ({acc.type}): <span style={{ color: '#f59e0b' }}>{acc.account_number}</span> — {acc.name}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: '700' }}>Total a transferir:</span>
+                  <strong style={{ fontSize: '1.2rem', color: depositCurrency === 'MXN' ? '#34d399' : depositCurrency === 'COP' ? '#f59e0b' : '#fbbf24' }}>
+                    {depositCurrency === 'GTQ' && `Q${(Number(depositAmount) * Number(config?.usdt_gtq_rate || 7.80)).toFixed(2)} GTQ`}
+                    {depositCurrency === 'MXN' && `$${(Number(depositAmount) * Number(config?.usdt_mxn_rate || 19.50)).toFixed(2)} MXN`}
+                    {depositCurrency === 'COP' && `$${Math.round(Number(depositAmount) * Number(config?.usdt_cop_rate || 4100)).toLocaleString('es-CO')} COP`}
+                  </strong>
                 </div>
               )}
 

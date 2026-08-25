@@ -683,47 +683,29 @@ export default function ProductDetail() {
                 boxShadow: '0 4px 20px rgba(52, 211, 153, 0.15)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  {playerAvatar ? (
-                    <img
-                      src={playerAvatar}
-                      alt={playerNickname}
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        const fallback = e.target.parentElement.querySelector('.player-badge-fallback');
-                        if (fallback) fallback.style.display = 'flex';
-                      }}
-                      style={{
-                        width: '44px',
-                        height: '44px',
-                        borderRadius: '10px',
-                        objectFit: 'cover',
-                        border: '1px solid #34d399',
-                        flexShrink: 0
-                      }}
-                    />
-                  ) : null}
                   <div
-                    className="player-badge-fallback"
                     style={{
-                      display: playerAvatar ? 'none' : 'flex',
                       width: '44px',
                       height: '44px',
                       borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #1e3a8a 0%, #06b6d4 100%)',
-                      border: '1px solid #34d399',
+                      background: 'linear-gradient(135deg, #1d4ed8 0%, #06b6d4 100%)',
+                      border: '1.5px solid var(--accent-cyan)',
+                      display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.1rem',
+                      fontSize: '1.25rem',
                       fontWeight: '900',
                       color: '#fff',
+                      letterSpacing: '-0.02em',
+                      boxShadow: '0 0 15px rgba(6, 182, 212, 0.35)',
                       flexShrink: 0
                     }}
                   >
-                    {(playerNickname || 'FF').replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || 'FF'}
+                    FF
                   </div>
                   <div>
                     <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      <span>✓ Cuenta Oficial Verificada</span>
+                      <span>✓ CUENTA OFICIAL VERIFICADA</span>
                     </div>
                     <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
                       {playerNickname}
