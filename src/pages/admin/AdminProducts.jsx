@@ -296,6 +296,8 @@ export default function AdminProducts() {
 
   const [showQuickSubcatForm, setShowQuickSubcatForm] = useState(false);
   const [quickSubcatName, setQuickSubcatName] = useState('');
+  const [quickSubcatImage, setQuickSubcatImage] = useState('');
+  const [uploadingQuickSubcatImg, setUploadingQuickSubcatImg] = useState(false);
   const [creatingQuickSubcat, setCreatingQuickSubcat] = useState(false);
 
   // Modal State for Full Categories & Subcategories Manager
@@ -578,7 +580,41 @@ export default function AdminProducts() {
     }
   };
 
-  // Quick Inline Subcategory Creation
+  // Direct Photo Upload for Selected Subcategory in Product Form
+  const handleUploadSelectedSubcatPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedSubcat) return;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `subcat_${selectedSubcat}_${Date.now()}.${fileExt}`;
+      const filePath = `subcategories/${fileName}`;
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const photoUrl = reader.result;
+        await supabase.from('subcategories').update({ image_url: photoUrl }).eq('id', selectedSubcat);
+        setSubcategories(prev => prev.map(s => s.id === selectedSubcat ? { ...s, image_url: photoUrl } : s));
+      };
+      reader.readAsDataURL(file);
+
+      try {
+        const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+        if (!upErr) {
+          const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+          if (data?.publicUrl) {
+            await supabase.from('subcategories').update({ image_url: data.publicUrl }).eq('id', selectedSubcat);
+            setSubcategories(prev => prev.map(s => s.id === selectedSubcat ? { ...s, image_url: data.publicUrl } : s));
+          }
+        }
+      } catch (stErr) {}
+
+      alert('¡Foto de la subcategoría actualizada con éxito!');
+    } catch (err) {
+      alert('Error al subir foto de la subcategoría: ' + err.message);
+    }
+  };
+
+  // Quick Inline Subcategory Creation with Photo
   const handleQuickCreateSubcategory = async (e) => {
     e.preventDefault();
     if (!selectedCat || !quickSubcatName.trim()) {
@@ -593,7 +629,8 @@ export default function AdminProducts() {
       const { data: newSub, error } = await supabase.from('subcategories').insert({
         category_id: selectedCat,
         name: quickSubcatName.trim(),
-        slug
+        slug,
+        image_url: quickSubcatImage.trim() || null
       }).select().single();
 
       if (error) throw error;
@@ -601,6 +638,7 @@ export default function AdminProducts() {
       setSubcategories(prev => [...prev, newSub]);
       setSelectedSubcat(newSub.id);
       setQuickSubcatName('');
+      setQuickSubcatImage('');
       setShowQuickSubcatForm(false);
       alert(`¡Subcategoría "${newSub.name}" creada y seleccionada!`);
     } catch (err) {
@@ -1711,10 +1749,86 @@ export default function AdminProducts() {
                   );
                 })()}
 
+                {/* Selected Subcategory Photo / Image Live Editor */}
+                {selectedSubcat && (() => {
+                  const currentSubcatObj = subcategories.find(s => s.id === selectedSubcat);
+                  if (!currentSubcatObj) return null;
+                  return (
+                    <div style={{
+                      marginTop: '8px',
+                      marginBottom: '10px',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-glass)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      flexWrap: 'wrap'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '6px',
+                          background: '#0d111a',
+                          border: '1px solid #34d399',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          fontSize: '1.2rem',
+                          flexShrink: 0
+                        }}>
+                          {currentSubcatObj.image_url ? (
+                            <img src={currentSubcatObj.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <span>📁</span>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#fff' }}>
+                            Subcategoría: {currentSubcatObj.name}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: currentSubcatObj.image_url ? '#34d399' : '#fbbf24' }}>
+                            {currentSubcatObj.image_url ? '✅ Foto de Subcategoría Asignada' : '⚠️ Sin Foto de Subcategoría'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <label style={{
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        background: 'rgba(52, 211, 153, 0.15)',
+                        border: '1px solid rgba(52, 211, 153, 0.4)',
+                        color: '#34d399',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        📸 Subir / Cambiar Foto de Subcategoría
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={handleUploadSelectedSubcatPhoto}
+                        />
+                      </label>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => setShowQuickCatForm(!showQuickCatForm)}
+                    onClick={() => {
+                      setShowQuickCatForm(!showQuickCatForm);
+                      setShowQuickSubcatForm(false);
+                    }}
                     style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px', fontWeight: '700' }}
                   >
                     {showQuickCatForm ? '✕ Cancelar' : '➕ Crear Nueva Categoría con Foto'}
@@ -1722,10 +1836,13 @@ export default function AdminProducts() {
                   <span style={{ color: 'var(--border-glass)' }}>|</span>
                   <button
                     type="button"
-                    onClick={() => setShowQuickSubcatForm(!showQuickSubcatForm)}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px', fontWeight: '700' }}
+                    onClick={() => {
+                      setShowQuickSubcatForm(!showQuickSubcatForm);
+                      setShowQuickCatForm(false);
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#34d399', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px', fontWeight: '700' }}
                   >
-                    {showQuickSubcatForm ? '✕ Cancelar' : '➕ Crear Nueva Subcategoría'}
+                    {showQuickSubcatForm ? '✕ Cancelar' : '➕ Crear Nueva Subcategoría con Foto'}
                   </button>
                 </div>
 
@@ -1798,19 +1915,62 @@ export default function AdminProducts() {
                   </div>
                 )}
 
-                {/* Quick Create Subcategory Form */}
+                {/* Quick Create Subcategory Form with Photo Upload */}
                 {showQuickSubcatForm && (
-                  <div style={{ marginTop: '10px', padding: '10px', background: '#0d111a', borderRadius: '6px', border: '1px solid var(--border-cyan)', display: 'flex', gap: '8px' }}>
+                  <div style={{ marginTop: '10px', padding: '12px', background: '#0d111a', borderRadius: '6px', border: '1px solid #34d399', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#34d399', fontWeight: '800' }}>
+                      ➕ Nueva Subcategoría (Paquete) para {categories.find(c => c.id === selectedCat)?.name || 'Categoría'}:
+                    </div>
                     <input
                       type="text"
-                      placeholder="Nombre Subcategoría (ej. 100+10 Diamantes)"
+                      placeholder="Nombre Subcategoría (ej. 2180+218 Diamantes)"
                       value={quickSubcatName}
                       onChange={(e) => setQuickSubcatName(e.target.value)}
-                      style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                      style={{ padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
                     />
-                    <button type="button" onClick={handleQuickCreateSubcategory} disabled={creatingQuickSubcat} className="btn-cyan" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
-                      {creatingQuickSubcat ? '...' : 'Guardar'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="URL de Foto de Subcategoría (opcional)"
+                        value={quickSubcatImage}
+                        onChange={(e) => setQuickSubcatImage(e.target.value)}
+                        style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', background: '#131a26', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                      />
+                      <label style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        background: 'rgba(52, 211, 153, 0.15)',
+                        border: '1px solid rgba(52, 211, 153, 0.4)',
+                        color: '#34d399',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        📁 {uploadingQuickSubcatImg ? '...' : 'Subir'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setUploadingQuickSubcatImg(true);
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setQuickSubcatImage(reader.result);
+                              setUploadingQuickSubcatImg(false);
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                      <button type="button" onClick={handleQuickCreateSubcategory} disabled={creatingQuickSubcat || uploadingQuickSubcatImg} className="btn-cyan" style={{ padding: '6px 14px', fontSize: '0.75rem', background: '#059669', color: '#fff' }}>
+                        {creatingQuickSubcat ? 'Guardando...' : '💾 Guardar'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

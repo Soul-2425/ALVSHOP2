@@ -15,6 +15,16 @@ export default function AdminOrders() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // Date Range Delete Modal State
+  const [showDateRangeDeleteModal, setShowDateRangeDeleteModal] = useState(false);
+  const [rangeDeleteStart, setRangeDeleteStart] = useState('');
+  const [rangeDeleteEnd, setRangeDeleteEnd] = useState('');
+  const [deletingRangeOrders, setDeletingRangeOrders] = useState(false);
+
   // Order Details Modal
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -71,6 +81,11 @@ export default function AdminOrders() {
     loadOrders();
   }, []);
 
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, searchQuery, dateFilterPreset, startDate, endDate]);
+
   // Filter Logic
   const filteredOrders = orders.filter((ord) => {
     // 1. Status Filter
@@ -115,6 +130,10 @@ export default function AdminOrders() {
   const totalSalesUsdt = filteredOrders.reduce((acc, ord) => acc + (Number(ord.total_usdt) || 0), 0);
   const completedOrdersCount = filteredOrders.filter(o => o.status === 'Completed').length;
   const pendingOrdersCount = filteredOrders.filter(o => o.status === 'Verification' || o.status === 'Pending').length;
+
+  // Pagination calculation (10 orders per page)
+  const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE) || 1;
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const statusConfig = {
     Completed: { label: 'Completado', bg: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: 'rgba(52, 211, 153, 0.4)' },
@@ -391,6 +410,70 @@ export default function AdminOrders() {
     }
   };
 
+  // Handle Delete Orders by Custom Date Range
+  const handleDeleteOrdersByRange = async (e) => {
+    e?.preventDefault();
+    if (!rangeDeleteStart || !rangeDeleteEnd) {
+      alert('⚠️ Por favor selecciona la Fecha de Inicio y la Fecha de Fin.');
+      return;
+    }
+
+    const startObj = new Date(rangeDeleteStart);
+    startObj.setHours(0, 0, 0, 0);
+
+    const endObj = new Date(rangeDeleteEnd);
+    endObj.setHours(23, 59, 59, 999);
+
+    if (startObj > endObj) {
+      alert('⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.');
+      return;
+    }
+
+    // Find matching orders
+    const targets = orders.filter(o => {
+      const oDate = new Date(o.created_at);
+      return oDate >= startObj && oDate <= endObj;
+    });
+
+    if (targets.length === 0) {
+      alert(`No se encontraron pedidos registrados entre el ${rangeDeleteStart} y el ${rangeDeleteEnd}.`);
+      return;
+    }
+
+    const confirmMsg = `⚠️ ATENCIÓN: Se eliminarán permanentemente ${targets.length} pedidos creados entre el ${rangeDeleteStart} y el ${rangeDeleteEnd}.\n\n¿Estás seguro de que deseas eliminarlos? Esta acción no se puede deshacer.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeletingRangeOrders(true);
+    try {
+      const targetIds = targets.map(o => o.id);
+
+      // 1. Delete order items
+      try {
+        await supabase.from('order_items').delete().in('order_id', targetIds);
+      } catch (e) {}
+
+      // 2. Delete transactions
+      try {
+        await supabase.from('transactions').delete().in('order_id', targetIds);
+      } catch (e) {}
+
+      // 3. Delete orders
+      const { error: delErr } = await supabase.from('orders').delete().in('id', targetIds);
+      if (delErr) throw delErr;
+
+      setOrders(prev => prev.filter(o => !targetIds.includes(o.id)));
+      alert(`✅ ¡Se eliminaron con éxito ${targetIds.length} pedidos del rango seleccionado!`);
+      setShowDateRangeDeleteModal(false);
+      setRangeDeleteStart('');
+      setRangeDeleteEnd('');
+      await loadOrders();
+    } catch (err) {
+      alert('Error eliminando pedidos por rango: ' + err.message);
+    } finally {
+      setDeletingRangeOrders(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
@@ -401,17 +484,16 @@ export default function AdminOrders() {
             <span>📦</span> Historial & Gestión de Pedidos
           </h3>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Filtra por fecha, cambia estados, descuenta stock y limpia registros antiguos
+            Filtra por fecha, cambia estados, descuenta stock y depura pedidos por fecha
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
-            onClick={handleCleanupOldOrders}
-            disabled={cleaningOld}
+            onClick={() => setShowDateRangeDeleteModal(true)}
             style={{
-              background: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
               color: '#f87171',
               padding: '8px 14px',
               borderRadius: 'var(--radius-sm)',
@@ -423,7 +505,27 @@ export default function AdminOrders() {
               gap: '6px'
             }}
           >
-            <span>🧹</span> {cleaningOld ? 'Depurando...' : 'Limpiar Pedidos (> 40 días)'}
+            <span>🗑️</span> Borrar Pedidos por Fecha (X a X)
+          </button>
+
+          <button
+            onClick={handleCleanupOldOrders}
+            disabled={cleaningOld}
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border-glass)',
+              color: 'var(--text-muted)',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.82rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>🧹</span> {cleaningOld ? 'Depurando...' : 'Limpiar (> 40 días)'}
           </button>
 
           <button onClick={loadOrders} className="btn-glass" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -565,9 +667,9 @@ export default function AdminOrders() {
 
       </div>
 
-      {/* Orders Table */}
+      {/* Orders Table with Horizontal Scroll for PC & Mobile */}
       <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <table style={{ width: '100%', minWidth: '1050px', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
               <th style={{ padding: '10px 8px' }}># ID Orden</th>
@@ -597,7 +699,7 @@ export default function AdminOrders() {
                 </td>
               </tr>
             ) : (
-              filteredOrders.map((ord) => {
+              paginatedOrders.map((ord) => {
                 const badge = statusConfig[ord.status] || statusConfig.Pending;
                 const formattedDate = new Date(ord.created_at).toLocaleString('es-GT', {
                   day: '2-digit',
@@ -763,7 +865,198 @@ export default function AdminOrders() {
             )}
           </tbody>
         </table>
+
+        {/* 10 Orders Per Page Pagination Controls */}
+        {filteredOrders.length > 0 && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: '20px',
+            paddingTop: '16px',
+            borderTop: '1px solid var(--border-glass)',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Mostrando <strong style={{ color: '#fff' }}>{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filteredOrders.length)}</strong> - <strong style={{ color: '#fff' }}>{Math.min(currentPage * ITEMS_PER_PAGE, filteredOrders.length)}</strong> de <strong style={{ color: 'var(--accent-cyan)' }}>{filteredOrders.length}</strong> pedidos
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="btn-glass"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.75rem',
+                  opacity: currentPage === 1 ? 0.4 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                ◀ Anterior
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2)
+                .map((page, idx, arr) => {
+                  const prev = arr[idx - 1];
+                  return (
+                    <React.Fragment key={page}>
+                      {prev && page - prev > 1 && (
+                        <span style={{ color: 'var(--text-muted)', padding: '0 4px', fontSize: '0.8rem' }}>...</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage(page)}
+                        style={{
+                          minWidth: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: page === currentPage ? '1px solid var(--border-cyan)' : '1px solid var(--border-glass)',
+                          background: page === currentPage ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.05)',
+                          color: page === currentPage ? '#000' : '#fff',
+                          fontWeight: 'bold',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {page}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="btn-glass"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.75rem',
+                  opacity: currentPage === totalPages ? 0.4 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Siguiente ▶
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Date Range Delete Modal */}
+      {showDateRangeDeleteModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div className="glass-panel animate-fade" style={{
+            width: '100%',
+            maxWidth: '500px',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.9)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', margin: 0, color: '#f87171', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🗑️</span> Borrar Pedidos por Rango de Fechas
+              </h3>
+              <button
+                onClick={() => setShowDateRangeDeleteModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: '1.4' }}>
+              Selecciona el rango de fechas desde la cual deseas eliminar los pedidos. Todos los pedidos registrados entre la <strong>Fecha Desde (00:00)</strong> y la <strong>Fecha Hasta (23:59)</strong> serán eliminados permanentemente de la base de datos.
+            </p>
+
+            <form onSubmit={handleDeleteOrdersByRange} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                    📅 Fecha Desde (X):
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={rangeDeleteStart}
+                    onChange={(e) => setRangeDeleteStart(e.target.value)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                    📅 Fecha Hasta (X):
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={rangeDeleteEnd}
+                    onChange={(e) => setRangeDeleteEnd(e.target.value)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '6px', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* Range Match Preview */}
+              {rangeDeleteStart && rangeDeleteEnd && (() => {
+                const s = new Date(rangeDeleteStart); s.setHours(0,0,0,0);
+                const e = new Date(rangeDeleteEnd); e.setHours(23,59,59,999);
+                const matchCount = orders.filter(o => {
+                  const d = new Date(o.created_at);
+                  return d >= s && d <= e;
+                }).length;
+                return (
+                  <div style={{ padding: '10px 12px', borderRadius: '6px', background: matchCount > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', fontSize: '0.8rem', color: matchCount > 0 ? '#f87171' : 'var(--text-muted)' }}>
+                    📊 Se encontraron <strong style={{ color: '#fff' }}>{matchCount}</strong> pedidos en este rango de fechas listos para eliminar.
+                  </div>
+                );
+              })()}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowDateRangeDeleteModal(false)}
+                  className="btn-glass"
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={deletingRangeOrders}
+                  style={{
+                    background: '#dc2626',
+                    border: 'none',
+                    color: '#fff',
+                    padding: '8px 18px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.85rem',
+                    fontWeight: '700',
+                    cursor: deletingRangeOrders ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {deletingRangeOrders ? 'Eliminando...' : '⚠️ Confirmar y Eliminar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Manage Order Modal */}
       {selectedOrder && (
