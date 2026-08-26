@@ -90,6 +90,9 @@ export function AppProvider({ children }) {
   // Dynamic Configuration (Branding, Colors, Bank Accounts, Socials, Payment Methods)
   const [config, setConfig] = useState({
     site_title: 'ALVSHOP - Recargas & Cuentas Digitales',
+    site_tagline: 'Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.',
+    banner_url: '/gamer-banner.jpg',
+    category_button_text: 'Explorar Productos',
     logo_url: '',
     favicon_url: '',
     background_color: '#0a0d14',
@@ -183,6 +186,17 @@ export function AppProvider({ children }) {
   // Load Config & Apply Dynamic CSS Variables
   const loadConfig = async () => {
     try {
+      // 1. Initial cached config
+      try {
+        const cached = JSON.parse(localStorage.getItem('alv_system_config') || '{}');
+        if (cached && Object.keys(cached).length > 0) {
+          setConfig(prev => ({ ...prev, ...cached }));
+          if (cached.usdt_gtq_rate) setExchangeRate(Number(cached.usdt_gtq_rate));
+          if (cached.usdt_mxn_rate) setRateMxn(Number(cached.usdt_mxn_rate));
+          if (cached.usdt_cop_rate) setRateCop(Number(cached.usdt_cop_rate));
+        }
+      } catch (e) {}
+
       const { data, error } = await supabase
         .from('config')
         .select('*')
@@ -216,9 +230,17 @@ export function AppProvider({ children }) {
           payment_links: true
         };
 
-        setConfig(prev => ({
-          ...prev,
+        const activeBannerUrl = data.banner_url || data.social_links?.banner_url || '/gamer-banner.jpg';
+        const activeCategoryButtonText = data.category_button_text || data.social_links?.category_button_text || 'Explorar Productos';
+        const activeSiteTitle = data.site_title || data.social_links?.site_title || 'ALVSHOP - Recargas & Cuentas Digitales';
+        const activeSiteTagline = data.site_tagline || data.social_links?.site_tagline || 'Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.';
+
+        const fullConfig = {
           ...data,
+          site_title: activeSiteTitle,
+          site_tagline: activeSiteTagline,
+          banner_url: activeBannerUrl,
+          category_button_text: activeCategoryButtonText,
           usdt_gtq_rate: rateGtq,
           usdt_mxn_rate: rateMxnVal,
           usdt_cop_rate: rateCopVal,
@@ -230,10 +252,19 @@ export function AppProvider({ children }) {
           binance_qr_url: binanceQrUrl,
           binance_deeplink_url: binanceDeeplink,
           binance_usdt_address: binanceUsdtAddress
+        };
+
+        setConfig(prev => ({
+          ...prev,
+          ...fullConfig
         }));
         setExchangeRate(rateGtq);
         setRateMxn(rateMxnVal);
         setRateCop(rateCopVal);
+
+        try {
+          localStorage.setItem('alv_system_config', JSON.stringify(fullConfig));
+        } catch (e) {}
 
         // Inject Dynamic Colors into CSS Root
         const root = document.documentElement;

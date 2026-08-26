@@ -451,12 +451,17 @@ export default function ProductDetail() {
         });
       }
 
-      // Save order to user local order history cache for instant viewing in Profile
+      // Save order to user local order history cache and global admin sync pool
       try {
         const cacheKey = `alv_user_orders_${user.id}`;
         const prevCached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
         const orderToCache = {
           ...orderData,
+          profiles: {
+            id: user.id,
+            full_name: profile?.full_name || user.email,
+            email: user.email
+          },
           order_items: [{
             id: `item-${Date.now()}`,
             quantity: 1,
@@ -465,7 +470,10 @@ export default function ProductDetail() {
             products: { id: product.id, name: product.name, image_url: product.image_url }
           }]
         };
-        localStorage.setItem(cacheKey, JSON.stringify([orderToCache, ...prevCached]));
+        localStorage.setItem(cacheKey, JSON.stringify([orderToCache, ...prevCached.filter(o => o.id !== orderToCache.id)]));
+
+        const prevAll = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        localStorage.setItem('alv_all_orders', JSON.stringify([orderToCache, ...prevAll.filter(o => o.id !== orderToCache.id)]));
       } catch (e) {}
 
       // Notify Admins with PUSH ALERT & SOUND
@@ -1110,8 +1118,31 @@ export default function ProductDetail() {
                     </div>
 
                     {/* Stylish Receipt Upload */}
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.78rem', marginBottom: '6px', color: '#fff', fontWeight: '700' }}>
+                    <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {/* WhatsApp Support Button */}
+                      <a
+                        href={`https://wa.me/${(config?.social_links?.whatsapp || '50243130763').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola soporte de ALVSHOP, necesito ayuda con mi pago en Binance Pay para comprar ${product.name}.`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          border: '1px solid #25D366',
+                          color: '#25D366',
+                          fontWeight: '800',
+                          fontSize: '0.78rem',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span>💬</span> ¿Dudas con Binance Pay? Contactar por WhatsApp
+                      </a>
+
+                      <label style={{ display: 'block', fontSize: '0.78rem', color: '#fff', fontWeight: '700' }}>
                         📎 Adjuntar Captura / Comprobante de Binance Pay:
                       </label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1168,7 +1199,30 @@ export default function ProductDetail() {
                       Monto a transferir: Q{(finalPriceUsdt * (config?.usdt_gtq_rate || exchangeRate || 7.80)).toFixed(2)} GTQ
                     </div>
 
-                    <div style={{ marginTop: '14px' }}>
+                    <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {/* WhatsApp Support Button */}
+                      <a
+                        href={`https://wa.me/${(config?.social_links?.whatsapp || '50243130763').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola soporte de ALVSHOP, necesito ayuda con mi transferencia en Quetzales (GTQ) para comprar ${product.name}.`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          border: '1px solid #25D366',
+                          color: '#25D366',
+                          fontWeight: '800',
+                          fontSize: '0.78rem',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span>💬</span> ¿Dudas con la transferencia? Contactar por WhatsApp
+                      </a>
+
                       <label style={{ display: 'block', fontSize: '0.78rem', marginBottom: '6px', color: '#fff', fontWeight: '700' }}>
                         📎 Adjuntar Foto / Screenshot del Comprobante:
                       </label>
@@ -1226,7 +1280,30 @@ export default function ProductDetail() {
                       Monto a transferir: ${(finalPriceUsdt * (config?.usdt_mxn_rate || rateMxn || 19.50)).toFixed(2)} MXN
                     </div>
 
-                    <div style={{ marginTop: '14px' }}>
+                    <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {/* WhatsApp Support Button */}
+                      <a
+                        href={`https://wa.me/${(config?.social_links?.whatsapp || '50243130763').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola soporte de ALVSHOP, necesito ayuda con mi transferencia SPEI (México) para comprar ${product.name}.`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          border: '1px solid #25D366',
+                          color: '#25D366',
+                          fontWeight: '800',
+                          fontSize: '0.78rem',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span>💬</span> ¿Dudas con tu pago SPEI? Contactar por WhatsApp
+                      </a>
+
                       <label style={{ display: 'block', fontSize: '0.78rem', marginBottom: '6px', color: '#fff', fontWeight: '700' }}>
                         📎 Adjuntar Captura del Comprobante SPEI:
                       </label>
@@ -1284,7 +1361,30 @@ export default function ProductDetail() {
                       Monto a transferir: ${Math.round(finalPriceUsdt * (config?.usdt_cop_rate || rateCop || 4100)).toLocaleString('es-CO')} COP
                     </div>
 
-                    <div style={{ marginTop: '14px' }}>
+                    <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {/* WhatsApp Support Button */}
+                      <a
+                        href={`https://wa.me/${(config?.social_links?.whatsapp || '50243130763').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola soporte de ALVSHOP, necesito ayuda con mi transferencia Nequi / Bancolombia para comprar ${product.name}.`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          border: '1px solid #25D366',
+                          color: '#25D366',
+                          fontWeight: '800',
+                          fontSize: '0.78rem',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span>💬</span> ¿Dudas con Nequi / Bancolombia? Contactar por WhatsApp
+                      </a>
+
                       <label style={{ display: 'block', fontSize: '0.78rem', marginBottom: '6px', color: '#fff', fontWeight: '700' }}>
                         📎 Adjuntar Captura del Comprobante Nequi / Bancolombia:
                       </label>

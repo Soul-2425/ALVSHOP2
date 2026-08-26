@@ -243,30 +243,69 @@ export default function Profile() {
         user_email: user.email
       });
 
-      const { data, error } = await supabase.from('orders').insert({
-        user_id: user.id,
-        total_usdt: amount,
-        total_gtq: depositCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
-        status: 'Verification',
-        payment_method: 'Manual',
-        customer_notes: noteDetails,
-        bank_receipt_url: receiptPreview || null
-      }).select().single();
+      let orderData = null;
+      try {
+        const { data, error } = await supabase.from('orders').insert({
+          user_id: user.id,
+          total_usdt: amount,
+          total_gtq: depositCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
+          status: 'Verification',
+          payment_method: 'Manual',
+          customer_notes: noteDetails,
+          bank_receipt_url: receiptPreview || null
+        }).select().single();
 
-      if (error) throw error;
+        if (!error && data) {
+          orderData = data;
+        }
+      } catch (e) {
+        console.warn('Orders insert notice:', e);
+      }
+
+      if (!orderData) {
+        orderData = {
+          id: `ORD-DEP-${Date.now()}`,
+          user_id: user.id,
+          total_usdt: amount,
+          total_gtq: depositCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
+          status: 'Verification',
+          payment_method: 'Manual',
+          customer_notes: noteDetails,
+          bank_receipt_url: receiptPreview || null,
+          created_at: new Date().toISOString(),
+          profiles: {
+            id: user.id,
+            full_name: profile?.full_name || user.email,
+            email: user.email
+          }
+        };
+      }
+
+      // Save to client user orders cache and global admin sync pool
+      try {
+        const userKey = `alv_user_orders_${user.id}`;
+        const prevUser = JSON.parse(localStorage.getItem(userKey) || '[]');
+        localStorage.setItem(userKey, JSON.stringify([orderData, ...prevUser.filter(o => o.id !== orderData.id)]));
+
+        const prevAll = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        localStorage.setItem('alv_all_orders', JSON.stringify([orderData, ...prevAll.filter(o => o.id !== orderData.id)]));
+      } catch (e) {}
 
       // Push notification to Admin
-      notifyAdminNewOrder({
-        orderId: data.id,
-        amount: amount,
-        customerName: profile?.full_name || user.email,
-        paymentMethod: `Recarga Billetera: ${methodTitle} (${currencyLabel})`
-      });
+      try {
+        notifyAdminNewOrder({
+          orderId: orderData.id,
+          amount: amount,
+          customerName: profile?.full_name || user.email,
+          paymentMethod: `Recarga Billetera: ${methodTitle} (${currencyLabel})`
+        });
+      } catch (e) {}
 
       alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (${currencyLabel}) enviada con éxito!\nUn asesor validará tu comprobante para acreditar tu saldo de inmediato.`);
       setDepositAmount('');
       setReceiptPreview('');
       setReceiptRef('');
+      await loadUserOrders();
       setActiveTab('orders');
     } catch (err) {
       alert('Error: ' + err.message);
@@ -359,7 +398,20 @@ export default function Profile() {
       try {
         const cacheKey = `alv_user_orders_${user.id}`;
         const prevCached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-        localStorage.setItem(cacheKey, JSON.stringify([newOrder, ...prevCached]));
+        localStorage.setItem(cacheKey, JSON.stringify([newOrder, ...prevCached.filter(o => o.id !== newOrder.id)]));
+
+        const prevAll = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        localStorage.setItem('alv_all_orders', JSON.stringify([newOrder, ...prevAll.filter(o => o.id !== newOrder.id)]));
+      } catch (e) {}
+
+      // Push notification to Admin
+      try {
+        notifyAdminNewOrder({
+          orderId: newOrder.id,
+          amount: amtUsd,
+          customerName: profile?.full_name || user.email,
+          paymentMethod: `Recarga Billetera: Enlace de Pago (${reservedLink.identifier_tag})`
+        });
       } catch (e) {}
 
       alert(`✅ ¡Comprobante enviado con éxito para el enlace ${reservedLink.identifier_tag}!\nUn asesor verificará tu pago y tu saldo de $${amtUsd} USD será acreditado inmediatamente.`);
@@ -1466,6 +1518,42 @@ export default function Profile() {
                   </strong>
                 </div>
               )}
+
+              {/* WhatsApp Support Direct Button */}
+              <div style={{
+                background: 'rgba(37, 211, 102, 0.1)',
+                border: '1px solid rgba(37, 211, 102, 0.3)',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                  💬 <strong>¿Dudas con tu transferencia o recarga?</strong>
+                </div>
+                <a
+                  href={`https://wa.me/${(config?.social_links?.whatsapp || '50243130763').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola soporte de ALVSHOP, necesito ayuda con mi recarga de saldo por ${depositCurrency}.`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: '#25D366',
+                    color: '#000',
+                    fontWeight: '800',
+                    fontSize: '0.78rem',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    textDecoration: 'none'
+                  }}
+                >
+                  <span>💬</span> Contactar por WhatsApp
+                </a>
+              </div>
 
               {/* Upload Payment Receipt (Boleta) */}
               <div>

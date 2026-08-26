@@ -374,7 +374,7 @@ export default function Home() {
         marginBottom: '28px',
         backgroundImage: `
           linear-gradient(90deg, rgba(10, 13, 20, 0.95) 0%, rgba(10, 13, 20, 0.75) 50%, rgba(10, 13, 20, 0.35) 100%),
-          url('${config?.branding?.banner_url || '/gamer-banner.jpg'}')
+          url('${config?.banner_url || config?.social_links?.banner_url || config?.branding?.banner_url || '/gamer-banner.jpg'}')
         `,
         backgroundSize: 'cover',
         backgroundPosition: 'center right',
@@ -461,9 +461,9 @@ export default function Home() {
               ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80'
               : 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=600&q=80';
 
-            const buttonLabel = isLikes
+            const buttonLabel = cat.button_text || (isLikes
               ? 'Ver Likes FF'
-              : (config?.category_button_text || 'Explorar Productos');
+              : (config?.category_button_text || config?.social_links?.category_button_text || 'Explorar Productos'));
 
             return (
               <div

@@ -3,8 +3,10 @@ import { supabase } from '../../supabaseClient';
 import { processGameRecharge } from '../../../notificaciones y apis/apis/index';
 import { notifyOrderCompleted } from '../../../notificaciones y apis/notificaciones/pushService';
 import { burnPaymentLink, releasePaymentLink } from '../../services/paymentLinksService';
+import { useApp } from '../../context/AppContext';
 
 export default function AdminOrders() {
+  const { soundEffects, addNotification } = useApp();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,45 +35,102 @@ export default function AdminOrders() {
   const [credentialsInput, setCredentialsInput] = useState('');
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
-  // Load Orders from Supabase
+  // Load Orders from Multi-layer Synchronizer (Supabase + API + Storage)
   const loadOrders = async () => {
     try {
-      const fetchPromise = Promise.all([
-        supabase.from('orders').select('*').order('created_at', { ascending: false }),
-        supabase.from('profiles').select('id, full_name, email, phone, role'),
-        supabase.from('order_items').select('*'),
-        supabase.from('products').select('id, name, image_url, subcategory_id')
-      ]);
+      // 1. Fetch Supabase Database
+      let supabaseOrders = [];
+      let profMap = new Map();
+      let prodMap = new Map();
+      let itemsByOrder = new Map();
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), 5000)
-      );
+      try {
+        const [ordRes, profRes, itemsRes, prodsRes] = await Promise.allSettled([
+          supabase.from('orders').select('*').order('created_at', { ascending: false }),
+          supabase.from('profiles').select('id, full_name, email, phone, role'),
+          supabase.from('order_items').select('*'),
+          supabase.from('products').select('id, name, image_url, subcategory_id')
+        ]);
 
-      const [ordRes, profRes, itemsRes, prodsRes] = await Promise.race([fetchPromise, timeoutPromise]);
+        if (profRes.status === 'fulfilled' && profRes.value.data) {
+          profMap = new Map(profRes.value.data.map(p => [p.id, p]));
+        }
+        if (prodsRes.status === 'fulfilled' && prodsRes.value.data) {
+          prodMap = new Map(prodsRes.value.data.map(p => [p.id, p]));
+        }
+        if (itemsRes.status === 'fulfilled' && itemsRes.value.data) {
+          const items = itemsRes.value.data.map(i => ({
+            ...i,
+            products: prodMap.get(i.product_id)
+          }));
+          items.forEach(i => {
+            if (!itemsByOrder.has(i.order_id)) itemsByOrder.set(i.order_id, []);
+            itemsByOrder.get(i.order_id).push(i);
+          });
+        }
+        if (ordRes.status === 'fulfilled' && ordRes.value.data) {
+          supabaseOrders = ordRes.value.data.map(o => ({
+            ...o,
+            profiles: profMap.get(o.user_id) || o.profiles,
+            order_items: itemsByOrder.get(o.id) || o.order_items || []
+          }));
+        }
+      } catch (sbErr) {
+        console.warn('Supabase fetch notice:', sbErr);
+      }
 
-      const profMap = new Map((profRes?.data || []).map(p => [p.id, p]));
-      const prodMap = new Map((prodsRes?.data || []).map(p => [p.id, p]));
+      // 2. Fetch Backend API Orders backup (if server is active)
+      let backendOrders = [];
+      try {
+        const apiRes = await fetch('/api/v1/orders');
+        if (apiRes.ok) {
+          const apiJson = await apiRes.json();
+          if (Array.isArray(apiJson)) backendOrders = apiJson;
+        }
+      } catch (e) {}
 
-      const items = (itemsRes?.data || []).map(i => ({
-        ...i,
-        products: prodMap.get(i.product_id)
-      }));
+      // 3. Scan Local Storage for any recent client-side orders
+      let localOrders = [];
+      try {
+        const allStored = localStorage.getItem('alv_all_orders');
+        if (allStored) localOrders = [...localOrders, ...JSON.parse(allStored)];
 
-      const itemsByOrder = new Map();
-      items.forEach(i => {
-        if (!itemsByOrder.has(i.order_id)) itemsByOrder.set(i.order_id, []);
-        itemsByOrder.get(i.order_id).push(i);
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('alv_user_orders_')) {
+            try {
+              const uOrders = JSON.parse(localStorage.getItem(key) || '[]');
+              if (Array.isArray(uOrders)) localOrders = [...localOrders, ...uOrders];
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+
+      // 4. Merge, De-duplicate by ID, and sort by created_at DESC
+      const mergedMap = new Map();
+
+      // Put local orders first
+      localOrders.forEach(o => {
+        if (o?.id) mergedMap.set(o.id, o);
       });
 
-      const fullOrders = (ordRes?.data || []).map(o => ({
-        ...o,
-        profiles: profMap.get(o.user_id) || o.profiles,
-        order_items: itemsByOrder.get(o.id) || o.order_items || []
-      }));
+      // Put backend orders
+      backendOrders.forEach(o => {
+        if (o?.id) mergedMap.set(o.id, { ...(mergedMap.get(o.id) || {}), ...o });
+      });
 
-      setOrders(fullOrders);
+      // Overlay authoritative Supabase orders
+      supabaseOrders.forEach(o => {
+        if (o?.id) mergedMap.set(o.id, { ...(mergedMap.get(o.id) || {}), ...o });
+      });
+
+      const finalOrders = Array.from(mergedMap.values()).sort((a, b) => {
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      });
+
+      setOrders(finalOrders);
     } catch (err) {
-      console.warn('Error loading orders (timeout/offline):', err);
+      console.warn('Error synchronizing orders:', err);
     } finally {
       setLoading(false);
     }
@@ -79,6 +138,44 @@ export default function AdminOrders() {
 
   useEffect(() => {
     loadOrders();
+
+    // Listen for storage events (e.g. order placed in another tab/window)
+    const handleStorageChange = (e) => {
+      if (e.key === 'alv_all_orders' || (e.key && e.key.startsWith('alv_user_orders_'))) {
+        loadOrders();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // Supabase Realtime Channel on 'orders' table
+    let channel = null;
+    try {
+      channel = supabase
+        .channel('admin-orders-live-sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          (payload) => {
+            if (payload.eventType === 'INSERT') {
+              try { soundEffects?.playNewOrderAdminSound?.(); } catch (e) {}
+              addNotification?.({
+                type: 'admin_new_order',
+                title: '📦 ¡Nuevo Pedido Recibido!',
+                body: `Se ha registrado el pedido #${payload.new?.id?.slice(0, 8)} por $${Number(payload.new?.total_usdt || 0).toFixed(2)} USDT.`
+              });
+            }
+            loadOrders();
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('Realtime subscription error:', err);
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   // Reset page when filters change

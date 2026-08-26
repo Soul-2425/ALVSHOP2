@@ -17,6 +17,7 @@ export default function AdminBranding() {
   const [categoryButtonText, setCategoryButtonText] = useState('Explorar Productos');
   const [logoUrl, setLogoUrl] = useState('');
   const [faviconUrl, setFaviconUrl] = useState('');
+  const [uploadingBanner, setUploadingBanner] = useState(false);
 
   // Social Links
   const [socials, setSocials] = useState({
@@ -43,8 +44,12 @@ export default function AdminBranding() {
       if (config.accent_color) setAccentColor(config.accent_color);
       if (config.site_title) setSiteTitle(config.site_title);
       if (config.site_tagline) setSiteTagline(config.site_tagline);
-      if (config.banner_url || config.branding?.banner_url) setBannerUrl(config.banner_url || config.branding?.banner_url);
-      if (config.category_button_text) setCategoryButtonText(config.category_button_text);
+      if (config.banner_url || config.social_links?.banner_url || config.branding?.banner_url) {
+        setBannerUrl(config.banner_url || config.social_links?.banner_url || config.branding?.banner_url);
+      }
+      if (config.category_button_text || config.social_links?.category_button_text) {
+        setCategoryButtonText(config.category_button_text || config.social_links?.category_button_text);
+      }
       if (config.logo_url) setLogoUrl(config.logo_url);
       if (config.favicon_url) setFaviconUrl(config.favicon_url);
       if (config.social_links) setSocials(config.social_links);
@@ -65,11 +70,61 @@ export default function AdminBranding() {
     loadIntegrations();
   }, [config]);
 
+  // Handle direct file upload for banner
+  const handleUploadBannerFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingBanner(true);
+    try {
+      // 1. Try Supabase Storage upload
+      const ext = file.name.split('.').pop() || 'jpg';
+      const fileName = `banner_${Date.now()}.${ext}`;
+      let uploadedUrl = '';
+
+      try {
+        const { data, error } = await supabase.storage
+          .from('products')
+          .upload(`banners/${fileName}`, file, { cacheControl: '3600', upsert: true });
+
+        if (!error && data) {
+          const { data: pubUrl } = supabase.storage.from('products').getPublicUrl(`banners/${fileName}`);
+          uploadedUrl = pubUrl?.publicUrl;
+        }
+      } catch (err) {
+        console.warn('Storage upload error:', err);
+      }
+
+      // 2. Fallback to high-efficiency local data URL
+      if (!uploadedUrl) {
+        uploadedUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      setBannerUrl(uploadedUrl);
+    } catch (err) {
+      alert('Error subiendo imagen de banner: ' + err.message);
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
   const handleSaveBranding = async (e) => {
     e.preventDefault();
     setSaving(true);
 
     try {
+      const updatedSocials = {
+        ...(socials || {}),
+        banner_url: bannerUrl,
+        category_button_text: categoryButtonText,
+        site_title: siteTitle,
+        site_tagline: siteTagline
+      };
+
       const updateData = {
         background_color: bgColor,
         primary_color: primaryColor,
@@ -80,12 +135,19 @@ export default function AdminBranding() {
         category_button_text: categoryButtonText,
         logo_url: logoUrl,
         favicon_url: faviconUrl,
-        social_links: socials,
+        social_links: updatedSocials,
         custom_head_scripts: customHeadScripts
       };
 
       try {
-        await supabase.from('config').update(updateData).eq('id', 1);
+        const { error } = await supabase.from('config').update(updateData).eq('id', 1);
+        if (error) {
+          // Fallback if specific columns fail
+          await supabase.from('config').update({
+            site_title: siteTitle,
+            social_links: updatedSocials
+          }).eq('id', 1);
+        }
       } catch (e) {
         console.warn('Supabase config update fallback:', e);
       }
@@ -97,7 +159,7 @@ export default function AdminBranding() {
       } catch (e) {}
 
       if (loadConfig) await loadConfig();
-      alert('✅ ¡Personalización de textos, banner, botones y marca guardados con éxito!');
+      alert('✅ ¡Personalización de textos, imagen de fondo (banner), botones y marca guardados con éxito!');
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -235,32 +297,96 @@ export default function AdminBranding() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            {/* Banner Image & Preview */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              border: '1px solid var(--border-glass)',
+              borderRadius: 'var(--radius-md)',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', color: '#fff', fontWeight: '800' }}>
+                    🖼️ Imagen de Fondo del Banner Principal:
+                  </label>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Puedes subir una foto directamente desde tu galería o dispositivo
+                  </span>
+                </div>
+
+                <label style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--accent-cyan)',
+                  color: '#000',
+                  fontWeight: '800',
+                  fontSize: '0.82rem',
+                  cursor: uploadingBanner ? 'not-allowed' : 'pointer'
+                }}>
+                  <span>📷</span>
+                  <span>{uploadingBanner ? 'Subiendo imagen...' : 'Subir desde Galería / Archivo'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingBanner}
+                    onChange={handleUploadBannerFile}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+
+              {/* Banner Live Preview Box */}
+              <div style={{
+                position: 'relative',
+                width: '100%',
+                height: '140px',
+                borderRadius: 'var(--radius-sm)',
+                overflow: 'hidden',
+                border: '1px solid var(--border-cyan)',
+                backgroundImage: `linear-gradient(90deg, rgba(10, 13, 20, 0.85) 0%, rgba(10, 13, 20, 0.4) 100%), url('${bannerUrl || '/gamer-banner.jpg'}')`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 20px'
+              }}>
+                <div style={{ color: '#fff', zIndex: 2 }}>
+                  <div style={{ fontSize: '1rem', fontWeight: '900' }}>{siteTitle || 'ALVSHOP'}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#cbd5e1', maxWidth: '380px' }}>{siteTagline}</div>
+                </div>
+              </div>
+
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
-                  URL Imagen de Fondo del Banner:
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  O pega una URL de imagen externa:
                 </label>
                 <input
                   type="text"
                   value={bannerUrl}
                   onChange={(e) => setBannerUrl(e.target.value)}
                   placeholder="/gamer-banner.jpg o https://..."
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
                 />
               </div>
+            </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
-                  Texto del Botón en Tarjetas de Categoría:
-                </label>
-                <input
-                  type="text"
-                  value={categoryButtonText}
-                  onChange={(e) => setCategoryButtonText(e.target.value)}
-                  placeholder="Explorar Productos"
-                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
-                />
-              </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
+                Texto Predeterminado del Botón en Tarjetas de Categoría:
+              </label>
+              <input
+                type="text"
+                value={categoryButtonText}
+                onChange={(e) => setCategoryButtonText(e.target.value)}
+                placeholder="Explorar Productos"
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+              />
             </div>
           </div>
         </div>

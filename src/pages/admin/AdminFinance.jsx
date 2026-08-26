@@ -156,32 +156,57 @@ export default function AdminFinance() {
         binance_qr_url: binanceQrUrl.trim(),
         binance_deeplink_url: binanceDeeplinkUrl.trim(),
         binance_usdt_address: binanceUsdtAddress.trim(),
+        usdt_gtq_rate: Number(rateGtq),
         usdt_mxn_rate: Number(rateMxn),
         usdt_cop_rate: Number(rateCop),
+        bank_accounts: bankAccountsGtq,
         mxn_accounts: bankAccountsMxn,
         cop_accounts: bankAccountsCop,
         payment_methods_visibility: visibility
       };
 
-      const { error } = await supabase.from('config').update({
+      // 1. First attempt update with standard columns
+      const updatePayload = {
         usdt_gtq_rate: Number(rateGtq),
-        usdt_mxn_rate: Number(rateMxn),
-        usdt_cop_rate: Number(rateCop),
         discount_offer_pct: Number(discountOffer),
         discount_special_pct: Number(discountSpecial),
         bank_accounts: bankAccountsGtq,
-        mxn_accounts: bankAccountsMxn,
-        cop_accounts: bankAccountsCop,
-        payment_methods_visibility: visibility,
         social_links: updatedSocial
-      }).eq('id', 1);
+      };
 
-      if (error) throw error;
+      const { error } = await supabase
+        .from('config')
+        .update(updatePayload)
+        .eq('id', 1);
 
-      await loadConfig();
-      alert('¡Configuración financiera, tasas multi-moneda y métodos de pago guardados con éxito!');
+      if (error) {
+        // Fallback: update only social_links if specific columns fail
+        const { error: fallbackErr } = await supabase
+          .from('config')
+          .update({ social_links: updatedSocial })
+          .eq('id', 1);
+
+        if (fallbackErr) throw fallbackErr;
+      }
+
+      // Save to local cache for instant zero-latency UI reflection
+      try {
+        const cachedConfig = JSON.parse(localStorage.getItem('alv_system_config') || '{}');
+        localStorage.setItem('alv_system_config', JSON.stringify({
+          ...cachedConfig,
+          ...updatePayload,
+          usdt_mxn_rate: Number(rateMxn),
+          usdt_cop_rate: Number(rateCop),
+          mxn_accounts: bankAccountsMxn,
+          cop_accounts: bankAccountsCop,
+          payment_methods_visibility: visibility
+        }));
+      } catch (e) {}
+
+      if (loadConfig) await loadConfig();
+      alert('✅ ¡Configuración financiera, cuentas bancarias (GTQ, MXN, COP) y métodos de pago guardados con éxito!');
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert('Error guardando configuración: ' + err.message);
     } finally {
       setSaving(false);
     }

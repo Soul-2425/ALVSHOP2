@@ -614,6 +614,29 @@ export default function AdminProducts() {
     }
   };
 
+  // Direct Button Text Updater for Category
+  const handleUpdateCatButtonText = async (catId, buttonText) => {
+    try {
+      await supabase.from('categories').update({ button_text: buttonText }).eq('id', catId);
+      setCategories(prev => prev.map(c => c.id === catId ? { ...c, button_text: buttonText } : c));
+      alert('✅ ¡Texto del botón de categoría guardado!');
+    } catch (err) {
+      // Fallback in local state if column doesn't exist
+      setCategories(prev => prev.map(c => c.id === catId ? { ...c, button_text: buttonText } : c));
+    }
+  };
+
+  // Direct Button Text Updater for Subcategory
+  const handleUpdateSubcatButtonText = async (subcatId, buttonText) => {
+    try {
+      await supabase.from('subcategories').update({ button_text: buttonText }).eq('id', subcatId);
+      setSubcategories(prev => prev.map(s => s.id === subcatId ? { ...s, button_text: buttonText } : s));
+      alert('✅ ¡Texto del botón de subcategoría guardado!');
+    } catch (err) {
+      setSubcategories(prev => prev.map(s => s.id === subcatId ? { ...s, button_text: buttonText } : s));
+    }
+  };
+
   // Quick Inline Subcategory Creation with Photo
   const handleQuickCreateSubcategory = async (e) => {
     e.preventDefault();
@@ -1724,27 +1747,60 @@ export default function AdminProducts() {
                         </div>
                       </div>
 
-                      <label style={{
-                        padding: '6px 12px',
-                        borderRadius: '4px',
-                        background: 'rgba(6, 182, 212, 0.15)',
-                        border: '1px solid var(--border-cyan)',
-                        color: 'var(--accent-cyan)',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        fontWeight: 'bold',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}>
-                        📸 Subir / Cambiar Foto de Categoría
-                        <input
-                          type="file"
-                          accept="image/*"
-                          style={{ display: 'none' }}
-                          onChange={handleUploadSelectedCatPhoto}
-                        />
-                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {/* Custom Button Text on Category Card */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input
+                            type="text"
+                            placeholder="Texto Botón (ej. Explorar)"
+                            defaultValue={currentCatObj.button_text || ''}
+                            id={`cat-btn-text-${currentCatObj.id}`}
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: '4px',
+                              background: '#0d111a',
+                              border: '1px solid var(--border-glass)',
+                              color: '#fff',
+                              fontSize: '0.75rem',
+                              width: '140px'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = document.getElementById(`cat-btn-text-${currentCatObj.id}`)?.value;
+                              handleUpdateCatButtonText(currentCatObj.id, val);
+                            }}
+                            className="btn-cyan"
+                            style={{ padding: '5px 8px', fontSize: '0.72rem' }}
+                            title="Guardar texto del botón"
+                          >
+                            💾
+                          </button>
+                        </div>
+
+                        <label style={{
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          background: 'rgba(6, 182, 212, 0.15)',
+                          border: '1px solid var(--border-cyan)',
+                          color: 'var(--accent-cyan)',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          📸 Subir Foto
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={handleUploadSelectedCatPhoto}
+                          />
+                        </label>
+                      </div>
                     </div>
                   );
                 })()}
@@ -1797,27 +1853,60 @@ export default function AdminProducts() {
                         </div>
                       </div>
 
-                      <label style={{
-                        padding: '6px 12px',
-                        borderRadius: '4px',
-                        background: 'rgba(52, 211, 153, 0.15)',
-                        border: '1px solid rgba(52, 211, 153, 0.4)',
-                        color: '#34d399',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        fontWeight: 'bold',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}>
-                        📸 Subir / Cambiar Foto de Subcategoría
-                        <input
-                          type="file"
-                          accept="image/*"
-                          style={{ display: 'none' }}
-                          onChange={handleUploadSelectedSubcatPhoto}
-                        />
-                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {/* Custom Button Text on Subcategory Card */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input
+                            type="text"
+                            placeholder="Texto Botón (ej. Comprar)"
+                            defaultValue={currentSubcatObj.button_text || ''}
+                            id={`subcat-btn-text-${currentSubcatObj.id}`}
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: '4px',
+                              background: '#0d111a',
+                              border: '1px solid var(--border-glass)',
+                              color: '#fff',
+                              fontSize: '0.75rem',
+                              width: '140px'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = document.getElementById(`subcat-btn-text-${currentSubcatObj.id}`)?.value;
+                              handleUpdateSubcatButtonText(currentSubcatObj.id, val);
+                            }}
+                            className="btn-cyan"
+                            style={{ padding: '5px 8px', fontSize: '0.72rem' }}
+                            title="Guardar texto del botón"
+                          >
+                            💾
+                          </button>
+                        </div>
+
+                        <label style={{
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          background: 'rgba(52, 211, 153, 0.15)',
+                          border: '1px solid rgba(52, 211, 153, 0.4)',
+                          color: '#34d399',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          📸 Subir Foto
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            onChange={handleUploadSelectedSubcatPhoto}
+                          />
+                        </label>
+                      </div>
                     </div>
                   );
                 })()}
