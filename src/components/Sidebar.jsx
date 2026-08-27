@@ -74,9 +74,13 @@ export default function Sidebar({ isOpen, onClose }) {
               fontWeight: '900',
               background: 'linear-gradient(135deg, #fff 40%, var(--accent-cyan) 100%)',
               WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
+              WebkitTextFillColor: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px'
             }}>
-              ALVSHOP
+              <span style={{ color: 'var(--accent-cyan)', WebkitTextFillColor: 'var(--accent-cyan)' }}>ALV</span>
+              <span>SHOP</span>
             </div>
             {user && (
               <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>

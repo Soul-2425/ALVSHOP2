@@ -87,29 +87,29 @@ export default function Header({ onToggleSidebar }) {
               ☰
             </button>
 
-            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
-              {config.logo_url ? (
+            <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, textDecoration: 'none' }}>
+              {config?.logo_url && (
                 <img 
                   src={config.logo_url} 
-                  alt={config.site_title} 
-                  style={{ height: '32px', objectFit: 'contain' }} 
+                  alt="ALV SHOP" 
+                  style={{ height: '28px', maxWidth: '36px', objectFit: 'contain', borderRadius: '4px' }} 
                 />
-              ) : (
-                <div style={{
-                  fontSize: '1.25rem',
-                  fontWeight: '900',
-                  letterSpacing: '-0.03em',
-                  background: 'linear-gradient(135deg, #fff 40%, var(--accent-cyan) 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  whiteSpace: 'nowrap'
-                }}>
-                  <span style={{ color: 'var(--accent-cyan)', WebkitTextFillColor: 'var(--accent-cyan)' }}>ALV</span>SHOP
-                </div>
               )}
+              <div style={{
+                fontSize: '1.25rem',
+                fontWeight: '900',
+                letterSpacing: '-0.03em',
+                background: 'linear-gradient(135deg, #fff 40%, var(--accent-cyan) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+                whiteSpace: 'nowrap'
+              }}>
+                <span style={{ color: 'var(--accent-cyan)', WebkitTextFillColor: 'var(--accent-cyan)' }}>ALV</span>
+                <span>SHOP</span>
+              </div>
             </Link>
           </div>
 

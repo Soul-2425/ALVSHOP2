@@ -26,9 +26,13 @@ export default function Footer() {
             background: 'linear-gradient(135deg, #fff 40%, var(--accent-cyan) 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
-            marginBottom: '10px'
+            marginBottom: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px'
           }}>
-            {config?.site_title || 'ALVSHOP'}
+            <span style={{ color: 'var(--accent-cyan)', WebkitTextFillColor: 'var(--accent-cyan)' }}>ALV</span>
+            <span>SHOP</span>
           </div>
           <p style={{ lineHeight: '1.6', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             Tu plataforma de confianza para recargas gamer, cuentas de streaming premium y licencias digitales con entrega inmediata.

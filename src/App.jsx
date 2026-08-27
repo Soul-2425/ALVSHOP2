@@ -21,6 +21,7 @@ import { About, Contact, Terms, Privacy } from './pages/StaticPages';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminOrders from './pages/admin/AdminOrders';
+import AdminSupport from './pages/admin/AdminSupport';
 import AdminIntegrations from './pages/admin/AdminIntegrations';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminProducts from './pages/admin/AdminProducts';
@@ -75,6 +76,7 @@ export default function App() {
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />
                 <Route path="orders" element={<AdminOrders />} />
+                <Route path="support" element={<AdminSupport />} />
                 <Route path="likes" element={<AdminLikes />} />
                 <Route path="payment-links" element={<AdminPaymentLinks />} />
                 <Route path="integrations" element={<AdminIntegrations />} />

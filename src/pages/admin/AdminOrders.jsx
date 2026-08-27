@@ -188,14 +188,17 @@ export default function AdminOrders() {
     // 1. Status Filter
     if (statusFilter !== 'all' && ord.status !== statusFilter) return false;
 
-    // 2. Search Query (Order ID, Customer Name, Email, or Product Name)
+    // 2. Search Query (Order ID, Customer Name, Email, Product Name, Notes, Method, Receipt)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchId = ord.id?.toLowerCase().includes(q);
       const matchName = ord.profiles?.full_name?.toLowerCase().includes(q);
       const matchEmail = ord.profiles?.email?.toLowerCase().includes(q);
       const matchProduct = ord.order_items?.some(i => i.products?.name?.toLowerCase().includes(q));
-      if (!matchId && !matchName && !matchEmail && !matchProduct) return false;
+      const matchNotes = typeof ord.customer_notes === 'string' && ord.customer_notes.toLowerCase().includes(q);
+      const matchMethod = ord.payment_method?.toLowerCase().includes(q);
+      const matchReceipt = typeof ord.bank_receipt_url === 'string' && ord.bank_receipt_url.toLowerCase().includes(q);
+      if (!matchId && !matchName && !matchEmail && !matchProduct && !matchNotes && !matchMethod && !matchReceipt) return false;
     }
 
     // 3. Date Filters
@@ -852,8 +855,14 @@ export default function AdminOrders() {
                         if (noteObj?.service_type === 'Wallet Deposit (Link Recurrente)') {
                           return <div style={{ fontWeight: '800', color: '#fbbf24' }}>🔗 Recarga Saldo (Link {noteObj.link_tag || ''})</div>;
                         }
-                        if (noteObj?.type === 'wallet_deposit') {
-                          return <div style={{ fontWeight: '800', color: '#34d399' }}>🏦 Recarga Saldo ({noteObj.deposit_currency || 'Manual'})</div>;
+                        if (noteObj?.type === 'wallet_deposit' || noteObj?.service_type === 'wallet_deposit' || noteObj?.deposit_currency) {
+                          const curr = noteObj.deposit_currency || 'Manual';
+                          return (
+                            <div style={{ fontWeight: '800', color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span>🏦</span>
+                              <span>Recarga Billetera ({curr}{noteObj.converted_text ? ` - ${noteObj.converted_text}` : ''})</span>
+                            </div>
+                          );
                         }
                         return <div style={{ fontWeight: '600' }}>Recarga Digital</div>;
                       })()}

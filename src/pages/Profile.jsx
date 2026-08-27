@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { requestPushPermission, getPushPermissionStatus, notifyAdminNewOrder } from '../../notificaciones y apis/notificaciones/pushService';
 import { reservePaymentLink } from '../services/paymentLinksService';
+import { uploadOptimizedReceipt, compressImage } from '../services/imageService';
 
 export default function Profile() {
   const [searchParams] = useSearchParams();
@@ -43,6 +44,7 @@ export default function Profile() {
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showBinanceModal, setShowBinanceModal] = useState(false);
   const [binanceDepositAmount, setBinanceDepositAmount] = useState('10');
+  const [receiptFile, setReceiptFile] = useState(null);
   const [receiptPreview, setReceiptPreview] = useState('');
   const [receiptRef, setReceiptRef] = useState('');
 
@@ -50,39 +52,54 @@ export default function Profile() {
   const [linkDepositAmount, setLinkDepositAmount] = useState(5);
   const [reservedLink, setReservedLink] = useState(null);
   const [reservingLink, setReservingLink] = useState(false);
+  const [linkReceiptFile, setLinkReceiptFile] = useState(null);
   const [linkReceiptPreview, setLinkReceiptPreview] = useState('');
   const [linkSubmitting, setLinkSubmitting] = useState(false);
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
 
-  // Handle Receipt Image Selection
-  const handleReceiptChange = (e) => {
+  // Handle Receipt Image Selection with automatic compression
+  const handleReceiptChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('La imagen no debe superar los 5MB.');
-      return;
+    try {
+      const { file: compressedFile, dataUrl } = await compressImage(file, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 0.75
+      });
+      setReceiptFile(compressedFile);
+      setReceiptPreview(dataUrl);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setReceiptPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+      setReceiptFile(file);
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setReceiptPreview(reader.result);
-    };
-    reader.readAsDataURL(file);
   };
 
-  const handleLinkReceiptChange = (e) => {
+  const handleLinkReceiptChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('La imagen no debe superar los 5MB.');
-      return;
+    try {
+      const { file: compressedFile, dataUrl } = await compressImage(file, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 0.75
+      });
+      setLinkReceiptFile(compressedFile);
+      setLinkReceiptPreview(dataUrl);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLinkReceiptPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+      setLinkReceiptFile(file);
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setLinkReceiptPreview(reader.result);
-    };
-    reader.readAsDataURL(file);
   };
 
   // Sync tab from URL params if present
@@ -101,60 +118,60 @@ export default function Profile() {
   }, [user?.id]);
 
   // Load User Orders
-  useEffect(() => {
-    async function loadOrders() {
-      if (!user) return;
-      setLoadingOrders(true);
+  const loadOrders = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingOrders(true);
 
-      const cacheKey = `alv_user_orders_${user.id}`;
-      try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed && parsed.length > 0) setOrders(parsed);
-        }
-      } catch (e) {}
-
-      try {
-        const fetchPromise = supabase
-          .from('orders')
-          .select(`
-            *,
-            order_items (
-              id,
-              quantity,
-              price_usdt,
-              credentials_delivered,
-              fields_data,
-              products (id, name, image_url)
-            )
-          `)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout')), 4000)
-        );
-
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-
-        if (data && !error) {
-          setOrders(data);
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify(data));
-          } catch (e) {}
-        }
-      } catch (err) {
-        console.warn('Error loading orders in Profile (using memory):', err);
-      } finally {
-        setLoadingOrders(false);
+    const cacheKey = `alv_user_orders_${user.id}`;
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) setOrders(parsed);
       }
-    }
+    } catch (e) {}
 
-    if (user) {
+    try {
+      const fetchPromise = supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (
+            id,
+            quantity,
+            price_usdt,
+            credentials_delivered,
+            fields_data,
+            products (id, name, image_url)
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 4000)
+      );
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (data && !error) {
+        setOrders(data);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.warn('Error loading orders in Profile (using memory):', err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id) {
       loadOrders();
     }
-  }, [user, activeTab]);
+  }, [user?.id, activeTab, loadOrders]);
 
   // Handle Authentication
   const handleAuth = async (e) => {
@@ -200,8 +217,14 @@ export default function Profile() {
   const [depositCurrency, setDepositCurrency] = useState('GTQ');
 
   // Handle Wallet Recharge Request (Manual Multi-Currency: GTQ, MXN, COP, Binance)
-  const handleRequestDeposit = async (e) => {
-    e.preventDefault();
+  const handleRequestDeposit = async (e, overrideCurrency = null) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (!user?.id) {
+      alert('⚠️ Debes iniciar sesión para recargar saldo.');
+      return;
+    }
+
+    const currentCurrency = overrideCurrency || depositCurrency;
     const amount = Number(depositAmount);
     if (!depositAmount || isNaN(amount) || amount < 5) {
       alert('⚠️ El monto mínimo para recargar saldo es de $5.00 USDT.');
@@ -210,37 +233,64 @@ export default function Profile() {
     setDepositLoading(true);
 
     try {
+      // 1. Asegurar que el perfil exista en 'profiles' para no violar foreign keys
+      try {
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          email: user.email,
+          full_name: profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0],
+          wallet_balance: walletBalance || 0
+        }, { onConflict: 'id' });
+      } catch (profErr) {
+        console.warn('Profile upsert notice:', profErr);
+      }
+
       let totalConverted = amount;
       let currencyLabel = 'USDT';
       let methodTitle = 'Recarga Manual';
 
-      if (depositCurrency === 'GTQ') {
+      if (currentCurrency === 'GTQ') {
         const rate = Number(config?.usdt_gtq_rate || 7.80);
         totalConverted = Number((amount * rate).toFixed(2));
         currencyLabel = `Q${totalConverted.toFixed(2)} GTQ`;
         methodTitle = 'Transferencia GTQ (Quetzales)';
-      } else if (depositCurrency === 'MXN') {
+      } else if (currentCurrency === 'MXN') {
         const rate = Number(config?.usdt_mxn_rate || 19.50);
         totalConverted = Number((amount * rate).toFixed(2));
         currencyLabel = `$${totalConverted.toFixed(2)} MXN`;
         methodTitle = 'Transferencia MXN (Pesos Mexicanos)';
-      } else if (depositCurrency === 'COP') {
+      } else if (currentCurrency === 'COP') {
         const rate = Number(config?.usdt_cop_rate || 4100);
         totalConverted = Math.round(amount * rate);
         currencyLabel = `$${totalConverted.toLocaleString('es-CO')} COP`;
         methodTitle = 'Transferencia COP (Pesos Colombianos)';
-      } else if (depositCurrency === 'Binance') {
+      } else if (currentCurrency === 'Binance') {
         currencyLabel = `$${amount.toFixed(2)} USDT`;
         methodTitle = 'Binance Pay (Manual USDT)';
       }
 
+      // 2. Subir o comprimir el comprobante adjunto
+      let finalReceiptUrl = receiptPreview || null;
+      if (receiptFile) {
+        try {
+          const uploadRes = await uploadOptimizedReceipt(receiptFile, 'receipts');
+          if (uploadRes?.url) {
+            finalReceiptUrl = uploadRes.url;
+          }
+        } catch (upErr) {
+          console.warn('Receipt upload fallback:', upErr);
+        }
+      }
+
       const noteDetails = JSON.stringify({
         type: 'wallet_deposit',
-        deposit_currency: depositCurrency,
+        service_type: 'wallet_deposit',
+        deposit_currency: currentCurrency,
         amount_usdt: amount,
         converted_text: currencyLabel,
         reference_id: receiptRef.trim() || '',
-        user_email: user.email
+        user_email: user.email,
+        user_name: profile?.full_name || user.email
       });
 
       let orderData = null;
@@ -248,18 +298,20 @@ export default function Profile() {
         const { data, error } = await supabase.from('orders').insert({
           user_id: user.id,
           total_usdt: amount,
-          total_gtq: depositCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
+          total_gtq: currentCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
           status: 'Verification',
           payment_method: 'Manual',
           customer_notes: noteDetails,
-          bank_receipt_url: receiptPreview || null
+          bank_receipt_url: finalReceiptUrl
         }).select().single();
 
         if (!error && data) {
           orderData = data;
+        } else if (error) {
+          console.warn('Supabase orders insert notice:', error);
         }
       } catch (e) {
-        console.warn('Orders insert notice:', e);
+        console.warn('Orders insert exception:', e);
       }
 
       if (!orderData) {
@@ -267,11 +319,11 @@ export default function Profile() {
           id: `ORD-DEP-${Date.now()}`,
           user_id: user.id,
           total_usdt: amount,
-          total_gtq: depositCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
+          total_gtq: currentCurrency === 'GTQ' ? totalConverted : Number((amount * (config?.usdt_gtq_rate || 7.80)).toFixed(2)),
           status: 'Verification',
           payment_method: 'Manual',
           customer_notes: noteDetails,
-          bank_receipt_url: receiptPreview || null,
+          bank_receipt_url: finalReceiptUrl,
           created_at: new Date().toISOString(),
           profiles: {
             id: user.id,
@@ -281,7 +333,27 @@ export default function Profile() {
         };
       }
 
-      // Save to client user orders cache and global admin sync pool
+      // 3. Crear item en order_items para asociar el detalle
+      try {
+        await supabase.from('order_items').insert({
+          order_id: orderData.id,
+          product_id: null,
+          quantity: 1,
+          price_usdt: amount,
+          cost_usdt: 0,
+          fields_data: {
+            service_type: 'wallet_deposit',
+            deposit_currency: currentCurrency,
+            amount_usdt: amount,
+            converted_text: currencyLabel,
+            reference_id: receiptRef.trim() || ''
+          }
+        });
+      } catch (itemErr) {
+        console.warn('Order items insert notice:', itemErr);
+      }
+
+      // 4. Guardar en caché local y sincronizar lista global
       try {
         const userKey = `alv_user_orders_${user.id}`;
         const prevUser = JSON.parse(localStorage.getItem(userKey) || '[]');
@@ -291,7 +363,16 @@ export default function Profile() {
         localStorage.setItem('alv_all_orders', JSON.stringify([orderData, ...prevAll.filter(o => o.id !== orderData.id)]));
       } catch (e) {}
 
-      // Push notification to Admin
+      // Sincronizar con API backend
+      try {
+        fetch('/api/v1/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderData)
+        }).catch(() => {});
+      } catch (e) {}
+
+      // 5. Enviar notificación Push al Administrador y emitir Broadcast en Realtime
       try {
         notifyAdminNewOrder({
           orderId: orderData.id,
@@ -299,16 +380,29 @@ export default function Profile() {
           customerName: profile?.full_name || user.email,
           paymentMethod: `Recarga Billetera: ${methodTitle} (${currencyLabel})`
         });
+
+        const adminChannel = supabase.channel('admin_global_channel');
+        adminChannel.send({
+          type: 'broadcast',
+          event: 'push_notification',
+          payload: {
+            type: 'admin_new_order',
+            title: '🏦 ¡Nueva Solicitud de Recarga de Saldo!',
+            body: `${profile?.full_name || user.email} solicitó recargar $${amount.toFixed(2)} USDT (${currencyLabel}).`,
+            metadata: { url: '/admin/orders', orderId: orderData.id }
+          }
+        });
       } catch (e) {}
 
-      alert(`¡Solicitud de recarga por $${amount.toFixed(2)} USDT (${currencyLabel}) enviada con éxito!\nUn asesor validará tu comprobante para acreditar tu saldo de inmediato.`);
+      alert(`✅ ¡Solicitud de recarga por $${amount.toFixed(2)} USDT (${currencyLabel}) enviada con éxito!\nUn asesor validará tu comprobante en la sección de pedidos para acreditar tu saldo de inmediato.`);
       setDepositAmount('');
       setReceiptPreview('');
+      setReceiptFile(null);
       setReceiptRef('');
-      await loadUserOrders();
+      await loadOrders();
       setActiveTab('orders');
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert('Error enviando recarga: ' + err.message);
     } finally {
       setDepositLoading(false);
     }
@@ -325,6 +419,7 @@ export default function Profile() {
       } else {
         setReservedLink(link);
         setLinkReceiptPreview('');
+        setLinkReceiptFile(null);
       }
     } catch (err) {
       alert('Error obteniendo link de pago: ' + err.message);
@@ -336,28 +431,55 @@ export default function Profile() {
   // Submit Payment Link Receipt for Admin Verification & Burn
   const handleSubmitLinkPayment = async (e) => {
     e.preventDefault();
+    if (!user?.id) {
+      alert('⚠️ Debes iniciar sesión para recargar saldo.');
+      return;
+    }
     if (!reservedLink) {
       alert('Por favor solicita un link de pago primero.');
       return;
     }
-    if (!linkReceiptPreview) {
+    if (!linkReceiptPreview && !linkReceiptFile) {
       alert('⚠️ Por favor adjunta la captura o comprobante de tu pago.');
       return;
     }
 
     setLinkSubmitting(true);
     try {
+      // Asegurar perfil
+      try {
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          email: user.email,
+          full_name: profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0],
+          wallet_balance: walletBalance || 0
+        }, { onConflict: 'id' });
+      } catch (profErr) {}
+
       const currentRate = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
       const amtUsd = Number(reservedLink.amount_usd);
       const totalGtq = Number((amtUsd * currentRate).toFixed(2));
 
+      // Subir o comprimir comprobante
+      let finalLinkReceiptUrl = linkReceiptPreview || null;
+      if (linkReceiptFile) {
+        try {
+          const uploadRes = await uploadOptimizedReceipt(linkReceiptFile, 'receipts');
+          if (uploadRes?.url) finalLinkReceiptUrl = uploadRes.url;
+        } catch (upErr) {}
+      }
+
       const customerNotesObj = {
+        type: 'wallet_deposit',
         service_type: 'Wallet Deposit (Link Recurrente)',
         payment_method_detail: 'Recurrente / Link',
         link_id: reservedLink.id,
         link_tag: reservedLink.identifier_tag,
         link_url: reservedLink.url,
-        amount_usd: amtUsd
+        amount_usd: amtUsd,
+        converted_text: `Q${totalGtq.toFixed(2)} GTQ`,
+        user_email: user.email,
+        user_name: profile?.full_name || user.email
       };
 
       let newOrder = null;
@@ -369,7 +491,7 @@ export default function Profile() {
           status: 'Verification',
           payment_method: 'Manual',
           customer_notes: JSON.stringify(customerNotesObj),
-          bank_receipt_url: linkReceiptPreview
+          bank_receipt_url: finalLinkReceiptUrl
         }).select().single();
 
         if (!error && data) {
@@ -388,10 +510,31 @@ export default function Profile() {
           status: 'Verification',
           payment_method: 'Manual',
           customer_notes: JSON.stringify(customerNotesObj),
-          bank_receipt_url: linkReceiptPreview,
-          created_at: new Date().toISOString()
+          bank_receipt_url: finalLinkReceiptUrl,
+          created_at: new Date().toISOString(),
+          profiles: {
+            id: user.id,
+            full_name: profile?.full_name || user.email,
+            email: user.email
+          }
         };
       }
+
+      // Crear item en order_items
+      try {
+        await supabase.from('order_items').insert({
+          order_id: newOrder.id,
+          product_id: null,
+          quantity: 1,
+          price_usdt: amtUsd,
+          cost_usdt: 0,
+          fields_data: {
+            service_type: 'Wallet Deposit (Link Recurrente)',
+            link_tag: reservedLink.identifier_tag,
+            amount_usd: amtUsd
+          }
+        });
+      } catch (itemErr) {}
 
       // Add to local orders list immediately
       setOrders(prev => [newOrder, ...prev]);
@@ -404,6 +547,15 @@ export default function Profile() {
         localStorage.setItem('alv_all_orders', JSON.stringify([newOrder, ...prevAll.filter(o => o.id !== newOrder.id)]));
       } catch (e) {}
 
+      // Sincronizar con API backend
+      try {
+        fetch('/api/v1/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newOrder)
+        }).catch(() => {});
+      } catch (e) {}
+
       // Push notification to Admin
       try {
         notifyAdminNewOrder({
@@ -412,11 +564,25 @@ export default function Profile() {
           customerName: profile?.full_name || user.email,
           paymentMethod: `Recarga Billetera: Enlace de Pago (${reservedLink.identifier_tag})`
         });
+
+        const adminChannel = supabase.channel('admin_global_channel');
+        adminChannel.send({
+          type: 'broadcast',
+          event: 'push_notification',
+          payload: {
+            type: 'admin_new_order',
+            title: '🔗 ¡Nueva Solicitud de Recarga por Enlace!',
+            body: `${profile?.full_name || user.email} envió comprobante para $${amtUsd} USD (Link ${reservedLink.identifier_tag}).`,
+            metadata: { url: '/admin/orders', orderId: newOrder.id }
+          }
+        });
       } catch (e) {}
 
       alert(`✅ ¡Comprobante enviado con éxito para el enlace ${reservedLink.identifier_tag}!\nUn asesor verificará tu pago y tu saldo de $${amtUsd} USD será acreditado inmediatamente.`);
       setReservedLink(null);
       setLinkReceiptPreview('');
+      setLinkReceiptFile(null);
+      await loadOrders();
       setActiveTab('orders');
     } catch (err) {
       alert('Error enviando comprobante: ' + err.message);
@@ -1182,7 +1348,7 @@ export default function Profile() {
 
               <form onSubmit={(e) => {
                 setDepositCurrency('Binance');
-                handleRequestDeposit(e);
+                handleRequestDeposit(e, 'Binance');
               }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
@@ -1224,7 +1390,7 @@ export default function Profile() {
                   {receiptPreview ? (
                     <div style={{ position: 'relative', display: 'inline-block' }}>
                       <img src={receiptPreview} alt="Comprobante" style={{ maxWidth: '200px', maxHeight: '140px', borderRadius: '6px', border: '1px solid #f0b90b' }} />
-                      <button type="button" onClick={() => setReceiptPreview('')} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f87171', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontWeight: '900' }}>✕</button>
+                      <button type="button" onClick={() => { setReceiptPreview(''); setReceiptFile(null); }} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f87171', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontWeight: '900' }}>✕</button>
                     </div>
                   ) : (
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(240, 185, 11, 0.15)', border: '1px solid #f0b90b', color: '#f0b90b', fontSize: '0.8rem', fontWeight: '800', cursor: 'pointer' }}>
@@ -1579,7 +1745,7 @@ export default function Profile() {
                     />
                     <button
                       type="button"
-                      onClick={() => setReceiptPreview('')}
+                      onClick={() => { setReceiptPreview(''); setReceiptFile(null); }}
                       style={{
                         position: 'absolute',
                         top: '-8px',

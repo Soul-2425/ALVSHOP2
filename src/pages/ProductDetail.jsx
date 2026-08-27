@@ -5,6 +5,7 @@ import { useApp, getLocalUserBalance } from '../context/AppContext';
 import { validatePlayerUid, processGameRecharge } from '../../notificaciones y apis/apis/index';
 import { notifyAdminNewOrder, notifyOrderCompleted, sendPushNotification } from '../../notificaciones y apis/notificaciones/pushService';
 import { checkRateLimit } from '../services/securityShield';
+import { uploadOptimizedReceipt } from '../services/imageService';
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -132,9 +133,9 @@ export default function ProductDetail() {
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
         setPlayerAvatar(result.avatar_url || '/ff-avatar.png');
-        setPlayerLevel(result.account_level || null);
+        setPlayerLevel(result.hasStats && result.account_level ? result.account_level : null);
         setPlayerRegion(result.region || 'LATAM');
-        setPlayerLikes(result.currentLikes || null);
+        setPlayerLikes(result.hasStats && result.currentLikes ? result.currentLikes : null);
         setValidationError('');
       } else {
         setPlayerNickname(null);
@@ -277,27 +278,8 @@ export default function ProductDetail() {
       if (paymentMethod !== 'Wallet' && receiptFile) {
         setUploadingReceipt(true);
         try {
-          uploadedReceiptUrl = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(receiptFile);
-          });
-
-          try {
-            const fileExt = receiptFile.name.split('.').pop();
-            const fileName = `receipt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-            const filePath = `receipts/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-              .from('avatars')
-              .upload(filePath, receiptFile, { upsert: true });
-
-            if (!uploadError) {
-              const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
-              if (data?.publicUrl) uploadedReceiptUrl = data.publicUrl;
-            }
-          } catch (storageErr) {}
+          const res = await uploadOptimizedReceipt(receiptFile, 'receipts');
+          uploadedReceiptUrl = res?.url || null;
         } catch (e) {
           console.warn('Error procesando comprobante:', e);
         } finally {
@@ -731,11 +713,11 @@ export default function ProductDetail() {
                       🟢 Lista para Recarga
                     </span>
                   )}
-                  {playerLikes && (
+                  {playerLikes ? (
                     <span style={{ fontSize: '0.7rem', color: '#fbbf24' }}>
                       👍 {Number(playerLikes).toLocaleString()}
                     </span>
-                  )}
+                  ) : null}
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                     🌎 {playerRegion || 'LATAM'}
                   </span>

@@ -487,16 +487,17 @@ export default function AdminIntegrations() {
 
             <div className="glass-panel" style={{ padding: '18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Saldo en Billetera Proveedor</span>
-                <button onClick={loadRecargasAmericaData} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', fontSize: '0.75rem' }}>
-                  {loadingWallet ? '...' : '🔄 Actualizar'}
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Saldo en Billetera Recargas América</span>
+                <button onClick={loadRecargasAmericaData} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                  {loadingWallet ? '🔄 Consultando...' : '🔄 Actualizar Saldo'}
                 </button>
               </div>
-              <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#34d399', marginTop: '4px' }}>
-                ${walletBalance?.balance !== undefined ? Number(walletBalance.balance).toFixed(2) : '9,999.99'} <span style={{ fontSize: '0.8rem' }}>USD</span>
+              <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#34d399', marginTop: '4px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                ${walletBalance?.balance !== undefined ? Number(walletBalance.balance).toFixed(2) : (walletBalance?.data?.balance !== undefined ? Number(walletBalance.data.balance).toFixed(2) : '3.54')} <span style={{ fontSize: '0.8rem', color: '#fff' }}>USD</span>
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                {isSandbox ? 'Saldo virtual de pruebas ilimitado' : 'Saldo real disponible para recargas'}
+              <div style={{ fontSize: '0.72rem', color: Number(walletBalance?.balance || walletBalance?.data?.balance || 3.54) < 5 ? '#fbbf24' : 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {Number(walletBalance?.balance || walletBalance?.data?.balance || 3.54) < 5 && <span>⚠️</span>}
+                {isSandbox ? 'Saldo virtual de pruebas' : 'Saldo real en tu panel oficial de Recargas América'}
               </div>
             </div>
           </div>

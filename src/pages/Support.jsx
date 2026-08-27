@@ -14,6 +14,8 @@ export default function Support() {
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdmin = normalizedRole === 'admin' || normalizedRole === 'asesor';
 
+  const [consultationType, setConsultationType] = useState('report'); // 'report' or 'feedback'
+
   useEffect(() => {
     async function initChat() {
       if (!user) {
@@ -21,7 +23,7 @@ export default function Support() {
         return;
       }
 
-      // Check or create support conversation for this user
+      // Check or create support conversation for this user and selected type
       let { data: conv } = await supabase
         .from('support_conversations')
         .select('*')
@@ -33,7 +35,12 @@ export default function Support() {
       if (!conv) {
         const { data: newConv } = await supabase
           .from('support_conversations')
-          .insert({ user_id: user.id })
+          .insert({
+            user_id: user.id,
+            user_name: profile?.full_name || user.email,
+            user_email: user.email,
+            type: consultationType
+          })
           .select()
           .single();
         conv = newConv;
@@ -53,7 +60,9 @@ export default function Support() {
           setMessages([
             {
               id: 'm-welcome',
-              message: '¡Hola! Bienvenido al soporte técnico de ALVSHOP. ¿En qué podemos ayudarte con tus recargas o pedidos hoy?',
+              message: consultationType === 'report'
+                ? '¡Hola! Bienvenido al soporte técnico de ALVSHOP. ¿Qué problema o duda tienes con tu pedido o recarga?'
+                : '¡Hola! Gracias por ayudarnos a mejorar ALVSHOP. Déjanos aquí tus sugerencias, comentarios o feedback.',
               is_admin_reply: true,
               created_at: new Date().toISOString()
             }
@@ -64,7 +73,7 @@ export default function Support() {
     }
 
     initChat();
-  }, [user]);
+  }, [user, consultationType]);
 
   // Realtime Supabase Subscription for incoming messages
   useEffect(() => {
@@ -112,6 +121,18 @@ export default function Support() {
     };
 
     try {
+      // Update conversation type and timestamp
+      try {
+        await supabase
+          .from('support_conversations')
+          .update({
+            type: consultationType,
+            updated_at: new Date().toISOString(),
+            last_message: textToSend
+          })
+          .eq('id', conversationId);
+      } catch (e) {}
+
       const { data, error } = await supabase
         .from('support_messages')
         .insert(userMsg)
@@ -132,24 +153,6 @@ export default function Support() {
             userName: profile?.full_name || user.email,
             message: textToSend
           });
-
-          // Simulate advisor response if offline/testing
-          setTimeout(() => {
-            const advisorReply = {
-              id: 'm-' + Date.now(),
-              message: 'Gracias por escribirnos. Un asesor de ALVSHOP revisará tu pedido en breve.',
-              is_admin_reply: true,
-              created_at: new Date().toISOString()
-            };
-            setMessages((prev) => [...prev, advisorReply]);
-            soundEffects.playChatMessageSound();
-          }, 1200);
-        } else {
-          notifySupportReply({
-            conversationId: conversationId,
-            userId: user.id,
-            message: textToSend
-          });
         }
       }
     } catch (err) {
@@ -160,7 +163,59 @@ export default function Support() {
   const whatsappNumber = config.social_links?.whatsapp || '50250000000';
 
   return (
-    <div className="container" style={{ paddingTop: '20px', maxWidth: '640px' }}>
+    <div className="container" style={{ paddingTop: '20px', maxWidth: '680px' }}>
+      
+      {/* Category Selection Tabs */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+        <button
+          type="button"
+          onClick={() => setConsultationType('report')}
+          style={{
+            flex: 1,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.85rem',
+            fontWeight: '800',
+            cursor: 'pointer',
+            background: consultationType === 'report' ? '#ef4444' : 'rgba(255, 255, 255, 0.04)',
+            color: consultationType === 'report' ? '#fff' : 'var(--text-main)',
+            border: consultationType === 'report' ? 'none' : '1px solid var(--border-glass)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <span>🚨</span>
+          <span>Reportar Pedido / Incidencia</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setConsultationType('feedback')}
+          style={{
+            flex: 1,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.85rem',
+            fontWeight: '800',
+            cursor: 'pointer',
+            background: consultationType === 'feedback' ? '#34d399' : 'rgba(255, 255, 255, 0.04)',
+            color: consultationType === 'feedback' ? '#000' : 'var(--text-main)',
+            border: consultationType === 'feedback' ? 'none' : '1px solid var(--border-glass)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <span>💡</span>
+          <span>Enviar Sugerencia / Feedback</span>
+        </button>
+      </div>
+
       <div className="glass-panel" style={{
         borderRadius: 'var(--radius-lg)',
         border: '1px solid var(--border-cyan)',
@@ -187,13 +242,15 @@ export default function Support() {
               boxShadow: '0 0 8px #10b981'
             }} />
             <div>
-              <h3 style={{ fontSize: '1rem', margin: 0 }}>Soporte Técnico en Vivo</h3>
+              <h3 style={{ fontSize: '1rem', margin: 0 }}>
+                {consultationType === 'report' ? '🚨 Reportes & Soporte Técnico' : '💡 Buzón de Sugerencias & Feedback'}
+              </h3>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Asesores ALVSHOP en línea</div>
             </div>
           </div>
 
           <a
-            href={`https://wa.me/${whatsappNumber.replace(/\+/g, '')}?text=${encodeURIComponent('Hola ALVSHOP, necesito soporte con un pedido.')}`}
+            href={`https://wa.me/${whatsappNumber.replace(/\+/g, '')}?text=${encodeURIComponent(consultationType === 'report' ? 'Hola ALVSHOP, necesito soporte con un reporte de pedido.' : 'Hola ALVSHOP, tengo una sugerencia para la tienda.')}`}
             target="_blank"
             rel="noreferrer"
             className="btn-cyan"

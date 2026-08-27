@@ -70,7 +70,14 @@ export async function getRecargasAmericaHeaders() {
 export async function getSupplierWalletBalance() {
   try {
     const headers = await getRecargasAmericaHeaders();
-    const res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/wallet`, { headers });
+    let res = null;
+    try {
+      res = await fetch('/api/v1/supplier/wallet', { headers });
+    } catch (e) {}
+
+    if (!res || !res.ok) {
+      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/wallet`, { headers });
+    }
     const data = await res.json();
     return data;
   } catch (err) {
@@ -247,26 +254,40 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
     }
   }
 
-  // 2. Fallback Motor: Recargas América (/pins/validate)
+  // 2. Motor Oficial: Recargas América (/pins/validate)
   try {
     const headers = await getRecargasAmericaHeaders();
-    const res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/pins/validate`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        product_id: 340, // Free Fire 100 Diamonds
-        service_user_id: cleanUid
-      })
-    });
+    let res = null;
+
+    // Intentar primero por proxy local para evitar CORS en navegador
+    try {
+      res = await fetch('/api/v1/supplier/validate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ product_id: 340, service_user_id: cleanUid })
+      });
+    } catch (proxyErr) {}
+
+    // Fallback a conexión directa
+    if (!res || !res.ok) {
+      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/pins/validate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          product_id: 340, // Free Fire 100 Diamonds
+          service_user_id: cleanUid
+        })
+      });
+    }
+
     const data = await res.json();
 
     if (data?.success && data?.data?.status && data?.data?.account_name) {
       const result = {
         success: true,
         nickname: data.data.account_name,
-        region: region,
-        account_level: 60,
-        currentLikes: 5000,
+        region: region || 'LATAM',
+        hasStats: false, // Indica que no tiene stats inventadas
         isVerified: true,
         source: 'Garena / Recargas América Oficial'
       };
@@ -336,11 +357,22 @@ export async function processGameRecharge(orderData) {
       redemption_id: cleanUid
     };
 
-    const res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/buy/pins`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body)
-    });
+    let res = null;
+    try {
+      res = await fetch('/api/v1/supplier/buy', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+    } catch (e) {}
+
+    if (!res || !res.ok) {
+      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/buy/pins`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+    }
 
     const data = await res.json();
     console.log('[PROCESO RECARGA] Respuesta del proveedor:', data);

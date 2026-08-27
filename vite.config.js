@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 function balanceApiPlugin() {
   const balancesFile = path.resolve(__dirname, 'balances.json')
+  const ordersFile = path.resolve(__dirname, 'orders.json')
 
   function getBalances() {
     if (!fs.existsSync(balancesFile)) {
@@ -28,6 +29,24 @@ function balanceApiPlugin() {
   function saveBalances(data) {
     try {
       fs.writeFileSync(balancesFile, JSON.stringify(data, null, 2), 'utf-8')
+    } catch (e) {}
+  }
+
+  function getOrders() {
+    if (!fs.existsSync(ordersFile)) {
+      fs.writeFileSync(ordersFile, JSON.stringify([], null, 2), 'utf-8')
+      return []
+    }
+    try {
+      return JSON.parse(fs.readFileSync(ordersFile, 'utf-8'))
+    } catch (e) {
+      return []
+    }
+  }
+
+  function saveOrders(data) {
+    try {
+      fs.writeFileSync(ordersFile, JSON.stringify(data, null, 2), 'utf-8')
     } catch (e) {}
   }
 
@@ -67,6 +86,148 @@ function balanceApiPlugin() {
               res.statusCode = 400
               res.end(JSON.stringify({ error: err.message }))
             }
+          })
+          return
+        }
+
+        if (parsedUrl === '/api/v1/orders' && req.method === 'GET') {
+          const orders = getOrders()
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.end(JSON.stringify(orders))
+          return
+        }
+
+        if ((parsedUrl === '/api/v1/orders' || parsedUrl === '/api/v1/order/create') && req.method === 'POST') {
+          let body = ''
+          req.on('data', chunk => { body += chunk })
+          req.on('end', () => {
+            try {
+              const newOrder = JSON.parse(body || '{}')
+              if (newOrder && newOrder.id) {
+                const current = getOrders()
+                const filtered = current.filter(o => o.id !== newOrder.id)
+                const updated = [newOrder, ...filtered]
+                saveOrders(updated)
+                res.setHeader('Content-Type', 'application/json')
+                res.setHeader('Access-Control-Allow-Origin', '*')
+                res.end(JSON.stringify({ success: true, order: newOrder }))
+                return
+              }
+              res.statusCode = 400
+              res.end(JSON.stringify({ error: 'Order must have an ID' }))
+            } catch (err) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ error: err.message }))
+            }
+          })
+          return
+        }
+
+        // Proxy for Recargas América Wallet
+        if (parsedUrl === '/api/v1/supplier/wallet') {
+          const authHeader = req.headers['authorization'] || 'Bearer ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb'
+          import('https').then(({ default: https }) => {
+            const proxyReq = https.request({
+              hostname: 'panel.recargasamerica.com',
+              path: '/api/v1/wallet',
+              method: 'GET',
+              headers: {
+                'Authorization': authHeader,
+                'Accept': 'application/json'
+              }
+            }, (proxyRes) => {
+              let pData = ''
+              proxyRes.on('data', c => pData += c)
+              proxyRes.on('end', () => {
+                res.setHeader('Content-Type', 'application/json')
+                res.setHeader('Access-Control-Allow-Origin', '*')
+                res.statusCode = proxyRes.statusCode || 200
+                res.end(pData)
+              })
+            })
+            proxyReq.on('error', (e) => {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ success: false, error: e.message }))
+            })
+            proxyReq.end()
+          })
+          return
+        }
+
+        // Proxy for Recargas América Validate UID
+        if (parsedUrl === '/api/v1/supplier/validate' && req.method === 'POST') {
+          const authHeader = req.headers['authorization'] || 'Bearer ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb'
+          let body = ''
+          req.on('data', chunk => { body += chunk })
+          req.on('end', () => {
+            import('https').then(({ default: https }) => {
+              const proxyReq = https.request({
+                hostname: 'panel.recargasamerica.com',
+                path: '/api/v1/pins/validate',
+                method: 'POST',
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                }
+              }, (proxyRes) => {
+                let pData = ''
+                proxyRes.on('data', c => pData += c)
+                proxyRes.on('end', () => {
+                  res.setHeader('Content-Type', 'application/json')
+                  res.setHeader('Access-Control-Allow-Origin', '*')
+                  res.statusCode = proxyRes.statusCode || 200
+                  res.end(pData)
+                })
+              })
+              proxyReq.on('error', (e) => {
+                res.statusCode = 500
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ success: false, error: e.message }))
+              })
+              proxyReq.write(body)
+              proxyReq.end()
+            })
+          })
+          return
+        }
+
+        // Proxy for Recargas América Buy
+        if (parsedUrl === '/api/v1/supplier/buy' && req.method === 'POST') {
+          const authHeader = req.headers['authorization'] || 'Bearer ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb'
+          let body = ''
+          req.on('data', chunk => { body += chunk })
+          req.on('end', () => {
+            import('https').then(({ default: https }) => {
+              const proxyReq = https.request({
+                hostname: 'panel.recargasamerica.com',
+                path: '/api/v1/buy/pins',
+                method: 'POST',
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                }
+              }, (proxyRes) => {
+                let pData = ''
+                proxyRes.on('data', c => pData += c)
+                proxyRes.on('end', () => {
+                  res.setHeader('Content-Type', 'application/json')
+                  res.setHeader('Access-Control-Allow-Origin', '*')
+                  res.statusCode = proxyRes.statusCode || 200
+                  res.end(pData)
+                })
+              })
+              proxyReq.on('error', (e) => {
+                res.statusCode = 500
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ success: false, error: e.message }))
+              })
+              proxyReq.write(body)
+              proxyReq.end()
+            })
           })
           return
         }
