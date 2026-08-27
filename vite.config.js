@@ -232,6 +232,38 @@ function balanceApiPlugin() {
           return
         }
 
+        // Proxy for Free Fire Info & Stats API (SiamBhau / Custom)
+        if (parsedUrl.startsWith('/api/v1/ff-info')) {
+          const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+          import('https').then(({ default: https }) => {
+            const proxyReq = https.request({
+              hostname: 'siambhau69.eu.cc',
+              path: `/freefireinfo/bhau${queryStr}`,
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'ALVSHOP-App/2.0'
+              }
+            }, (proxyRes) => {
+              let pData = ''
+              proxyRes.on('data', c => pData += c)
+              proxyRes.on('end', () => {
+                res.setHeader('Content-Type', 'application/json')
+                res.setHeader('Access-Control-Allow-Origin', '*')
+                res.statusCode = proxyRes.statusCode || 200
+                res.end(pData)
+              })
+            })
+            proxyReq.on('error', (e) => {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ success: false, error: e.message }))
+            })
+            proxyReq.end()
+          })
+          return
+        }
+
         next()
       })
     }

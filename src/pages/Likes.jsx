@@ -70,15 +70,15 @@ export default function Likes() {
       if (res && res.success && res.nickname) {
         setPlayerData({
           nickname: res.nickname,
-          level: res.account_level || 70,
-          liked: Number(res.currentLikes || 5000),
+          level: res.account_level || 1,
+          liked: Number(res.currentLikes || 0),
           rankingPoints: res.rankingPoints || 0,
           rank: res.rank || 0,
-          region: res.region || 'LATAM',
+          region: res.region || 'US',
           badgeCnt: res.badgeCnt || 0,
           releaseVersion: res.releaseVersion || 'OB54',
           isVerified: true,
-          source: res.source || 'Free Fire Official / SiamBhau v5.0'
+          source: res.source || 'Free Fire Official / SiamBhau Premium'
         });
         setValidationError('');
       } else {

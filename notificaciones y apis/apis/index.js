@@ -146,7 +146,7 @@ export function getCustomValidatorUrl() {
     const saved = localStorage.getItem('alv_custom_ff_validator_url');
     if (saved && saved.trim()) return saved.trim();
   }
-  return '';
+  return 'https://siambhau69.eu.cc';
 }
 
 export function setCustomValidatorUrl(url) {
@@ -155,20 +155,29 @@ export function setCustomValidatorUrl(url) {
   }
 }
 
+export function getCustomValidatorKey() {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('alv_custom_ff_validator_key');
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return 'FFAPI-PREM-365D-Alv_Jona-X01';
+}
+
+export function setCustomValidatorKey(key) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('alv_custom_ff_validator_key', (key || '').trim());
+  }
+}
+
 /**
  * ==============================================================================
- * 2. API VALIDADORA DE FREE FIRE (UID -> NICKNAME & STATS EN TIEMPO REAL)
+ * 2. API VALIDADORA DE FREE FIRE (UID -> NICKNAME, NIVEL, LIKES & REGIÓN EN VIVO)
  * Compatible con:
+ * - SiamBhau Free Fire Premium API (FFAPI-PREM-365D-Alv_Jona-X01)
  * - Recargas América Live Validator (/pins/validate)
- * - 0xMe/FreeFire-Api (Python Protobuf Microservice)
- * - jinix6/free-ff-api (REST Account Info Endpoint)
+ * - 0xMe/FreeFire-Api & jinix6/free-ff-api
  * ==============================================================================
  */
-// SiamBhau Free Fire v5.0 Centralized API Configuration
-const SIAMBHAU_FF_CONFIG = {
-  baseUrl: 'https://siambhau69.eu.cc',
-  key: 'FFINFO-Free69'
-};
 
 export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') {
   if (!uid || typeof uid !== 'string' || uid.trim().length < 5) {
@@ -197,6 +206,9 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
 
   console.log(`[API VALIDADORA] Consultando nickname y estadísticas para UID Free Fire: ${cleanUid} (Región: ${region})`);
 
+  const activeBaseUrl = getCustomValidatorUrl() || 'https://siambhau69.eu.cc';
+  const activeKey = getCustomValidatorKey() || 'FFAPI-PREM-365D-Alv_Jona-X01';
+
   // 1. Motor SiamBhau Free Fire Centralized API v5.0 (Datos Oficiales 100% en vivo: Nivel, Likes, Rango)
   const regionsToTry = [region, 'US', 'SAC', 'BR', 'SG', 'IND', 'BD'];
   const triedRegions = new Set();
@@ -206,13 +218,28 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
     triedRegions.add(reg);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const url = `${SIAMBHAU_FF_CONFIG.baseUrl}/freefireinfo/bhau?uid=${cleanUid}&region=${reg}&key=${SIAMBHAU_FF_CONFIG.key}`;
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      let res = null;
 
-      if (res.ok) {
+      // Intentar primero por el proxy local para evitar problemas de CORS en navegador
+      try {
+        const proxyController = new AbortController();
+        const pTimeout = setTimeout(() => proxyController.abort(), 3500);
+        res = await fetch(`/api/v1/ff-info?uid=${cleanUid}&region=${reg}&key=${activeKey}`, {
+          signal: proxyController.signal
+        });
+        clearTimeout(pTimeout);
+      } catch (proxyErr) {}
+
+      // Fallback a conexión directa
+      if (!res || !res.ok) {
+        const directController = new AbortController();
+        const dTimeout = setTimeout(() => directController.abort(), 4000);
+        const url = `${activeBaseUrl}/freefireinfo/bhau?uid=${cleanUid}&region=${reg}&key=${activeKey}`;
+        res = await fetch(url, { signal: directController.signal });
+        clearTimeout(dTimeout);
+      }
+
+      if (res && res.ok) {
         const json = await res.json();
         if (json?.basicInfo?.nickname || json?.basicInfo?.apodo) {
           const bInfo = json.basicInfo;
@@ -221,9 +248,9 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
 
           if (!avatarUrl && headPicId) {
             if (headPicId === '902052004') {
-              avatarUrl = '/avatars/902052004.png'; // Satoru Gojo (OB52 JJK)
+              avatarUrl = '/avatars/902052004.png';
             } else if (headPicId === '902000094') {
-              avatarUrl = '/avatars/902000094.png'; // 8-Bit Chicken
+              avatarUrl = '/avatars/902000094.png';
             } else {
               avatarUrl = `/avatars/${headPicId}.png`;
             }
@@ -234,7 +261,7 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
             nickname: bInfo.nickname || bInfo.apodo,
             avatar_url: avatarUrl,
             account_level: bInfo.level || bInfo.nivel || 1,
-            currentLikes: bInfo.liked || bInfo['Me gusta'] || 0,
+            currentLikes: bInfo.liked || bInfo['Me gusta'] || bInfo.likes || 0,
             rankingPoints: bInfo.rankingPoints || bInfo.ranking_points || 0,
             rank: bInfo.rank || 0,
             region: bInfo.region || bInfo['región'] || reg,
@@ -243,7 +270,8 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
             headPic: headPicId,
             releaseVersion: bInfo.releaseVersion || 'OB54',
             isVerified: true,
-            source: 'Free Fire Official / SiamBhau v5.0'
+            hasStats: true, // Datos 100% reales obtenidos
+            source: 'Free Fire Official / SiamBhau Premium'
           };
           uidCache.set(cacheKey, { data: result, timestamp: Date.now() });
           return result;

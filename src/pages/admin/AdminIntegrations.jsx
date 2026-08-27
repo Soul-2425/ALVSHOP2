@@ -12,7 +12,9 @@ import {
   setActiveRecargasAmericaKey,
   isRecargasAmericaSandbox,
   getCustomValidatorUrl,
-  setCustomValidatorUrl
+  setCustomValidatorUrl,
+  getCustomValidatorKey,
+  setCustomValidatorKey
 } from '../../../notificaciones y apis/apis/index';
 import {
   DEFAULT_NOTIFICATION_TEMPLATES,
@@ -83,16 +85,28 @@ export default function AdminIntegrations() {
   const [ffResult, setFfResult] = useState(null);
   const [ffLoading, setFfLoading] = useState(false);
   const [customValidatorInput, setCustomValidatorInput] = useState(getCustomValidatorUrl());
+  const [customValidatorKeyInput, setCustomValidatorKeyInput] = useState(getCustomValidatorKey());
   const [savingValidatorUrl, setSavingValidatorUrl] = useState(false);
 
-  const handleSaveValidatorUrl = (e) => {
+  const handleSaveValidatorConfig = async (e) => {
     if (e) e.preventDefault();
     setSavingValidatorUrl(true);
     try {
       setCustomValidatorUrl(customValidatorInput);
-      alert('✅ URL del Servidor Validador (0xMe / jinix6) guardada exitosamente.');
+      setCustomValidatorKey(customValidatorKeyInput);
+      try {
+        await supabase
+          .from('config')
+          .update({
+            ff_validator_url: customValidatorInput.trim(),
+            ff_validator_key: customValidatorKeyInput.trim()
+          })
+          .eq('id', 1);
+      } catch (e) {}
+
+      alert('✅ ¡Configuración de API Validadora guardada exitosamente!\n\nURL: ' + customValidatorInput + '\nKey: ' + customValidatorKeyInput);
     } catch (err) {
-      alert('Error guardando URL: ' + err.message);
+      alert('Error guardando configuración: ' + err.message);
     } finally {
       setSavingValidatorUrl(false);
     }
@@ -923,45 +937,91 @@ export default function AdminIntegrations() {
       {activeTab === 'ff-validator' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* Custom Validator Server Configuration (0xMe / jinix6) */}
+          {/* Custom Validator Server Configuration (Key & URL) */}
           <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-glass)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
               <h3 style={{ fontSize: '1.1rem', margin: 0, color: 'var(--accent-cyan)' }}>
-                ⚡ Servidor Validador de Free Fire (Compatible con 0xMe / jinix6)
+                ⚡ Configuración de API Validadora de Free Fire (URL & Clave API)
               </h3>
               <span className="badge-cyan" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-                {customValidatorInput ? '🟢 Servidor Personalizado Activo' : '🛡️ Motor Recargas América + Multi-Fallback'}
+                🟢 API Premium Activa (Nivel, Likes, Nickname & Región)
               </span>
             </div>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Si tienes tu propio servidor de <strong>0xMe/FreeFire-Api</strong> corriendo en local (ej. <code>http://localhost:5000</code>) o alojado en la nube (Render, Railway, VPS), ingresa su URL aquí. Si lo dejas vacío, el sistema usará automáticamente el motor oficial de <strong>Recargas América</strong> en tiempo real.
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Configura o actualiza la <strong>URL del Servidor</strong> y la <strong>Clave API (Token / Key)</strong> sin tocar código. El sistema consultará este endpoint para obtener el <strong>Nickname oficial</strong>, <strong>Nivel</strong>, <strong>Likes reales</strong> y la <strong>Región</strong> del jugador.
             </p>
 
-            <form onSubmit={handleSaveValidatorUrl} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <input
-                type="text"
-                value={customValidatorInput}
-                onChange={(e) => setCustomValidatorInput(e.target.value)}
-                placeholder="Ej. http://localhost:5000 ó https://tu-validador.onrender.com"
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: '#0d111a',
-                  border: '1px solid var(--border-glass)',
-                  color: '#fff',
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem'
-                }}
-              />
-              <button
-                type="submit"
-                disabled={savingValidatorUrl}
-                className="btn-cyan"
-                style={{ padding: '10px 18px', fontSize: '0.85rem' }}
-              >
-                {savingValidatorUrl ? 'Guardando...' : '💾 Guardar Endpoint'}
-              </button>
+            <form onSubmit={handleSaveValidatorConfig} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    🌐 URL del Endpoint / Servidor Validador:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customValidatorInput}
+                    onChange={(e) => setCustomValidatorInput(e.target.value)}
+                    placeholder="https://siambhau69.eu.cc"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: '#0d111a',
+                      border: '1px solid var(--border-glass)',
+                      color: '#fff',
+                      fontFamily: 'monospace',
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    🔑 Clave API (API Key / Token):
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customValidatorKeyInput}
+                    onChange={(e) => setCustomValidatorKeyInput(e.target.value)}
+                    placeholder="FFAPI-PREM-365D-Alv_Jona-X01"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: '#0d111a',
+                      border: '1px solid var(--border-glass)',
+                      color: 'var(--accent-cyan)',
+                      fontFamily: 'monospace',
+                      fontSize: '0.85rem',
+                      fontWeight: 'bold'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomValidatorInput('https://siambhau69.eu.cc');
+                    setCustomValidatorKeyInput('FFAPI-PREM-365D-Alv_Jona-X01');
+                  }}
+                  className="btn-glass"
+                  style={{ fontSize: '0.8rem', padding: '8px 14px' }}
+                >
+                  🔄 Restaurar Oficial
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingValidatorUrl}
+                  className="btn-cyan"
+                  style={{ padding: '8px 20px', fontSize: '0.85rem' }}
+                >
+                  {savingValidatorUrl ? 'Guardando...' : '💾 Guardar Key y URL'}
+                </button>
+              </div>
             </form>
           </div>
 
@@ -1043,7 +1103,7 @@ export default function AdminIntegrations() {
 
                     <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Nivel de Cuenta:</span>
-                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>⭐ Nivel {ffResult.account_level || 65}</span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#fff' }}>⭐ Nivel {ffResult.account_level || 1}</span>
                     </div>
 
                     <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
@@ -1053,7 +1113,7 @@ export default function AdminIntegrations() {
 
                     <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>Likes / Reputación:</span>
-                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>👍 {Number(ffResult.currentLikes || 25000).toLocaleString()}</span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#34d399' }}>👍 {Number(ffResult.currentLikes || 0).toLocaleString()}</span>
                     </div>
                   </div>
                 ) : (

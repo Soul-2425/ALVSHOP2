@@ -139,6 +139,96 @@ export default function AdminUsers() {
   const [balanceReason, setBalanceReason] = useState('');
   const [savingBalance, setSavingBalance] = useState(false);
 
+  // Password Management Modal State
+  const [selectedUserForPassword, setSelectedUserForPassword] = useState(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [sendingResetEmail, setSendingResetEmail] = useState(false);
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$';
+    let pass = 'Alv';
+    for (let i = 0; i < 5; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    pass += '!';
+    setNewPasswordInput(pass);
+  };
+
+  const handleOpenPasswordModal = (user) => {
+    setSelectedUserForPassword(user);
+    const initialPass = `Alv${Math.floor(1000 + Math.random() * 9000)}!`;
+    setNewPasswordInput(initialPass);
+  };
+
+  const handleSendResetEmail = async () => {
+    if (!selectedUserForPassword?.email) return;
+    setSendingResetEmail(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(selectedUserForPassword.email, {
+        redirectTo: window.location.origin + '/profile'
+      });
+      if (error) throw error;
+      alert(`📧 ¡Enlace de recuperación enviado con éxito al correo:\n${selectedUserForPassword.email}`);
+    } catch (err) {
+      alert('Aviso: ' + err.message);
+    } finally {
+      setSendingResetEmail(false);
+    }
+  };
+
+  const handleSaveDirectPassword = async (e) => {
+    e.preventDefault();
+    if (!selectedUserForPassword || !newPasswordInput.trim() || newPasswordInput.trim().length < 6) {
+      alert('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      // 1. Audit log
+      try {
+        await supabase.from('audit_logs').insert({
+          action: 'admin_password_change',
+          target_user_id: selectedUserForPassword.id,
+          target_email: selectedUserForPassword.email,
+          performed_by: 'admin',
+          created_at: new Date().toISOString()
+        });
+      } catch (e) {}
+
+      // 2. Alert success & give WhatsApp notification option
+      const userPhone = selectedUserForPassword.phone ? selectedUserForPassword.phone.replace(/\D/g, '') : '';
+      const whatsappMsg = encodeURIComponent(
+        `👋 Hola ${selectedUserForPassword.full_name || 'Estimado cliente'}, el administrador de ALVSHOP ha restablecido tu contraseña.\n\n` +
+        `🔐 Tu nueva clave de acceso es:\n*${newPasswordInput.trim()}*\n\n` +
+        `🌐 Ingresa ahora en: ${window.location.origin}/profile\n\n` +
+        `Te recomendamos cambiarla una vez que inicies sesión.`
+      );
+
+      const confirmWa = window.confirm(
+        `✅ ¡Contraseña establecida con éxito para ${selectedUserForPassword.email}!\n\n` +
+        `Nueva Clave: ${newPasswordInput.trim()}\n\n` +
+        `¿Deseas abrir WhatsApp para enviarle la nueva contraseña al cliente ahora mismo?`
+      );
+
+      if (confirmWa) {
+        if (userPhone) {
+          window.open(`https://wa.me/${userPhone}?text=${whatsappMsg}`, '_blank');
+        } else {
+          window.open(`https://wa.me/?text=${whatsappMsg}`, '_blank');
+        }
+      }
+
+      setSelectedUserForPassword(null);
+      setNewPasswordInput('');
+    } catch (err) {
+      alert('Error actualizando contraseña: ' + err.message);
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   // Handle Balance Adjustment
   const handleSaveBalance = async (e) => {
     e.preventDefault();
@@ -292,6 +382,7 @@ export default function AdminUsers() {
                 <th style={{ padding: '10px 8px' }}>Referido</th>
                 <th style={{ padding: '10px 8px' }}>Saldo USDT</th>
                 <th style={{ padding: '10px 8px' }}>Gestión de Saldo</th>
+                <th style={{ padding: '10px 8px' }}>Seguridad / Clave</th>
                 <th style={{ padding: '10px 8px' }}>Rol Actual</th>
                 <th style={{ padding: '10px 8px' }}>Cambiar Rol</th>
               </tr>
@@ -327,6 +418,24 @@ export default function AdminUsers() {
                       }}
                     >
                       💰 Editar Saldo
+                    </button>
+                  </td>
+                  <td style={{ padding: '12px 8px' }}>
+                    <button
+                      onClick={() => handleOpenPasswordModal(u)}
+                      className="btn-glass"
+                      style={{
+                        padding: '6px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: '700',
+                        color: '#fbbf24',
+                        border: '1px solid rgba(251, 191, 36, 0.35)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      🔑 Cambiar Clave
                     </button>
                   </td>
                   <td style={{ padding: '12px 8px' }}>
@@ -451,12 +560,12 @@ export default function AdminUsers() {
                     style={{
                       padding: '8px',
                       borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
+                      fontSize: '0.78rem',
                       fontWeight: '800',
-                      border: 'none',
                       cursor: 'pointer',
-                      background: balanceAction === 'ADD' ? '#34d399' : 'rgba(255,255,255,0.05)',
-                      color: balanceAction === 'ADD' ? '#000' : '#fff'
+                      background: balanceAction === 'ADD' ? '#34d399' : 'rgba(255, 255, 255, 0.05)',
+                      color: balanceAction === 'ADD' ? '#000' : 'var(--text-main)',
+                      border: balanceAction === 'ADD' ? 'none' : '1px solid var(--border-glass)'
                     }}
                   >
                     ➕ Sumar
@@ -467,12 +576,12 @@ export default function AdminUsers() {
                     style={{
                       padding: '8px',
                       borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
+                      fontSize: '0.78rem',
                       fontWeight: '800',
-                      border: 'none',
                       cursor: 'pointer',
-                      background: balanceAction === 'SUBTRACT' ? '#f87171' : 'rgba(255,255,255,0.05)',
-                      color: balanceAction === 'SUBTRACT' ? '#000' : '#fff'
+                      background: balanceAction === 'SUBTRACT' ? '#f87171' : 'rgba(255, 255, 255, 0.05)',
+                      color: balanceAction === 'SUBTRACT' ? '#000' : 'var(--text-main)',
+                      border: balanceAction === 'SUBTRACT' ? 'none' : '1px solid var(--border-glass)'
                     }}
                   >
                     ➖ Restar
@@ -483,15 +592,15 @@ export default function AdminUsers() {
                     style={{
                       padding: '8px',
                       borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
+                      fontSize: '0.78rem',
                       fontWeight: '800',
-                      border: 'none',
                       cursor: 'pointer',
-                      background: balanceAction === 'SET' ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.05)',
-                      color: balanceAction === 'SET' ? '#000' : '#fff'
+                      background: balanceAction === 'SET' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
+                      color: balanceAction === 'SET' ? '#000' : 'var(--text-main)',
+                      border: balanceAction === 'SET' ? 'none' : '1px solid var(--border-glass)'
                     }}
                   >
-                    ✏️ Fijar Saldo
+                    🎯 Fijar
                   </button>
                 </div>
               </div>
@@ -560,6 +669,155 @@ export default function AdminUsers() {
                   {savingBalance ? 'Aplicando...' : '💾 Aplicar Saldo Ahora'}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Password Management & Reset Modal */}
+      {selectedUserForPassword && (
+        <div className="modal-backdrop" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0, 0, 0, 0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '500px',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            border: '1px solid #fbbf24',
+            background: 'linear-gradient(135deg, #0d111a 0%, #451a03 100%)',
+            boxShadow: '0 0 35px rgba(251, 191, 36, 0.25)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.4rem' }}>🔑</span>
+                <h3 style={{ fontSize: '1.15rem', margin: 0, color: '#fbbf24' }}>
+                  Cambio / Reseteo de Contraseña
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedUserForPassword(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.35)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', marginBottom: '16px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Usuario Destino:</div>
+              <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#fff' }}>
+                {selectedUserForPassword.full_name || 'Sin Nombre'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)' }}>
+                📧 {selectedUserForPassword.email}
+              </div>
+              {selectedUserForPassword.phone && (
+                <div style={{ fontSize: '0.78rem', color: '#34d399', marginTop: '2px' }}>
+                  📱 WhatsApp: {selectedUserForPassword.phone}
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveDirectPassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Nueva Contraseña para el Usuario:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.72rem', cursor: 'pointer', fontWeight: '700' }}
+                  >
+                    🎲 Generar Aleatoria
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  required
+                  placeholder="Mínimo 6 caracteres (ej. AlvShop2026!)"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: '#0d111a',
+                    border: '1px solid var(--border-glass)',
+                    color: '#fbbf24',
+                    fontFamily: 'monospace',
+                    fontSize: '1rem',
+                    fontWeight: '800'
+                  }}
+                />
+              </div>
+
+              {/* Action 1: Direct Save & WhatsApp Delivery */}
+              <button
+                type="submit"
+                disabled={savingPassword}
+                className="btn-cyan"
+                style={{
+                  padding: '12px',
+                  fontWeight: '800',
+                  fontSize: '0.85rem',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  color: '#000',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>💾 Guardar y Notificar por WhatsApp</span>
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0' }}>
+                <div style={{ flex: 1, height: '1px', background: 'var(--border-glass)' }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>O TAMBIÉN</span>
+                <div style={{ flex: 1, height: '1px', background: 'var(--border-glass)' }} />
+              </div>
+
+              {/* Action 2: Send Recovery Link via Email */}
+              <button
+                type="button"
+                disabled={sendingResetEmail}
+                onClick={handleSendResetEmail}
+                className="btn-glass"
+                style={{
+                  padding: '10px',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  color: '#34d399',
+                  border: '1px solid rgba(52, 211, 153, 0.3)'
+                }}
+              >
+                <span>📧 Enviar Enlace de Recuperación por Correo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedUserForPassword(null)}
+                className="btn-glass"
+                style={{ padding: '8px', fontSize: '0.8rem', marginTop: '4px' }}
+              >
+                Cerrar
+              </button>
             </form>
           </div>
         </div>

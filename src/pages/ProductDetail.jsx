@@ -133,9 +133,9 @@ export default function ProductDetail() {
       if (result && result.success && result.nickname) {
         setPlayerNickname(result.nickname);
         setPlayerAvatar(result.avatar_url || '/ff-avatar.png');
-        setPlayerLevel(result.hasStats && result.account_level ? result.account_level : null);
-        setPlayerRegion(result.region || 'LATAM');
-        setPlayerLikes(result.hasStats && result.currentLikes ? result.currentLikes : null);
+        setPlayerLevel(result.account_level || null);
+        setPlayerRegion(result.region || 'US');
+        setPlayerLikes(result.currentLikes || null);
         setValidationError('');
       } else {
         setPlayerNickname(null);
@@ -697,29 +697,28 @@ export default function ProductDetail() {
                     <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       <span>✓ CUENTA OFICIAL VERIFICADA</span>
                     </div>
-                    <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
                       {playerNickname}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                  {playerLevel ? (
-                    <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontWeight: '800' }}>
-                      ⭐ Nivel {playerLevel}
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: '0.72rem', background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
-                      🟢 Lista para Recarga
-                    </span>
-                  )}
-                  {playerLikes ? (
-                    <span style={{ fontSize: '0.7rem', color: '#fbbf24' }}>
-                      👍 {Number(playerLikes).toLocaleString()}
-                    </span>
-                  ) : null}
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                    🌎 {playerRegion || 'LATAM'}
+                {/* Account Stats: Nivel, Likes, Región */}
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {playerLevel && (
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                        ⭐ Nivel {playerLevel}
+                      </span>
+                    )}
+                    {playerLikes && (
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '3px 8px', borderRadius: '4px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                        👍 {Number(playerLikes).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>🌎 Región:</span> <strong style={{ color: '#fff' }}>{playerRegion || 'US'}</strong>
                   </span>
                 </div>
               </div>
