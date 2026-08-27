@@ -10,8 +10,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '1 DÍA',
     priceUsdt: 7.09,
     badge: 'POPULAR 🔥',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 1
   },
   {
@@ -21,8 +22,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '2 DÍAS',
     priceUsdt: 13.59,
     badge: 'RECOMENDADO ⭐',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 2
   },
   {
@@ -32,8 +34,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '5 DÍAS',
     priceUsdt: 34.87,
     badge: 'MEJOR VALOR 👑',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 3
   },
   {
@@ -43,8 +46,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '10 DÍAS',
     priceUsdt: 70.34,
     badge: 'PRO 🔥',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 4
   },
   {
@@ -54,8 +58,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '25 DÍAS',
     priceUsdt: 176.73,
     badge: 'SUPER PACK ⚡',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 5
   },
   {
@@ -65,8 +70,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '38 DÍAS',
     priceUsdt: 265.39,
     badge: 'MASTER 💎',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 6
   },
   {
@@ -76,8 +82,9 @@ export const DEFAULT_LIKES_PACKAGES = [
     deliveryDays: '50 DÍAS',
     priceUsdt: 354.04,
     badge: 'TITÁN 🏆',
-    imageUrl: 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: '/likes-badge.jpg',
     isActive: true,
+    whatsappBtnEnabled: false,
     sortOrder: 7
   }
 ];
@@ -91,15 +98,28 @@ export async function getLikesPackages() {
       .order('sort_order', { ascending: true });
 
     if (!error && data && data.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      return data;
+      const fixedData = data.map(p => ({
+        ...p,
+        imageUrl: (p.imageUrl && !p.imageUrl.includes('githubusercontent')) ? p.imageUrl : '/likes-badge.jpg'
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fixedData));
+      return fixedData;
     }
   } catch (e) {}
 
   // 2. Fallback Local Storage
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const cleaned = parsed.map(p => ({
+          ...p,
+          imageUrl: (p.imageUrl && !p.imageUrl.includes('githubusercontent')) ? p.imageUrl : '/likes-badge.jpg'
+        }));
+        return cleaned;
+      }
+    }
   } catch (e) {}
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_LIKES_PACKAGES));
@@ -117,8 +137,9 @@ export async function saveLikesPackage(pkg) {
     deliveryDays: pkg.deliveryDays || '1 DÍA',
     priceUsdt: Number(pkg.priceUsdt || 7.09),
     badge: pkg.badge || 'POPULAR 🔥',
-    imageUrl: pkg.imageUrl || 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
+    imageUrl: pkg.imageUrl || '/likes-badge.jpg',
     isActive: pkg.isActive !== false,
+    whatsappBtnEnabled: Boolean(pkg.whatsappBtnEnabled || pkg.whatsapp_quote_enabled),
     sortOrder: Number(pkg.sortOrder || current.length + 1)
   };
 

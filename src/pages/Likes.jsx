@@ -1,58 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { validatePlayerUid } from '../../notificaciones y apis/apis/index';
 import { supabase } from '../supabaseClient';
 import { useApp } from '../context/AppContext';
 import { getLikesPackages, DEFAULT_LIKES_PACKAGES } from '../services/likesPackagesService';
+import { notifyAdminNewOrder } from '../../notificaciones y apis/notificaciones/pushService';
 
 export default function Likes() {
   const { user, profile, config, updateUserWalletBalance, formatPrice, currency, exchangeRate } = useApp();
   const navigate = useNavigate();
+  const topSectionRef = useRef(null);
 
   // Rate & Wallet
   const currentRateGtq = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
   const walletBalance = Number(profile?.wallet_balance || 0);
 
-  // Tab: 'fixed' (Paquetes Fijos) vs 'scheduled' (Programado Diario)
-  const [activeTab, setActiveTab] = useState('fixed');
-
-  // Likes Packages from Service
+  // Packages list & Selection
   const [packagesList, setPackagesList] = useState(DEFAULT_LIKES_PACKAGES);
   const [selectedPackage, setSelectedPackage] = useState(DEFAULT_LIKES_PACKAGES[0]);
 
   useEffect(() => {
     getLikesPackages().then(list => {
       if (list && list.length > 0) {
-        setPackagesList(list.filter(p => p.isActive !== false));
-        setSelectedPackage(list[0]);
+        const visible = list.filter(p => p.isActive !== false);
+        setPackagesList(visible);
+        setSelectedPackage(visible[0] || list[0]);
       }
     });
   }, []);
 
-  // Input & Player State
+  // Input & Player State (Top Verification)
   const [targetUid, setTargetUid] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [playerData, setPlayerData] = useState(null);
   const [validationError, setValidationError] = useState('');
-
-  // Scheduled / Daily Form State
-  const [autoQtyPerDay, setAutoQtyPerDay] = useState(2000);
-  const [autoDays, setAutoDays] = useState(7);
-  const [autoHour, setAutoHour] = useState('14');
-  const [autoMinute, setAutoMinute] = useState('00');
 
   // Checkout & Dispatch State
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
 
   // Active Price Calculation
-  const currentPriceUsdt = activeTab === 'fixed'
-    ? Number(selectedPackage?.priceUsdt || 7.09)
-    : (autoQtyPerDay / 1000 * 0.70 * autoDays);
+  const currentPriceUsdt = Number(selectedPackage?.priceUsdt || 7.09);
   const currentPriceGtq = (currentPriceUsdt * currentRateGtq).toFixed(2);
   const hasSufficientBalance = walletBalance >= currentPriceUsdt;
 
-  // Real Validation using SiamBhau Free Fire v5.0 API
+  // Real Validation using SiamBhau Free Fire API
   const handleValidateUid = async (uidToValidate) => {
     const cleanUid = (uidToValidate || targetUid).trim().replace(/\D/g, '');
     if (!cleanUid || cleanUid.length < 5) {
@@ -94,6 +86,34 @@ export default function Likes() {
     }
   };
 
+  // When clicking a package: Select and scroll smoothly back up to the top buy/verified section
+  const handleSelectPackage = (pkg) => {
+    setSelectedPackage(pkg);
+    if (topSectionRef.current) {
+      topSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // WhatsApp Quote / Order Handler
+  const handleWhatsAppQuote = (pkg) => {
+    const p = pkg || selectedPackage;
+    const supportPhone = (config?.whatsapp_number || '50200000000').replace(/\D/g, '');
+    const uidStr = targetUid.trim() ? `UID: ${targetUid.trim()}` : 'UID: (Por ingresar)';
+    const nickStr = playerData?.nickname ? `Jugador: ${playerData.nickname}` : '';
+
+    const text = encodeURIComponent(
+      `👋 Hola ALVSHOP, deseo cotizar/comprar el siguiente paquete de Likes para Free Fire:\n\n` +
+      `🔥 *Paquete:* ${p.title} (${Number(p.quantity).toLocaleString()} Likes)\n` +
+      `⏱️ *Entrega:* ${p.deliveryDays}\n` +
+      `💰 *Precio:* $${Number(p.priceUsdt).toFixed(2)} USDT (Q${(Number(p.priceUsdt) * currentRateGtq).toFixed(2)} GTQ)\n` +
+      `🎮 *${uidStr}*\n` +
+      (nickStr ? `👤 *${nickStr}*\n\n` : '\n') +
+      `¿Podrían confirmarme los métodos de pago disponibles?`
+    );
+
+    window.open(`https://wa.me/${supportPhone}?text=${text}`, '_blank');
+  };
+
   // Submit Order & Pay with Wallet
   const handleProceedPayment = async () => {
     if (!user) {
@@ -103,12 +123,14 @@ export default function Likes() {
     }
 
     if (!targetUid.trim() || targetUid.trim().length < 5) {
-      alert('Por favor ingresa un ID (UID) de Free Fire válido.');
+      alert('Por favor ingresa un ID (UID) de Free Fire válido en la parte superior.');
+      if (topSectionRef.current) topSectionRef.current.scrollIntoView({ behavior: 'smooth' });
       return;
     }
 
     if (!playerData || !playerData.nickname) {
       alert('Por favor valida primero el ID de jugador antes de continuar.');
+      if (topSectionRef.current) topSectionRef.current.scrollIntoView({ behavior: 'smooth' });
       return;
     }
 
@@ -121,8 +143,8 @@ export default function Likes() {
     setIsProcessing(true);
 
     try {
-      const likesToAdd = activeTab === 'fixed' ? Number(selectedPackage.quantity) : (autoQtyPerDay * autoDays);
-      const deliveryTime = activeTab === 'fixed' ? selectedPackage.deliveryDays : `${autoDays} Días`;
+      const likesToAdd = Number(selectedPackage.quantity);
+      const deliveryTime = selectedPackage.deliveryDays;
       const playerNick = playerData.nickname;
       const likesBefore = Number(playerData.liked || 0);
       const targetLikesFinal = likesBefore + likesToAdd;
@@ -165,17 +187,16 @@ export default function Likes() {
         bank_receipt_url: isAutoDispatched ? `LIKES_API | Tx: ${dispatchResult.txId}` : 'WALLET_PAY',
         customer_notes: JSON.stringify({
           service_type: 'Free Fire Likes',
-          mode: activeTab,
+          mode: 'fixed',
           target_uid: targetUid.trim(),
           player_nickname: playerNick,
           player_level: playerData.level,
           likes_before: likesBefore,
           likes_to_add: likesToAdd,
           target_likes_final: targetLikesFinal,
-          region: playerData.region || 'LATAM',
+          region: playerData.region || 'US',
           delivery_estimated: deliveryTime,
-          dispatch_mode: dispatchResult.mode || 'MANUAL',
-          scheduled_hour: activeTab === 'scheduled' ? `${autoHour}:${autoMinute}` : 'Inmediato'
+          dispatch_mode: dispatchResult.mode || 'MANUAL'
         })
       };
 
@@ -199,24 +220,6 @@ export default function Likes() {
         };
       }
 
-      try {
-        await supabase.from('order_items').insert({
-          order_id: createdOrder.id,
-          product_id: null,
-          quantity: 1,
-          price_usdt: currentPriceUsdt,
-          cost_usdt: currentPriceUsdt * 0.5,
-          fields_data: {
-            target_uid: targetUid.trim(),
-            player_nickname: playerNick,
-            likes_quantity: likesToAdd,
-            delivery_days: deliveryTime,
-            likes_before: likesBefore,
-            target_likes_final: targetLikesFinal
-          }
-        });
-      } catch (e) {}
-
       // Save order to user local order history cache for instant viewing in Profile
       try {
         const cacheKey = `alv_user_orders_${user.id}`;
@@ -232,7 +235,10 @@ export default function Likes() {
               player_nickname: playerNick,
               likes_quantity: likesToAdd
             },
-            products: { name: `Paquete de ${likesToAdd.toLocaleString()} Likes Free Fire`, image_url: selectedPackage?.image_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80' }
+            products: {
+              name: `Paquete de ${likesToAdd.toLocaleString()} Likes Free Fire`,
+              image_url: selectedPackage?.imageUrl || '/likes-badge.jpg'
+            }
           }]
         };
         localStorage.setItem(cacheKey, JSON.stringify([orderToCache, ...prevCached]));
@@ -270,7 +276,7 @@ export default function Likes() {
     <div className="container" style={{ paddingTop: '20px', paddingBottom: '60px', maxWidth: '780px' }}>
       
       {/* Title Header */}
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+      <div style={{ textAlign: 'center', marginBottom: '20px' }}>
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -303,7 +309,7 @@ export default function Likes() {
       </div>
 
       {orderSuccess ? (
-        /* COMPACT & SLEEK SUCCESS RECEIPT CARD */
+        /* SUCCESS RECEIPT CARD */
         <div className="glass-panel" style={{
           borderRadius: 'var(--radius-lg)',
           padding: '24px 20px',
@@ -323,7 +329,6 @@ export default function Likes() {
               : '📋 Tu orden ha sido registrada en el panel. El administrador realizará el envío en el plazo estimado.'}
           </p>
 
-          {/* Compact Audit Card Summary */}
           <div style={{
             background: '#0d111a',
             border: '1px solid var(--border-glass)',
@@ -339,7 +344,7 @@ export default function Likes() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Jugador Verificado:</span>
               <strong style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>🐔</span> {orderSuccess.playerNick}
+                <span>👑</span> {orderSuccess.playerNick}
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
@@ -387,386 +392,339 @@ export default function Likes() {
         </div>
       ) : (
         <>
-          {/* TAB SELECTOR: Fixed vs Scheduled */}
-          <div style={{
-            display: 'flex',
-            background: 'rgba(255, 255, 255, 0.03)',
-            padding: '4px',
-            borderRadius: 'var(--radius-full)',
-            border: '1px solid var(--border-glass)',
-            marginBottom: '28px'
-          }}>
-            <button
-              onClick={() => setActiveTab('fixed')}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '0.88rem',
-                fontWeight: '800',
-                cursor: 'pointer',
-                background: activeTab === 'fixed' ? 'var(--accent-cyan)' : 'transparent',
-                color: activeTab === 'fixed' ? '#000' : 'var(--text-muted)',
-                border: 'none',
-                transition: 'all 0.2s ease',
-                boxShadow: activeTab === 'fixed' ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none'
-              }}
-            >
-              🔥 Paquetes Fijos de Likes
-            </button>
-            <button
-              onClick={() => setActiveTab('scheduled')}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '0.88rem',
-                fontWeight: '800',
-                cursor: 'pointer',
-                background: activeTab === 'scheduled' ? 'var(--accent-cyan)' : 'transparent',
-                color: activeTab === 'scheduled' ? '#000' : 'var(--text-muted)',
-                border: 'none',
-                transition: 'all 0.2s ease',
-                boxShadow: activeTab === 'scheduled' ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none'
-              }}
-            >
-              ⏰ Likes Diarios Programados
-            </button>
-          </div>
+          {/* ========================================================================= */}
+          {/* PASO 1: VERIFICACIÓN DE ID EN LA PARTE SUPERIOR DE LA PANTALLA */}
+          {/* ========================================================================= */}
+          <div ref={topSectionRef} style={{ marginBottom: '24px', scrollMarginTop: '20px' }}>
+            <div className="glass-panel" style={{
+              borderRadius: 'var(--radius-lg)',
+              padding: '20px',
+              border: '1px solid var(--border-cyan)',
+              background: 'linear-gradient(135deg, rgba(13, 17, 26, 0.95) 0%, rgba(30, 58, 138, 0.25) 100%)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '900', color: 'var(--accent-cyan)', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🎯</span> PASO 1: VERIFICA TU CUENTA (UID DE FREE FIRE)
+                </div>
+                <span style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', background: 'rgba(52, 211, 153, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>
+                  ⚡ Validación en Vivo Oficial
+                </span>
+              </div>
 
-          {/* PASO 1: SELECCIÓN DE PAQUETE (FORMATO HORIZONTAL GAMER) */}
-          <div style={{ marginBottom: '28px' }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--accent-cyan)', marginBottom: '14px', letterSpacing: '0.04em' }}>
-              PASO 1: SELECCIONA TU PAQUETE DE LIKES
-            </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Ingresa tu ID / UID (Ej. 29386038)"
+                  value={targetUid}
+                  onChange={(e) => {
+                    setTargetUid(e.target.value);
+                    setValidationError('');
+                  }}
+                  onBlur={() => {
+                    if (targetUid.trim().length >= 5) handleValidateUid();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleValidateUid();
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    background: '#0d111a',
+                    border: validationError ? '1px solid #f87171' : (playerData ? '1px solid #34d399' : '1px solid var(--border-glass)'),
+                    color: '#fff',
+                    fontSize: '1rem',
+                    fontWeight: '800',
+                    letterSpacing: '0.04em'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleValidateUid()}
+                  disabled={isValidating}
+                  className="btn-cyan"
+                  style={{ padding: '0 20px', fontSize: '0.88rem', fontWeight: '800', whiteSpace: 'nowrap' }}
+                >
+                  {isValidating ? 'Validando...' : '🔍 Validar UID'}
+                </button>
+              </div>
 
-            {activeTab === 'fixed' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {packagesList.map((pkg) => {
-                  const isSelected = selectedPackage?.id === pkg.id;
+              {validationError && (
+                <div style={{ color: '#f87171', fontSize: '0.8rem', marginTop: '8px', fontWeight: '600' }}>
+                  ⚠️ {validationError}
+                </div>
+              )}
 
-                  return (
-                    <div
-                      key={pkg.id}
-                      onClick={() => setSelectedPackage(pkg)}
-                      style={{
-                        borderRadius: 'var(--radius-lg)',
-                        padding: '14px 18px',
-                        cursor: 'pointer',
-                        background: isSelected ? 'linear-gradient(90deg, rgba(6, 182, 212, 0.18) 0%, rgba(13, 17, 26, 0.95) 100%)' : '#0d111a',
-                        border: isSelected ? '2px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-                        boxShadow: isSelected ? '0 0 25px rgba(6, 182, 212, 0.3)' : 'none',
-                        transition: 'all 0.2s ease',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '16px'
-                      }}
-                    >
-                      {/* Left: Custom Photo Container */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div style={{
-                          width: '52px',
-                          height: '52px',
-                          borderRadius: '12px',
-                          background: isSelected ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-                          border: isSelected ? '2px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          overflow: 'hidden',
-                          fontSize: '1.4rem',
-                          flexShrink: 0
-                        }}>
-                          {pkg.imageUrl ? (
-                            <img src={pkg.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <span>⚡</span>
-                          )}
-                        </div>
+              {isValidating && (
+                <div style={{ textAlign: 'center', padding: '16px', color: 'var(--accent-cyan)', fontSize: '0.85rem' }}>
+                  <div className="spinner-medium" style={{ margin: '0 auto 8px auto' }} />
+                  Consultando base de datos oficial de Free Fire...
+                </div>
+              )}
 
-                        {/* Title & Delivery Days */}
-                        <div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#fff', letterSpacing: '0.03em' }}>
-                            {pkg.title}
-                          </div>
-                          <div style={{ fontSize: '0.78rem', color: isSelected ? 'var(--accent-cyan)' : 'var(--text-muted)', fontWeight: '700', marginTop: '2px' }}>
-                            Entrega: {pkg.deliveryDays}
-                          </div>
-                        </div>
+              {/* CARD DE JUGADOR VERIFICADO (BIEN DISTRIBUIDA SIN RECORTES) */}
+              {playerData && !isValidating && (
+                <div style={{
+                  marginTop: '16px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(0, 0, 0, 0.45)',
+                  border: '1px solid #34d399',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>✓ CUENTA OFICIAL VERIFICADA</span>
                       </div>
-
-                      {/* Right: Big Price Tag */}
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#34d399', letterSpacing: '0.02em' }}>
-                          {formatPrice(pkg.priceUsdt)}
-                        </div>
-                        {currency !== 'USDT' && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            (${pkg.priceUsdt.toFixed(2)} USDT)
-                          </div>
-                        )}
+                      <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
+                        {playerData.nickname}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>
+                        UID: {targetUid.trim()}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* Scheduled Custom Pack Config */
-              <div className="glass-panel" style={{ padding: '20px', borderRadius: 'var(--radius-lg)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
-                      Likes por Día:
-                    </label>
-                    <select
-                      value={autoQtyPerDay}
-                      onChange={(e) => setAutoQtyPerDay(Number(e.target.value))}
-                      style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                    >
-                      <option value={1000}>1,000 Likes / día</option>
-                      <option value={2000}>2,000 Likes / día</option>
-                      <option value={3000}>3,000 Likes / día</option>
-                    </select>
-                  </div>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
-                      Duración (Días):
-                    </label>
-                    <select
-                      value={autoDays}
-                      onChange={(e) => setAutoDays(Number(e.target.value))}
-                      style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                    >
-                      <option value={7}>7 Días (1 Semana)</option>
-                      <option value={15}>15 Días (Quincena)</option>
-                      <option value={30}>30 Días (1 Mes)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: '700' }}>
-                      Hora de Envío Diario:
-                    </label>
-                    <input
-                      type="time"
-                      value={`${autoHour}:${autoMinute}`}
-                      onChange={(e) => {
-                        const [h, m] = e.target.value.split(':');
-                        setAutoHour(h || '14');
-                        setAutoMinute(m || '00');
-                      }}
-                      style={{ width: '100%', padding: '9px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(6, 182, 212, 0.1)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-cyan)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Total de Likes Acumulados: </span>
-                    <strong style={{ color: '#fff' }}>{(autoQtyPerDay * autoDays).toLocaleString()} Likes</strong>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <strong style={{ fontSize: '1.2rem', color: 'var(--accent-cyan)' }}>${currentPriceUsdt.toFixed(2)} USDT</strong>
-                    <span style={{ fontSize: '0.75rem', color: '#fbbf24', marginLeft: '6px' }}>(Q{currentPriceGtq} GTQ)</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* PASO 2: ID DEL OBJETIVO */}
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--accent-cyan)', marginBottom: '10px' }}>
-              PASO 2: INGRESA EL ID DEL OBJETIVO (UID DE FREE FIRE)
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input
-                type="text"
-                placeholder="Ej. 816331100"
-                value={targetUid}
-                onChange={(e) => {
-                  setTargetUid(e.target.value);
-                  setValidationError('');
-                }}
-                onBlur={() => {
-                  if (targetUid.trim().length >= 5) handleValidateUid();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleValidateUid();
-                  }
-                }}
-                style={{
-                  flex: 1,
-                  padding: '14px 18px',
-                  borderRadius: 'var(--radius-md)',
-                  background: '#0d111a',
-                  border: validationError ? '1px solid #f87171' : (playerData ? '1px solid #34d399' : '1px solid var(--border-glass)'),
-                  color: '#fff',
-                  fontSize: '1rem',
-                  fontWeight: '700',
-                  letterSpacing: '0.04em'
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => handleValidateUid()}
-                disabled={isValidating}
-                className="btn-cyan"
-                style={{ padding: '0 24px', fontSize: '0.9rem', whiteSpace: 'nowrap' }}
-              >
-                {isValidating ? 'Validando...' : '🔍 Validar ID'}
-              </button>
-            </div>
-
-            {validationError && (
-              <div style={{ color: '#f87171', fontSize: '0.78rem', marginTop: '6px', fontWeight: '600' }}>
-                ⚠️ {validationError}
-              </div>
-            )}
-          </div>
-
-          {/* PASO 3: TARJETA DE PERFIL OFICIAL (100% REAL EN VIVO CON SIAMBHAU v5.0) */}
-          {isValidating && (
-            <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-              <div className="spinner-medium" style={{ margin: '0 auto 12px auto' }} />
-              Consultando cuenta oficial de Free Fire en Garena...
-            </div>
-          )}
-
-          {playerData && !isValidating && (
-            <div style={{ marginBottom: '28px' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#34d399', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>✅</span> CUENTA OFICIAL VERIFICADA EN GARENA
-              </div>
-
-              <div style={{
-                borderRadius: 'var(--radius-lg)',
-                overflow: 'hidden',
-                background: 'linear-gradient(135deg, #0f172a 0%, #0d111a 100%)',
-                border: '1px solid var(--border-cyan)',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px rgba(6, 182, 212, 0.15)',
-                position: 'relative'
-              }}>
-                {/* Header Banner */}
-                <div style={{
-                  height: '70px',
-                  background: 'linear-gradient(90deg, #1e3a8a 0%, #06b6d4 100%)',
-                  position: 'relative',
-                  padding: '12px 20px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start'
-                }}>
-                  <span style={{ fontSize: '0.72rem', background: 'rgba(0, 0, 0, 0.65)', padding: '4px 10px', borderRadius: '12px', color: '#fff', fontWeight: '800' }}>
-                    🌍 Región {playerData.region} ({playerData.releaseVersion})
-                  </span>
-                  <span style={{ fontSize: '0.72rem', background: '#34d399', color: '#000', padding: '4px 10px', borderRadius: '12px', fontWeight: '900' }}>
-                    Garena Verified ✅
-                  </span>
-                </div>
-
-                {/* Profile Body */}
-                <div style={{ padding: '0 20px 20px 20px', marginTop: '-30px', display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  {/* Avatar Icon */}
-                  <div style={{
-                    width: '68px',
-                    height: '68px',
-                    borderRadius: '16px',
-                    border: '2px solid var(--accent-cyan)',
-                    background: 'linear-gradient(135deg, #1d4ed8 0%, #06b6d4 100%)',
-                    overflow: 'hidden',
-                    boxShadow: '0 0 25px rgba(6, 182, 212, 0.4)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.8rem',
-                    fontWeight: '900',
-                    color: '#fff',
-                    letterSpacing: '-0.02em',
-                    flexShrink: 0
-                  }}>
-                    FF
-                  </div>
-
-                  {/* Player Info */}
-                  <div style={{ flex: 1, paddingTop: '34px', minWidth: '200px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <h3 style={{ margin: 0, fontSize: '1.35rem', color: '#fff', fontWeight: '900' }}>
-                        {playerData.nickname}
-                      </h3>
-                      <span style={{
-                        fontSize: '0.72rem',
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        background: 'rgba(234, 179, 8, 0.2)',
-                        color: '#fbbf24',
-                        fontWeight: '800',
-                        border: '1px solid rgba(234, 179, 8, 0.4)'
-                      }}>
-                        Nv. {playerData.level}
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                        ⭐ Nivel {playerData.level}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                        👍 {playerData.liked.toLocaleString()} Likes
+                      </span>
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.08)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800' }}>
+                        🌎 Región: {playerData.region}
                       </span>
                     </div>
+                  </div>
 
-                    <div style={{ color: 'var(--accent-cyan)', fontSize: '0.85rem', fontWeight: '700', marginTop: '2px' }}>
-                      ID / UID: {targetUid.trim()}
+                  {/* Likes Progression Summary */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--border-glass)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    textAlign: 'center'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>LIKES ACTUALES</div>
+                      <div style={{ fontSize: '1rem', fontWeight: '900', color: '#fff' }}>{playerData.liked.toLocaleString()} ❤️</div>
                     </div>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>A AÑADIR</div>
+                      <div style={{ fontSize: '1rem', fontWeight: '900', color: 'var(--accent-cyan)' }}>+{Number(selectedPackage?.quantity || 2000).toLocaleString()} ⚡</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: '700' }}>META FINAL</div>
+                      <div style={{ fontSize: '1rem', fontWeight: '900', color: '#34d399' }}>{(playerData.liked + Number(selectedPackage?.quantity || 2000)).toLocaleString()} 🎯</div>
+                    </div>
+                  </div>
+
+                  {/* Top Action Box: Buy Button or WhatsApp Quote Button */}
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    <button
+                      onClick={handleProceedPayment}
+                      disabled={isProcessing || !hasSufficientBalance}
+                      className="btn-cyan"
+                      style={{
+                        flex: 1,
+                        padding: '14px 20px',
+                        fontSize: '0.95rem',
+                        fontWeight: '900',
+                        letterSpacing: '0.03em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        minWidth: '220px'
+                      }}
+                    >
+                      {isProcessing
+                        ? 'Procesando Envío de Likes...'
+                        : !hasSufficientBalance
+                        ? 'Saldo Insuficiente (Recargar Billetera)'
+                        : `💎 Comprar ${selectedPackage?.title} ($${currentPriceUsdt.toFixed(2)} USDT)`}
+                    </button>
+
+                    {selectedPackage?.whatsappBtnEnabled && (
+                      <button
+                        onClick={() => handleWhatsAppQuote(selectedPackage)}
+                        style={{
+                          padding: '14px 18px',
+                          borderRadius: 'var(--radius-md)',
+                          fontSize: '0.9rem',
+                          fontWeight: '800',
+                          background: '#25D366',
+                          color: '#000',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span>📲 Cotizar por WhatsApp</span>
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {/* Likes Progression Box (Real live stats!) */}
-                <div style={{
-                  margin: '0 20px 20px 20px',
-                  padding: '14px 18px',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid var(--border-glass)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '12px',
-                  textAlign: 'center'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>LIKES EN VIVO</div>
-                    <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#fff', marginTop: '2px' }}>
-                      {playerData.liked.toLocaleString()} ❤️
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>LIKES AÑADIDOS</div>
-                    <div style={{ fontSize: '1.15rem', fontWeight: '900', color: 'var(--accent-cyan)', marginTop: '2px' }}>
-                      +{(activeTab === 'fixed' ? Number(selectedPackage.quantity) : (autoQtyPerDay * autoDays)).toLocaleString()} ⚡
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: '700' }}>META FINAL</div>
-                    <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#34d399', marginTop: '2px' }}>
-                      {(playerData.liked + (activeTab === 'fixed' ? Number(selectedPackage.quantity) : (autoQtyPerDay * autoDays))).toLocaleString()} 🎯
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* PASO 4: PAGO CON BILLETERA */}
+          {/* ========================================================================= */}
+          {/* PASO 2: SELECCIONA TU PAQUETE DE LIKES */}
+          {/* ========================================================================= */}
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--accent-cyan)', letterSpacing: '0.04em' }}>
+                PASO 2: SELECCIONA LA CANTIDAD DE LIKES
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Toca cualquier paquete para seleccionarlo
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {packagesList.map((pkg) => {
+                const isSelected = selectedPackage?.id === pkg.id;
+
+                return (
+                  <div
+                    key={pkg.id}
+                    onClick={() => handleSelectPackage(pkg)}
+                    style={{
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '14px 18px',
+                      cursor: 'pointer',
+                      background: isSelected ? 'linear-gradient(90deg, rgba(6, 182, 212, 0.18) 0%, rgba(13, 17, 26, 0.95) 100%)' : '#0d111a',
+                      border: isSelected ? '2px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
+                      boxShadow: isSelected ? '0 0 25px rgba(6, 182, 212, 0.3)' : 'none',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '14px'
+                    }}
+                  >
+                    {/* Left: Custom Photo Container (with working default fallback) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{
+                        width: '54px',
+                        height: '54px',
+                        borderRadius: '12px',
+                        background: isSelected ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                        border: isSelected ? '2px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        fontSize: '1.4rem',
+                        flexShrink: 0
+                      }}>
+                        <img
+                          src={pkg.imageUrl || '/likes-badge.jpg'}
+                          alt={pkg.title}
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = '/likes-badge.jpg';
+                          }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </div>
+
+                      {/* Title, Delivery & Badge */}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '1.25rem', fontWeight: '900', color: '#fff', letterSpacing: '0.03em' }}>
+                            {pkg.title}
+                          </span>
+                          {pkg.badge && (
+                            <span style={{
+                              fontSize: '0.68rem',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              background: 'rgba(251, 191, 36, 0.15)',
+                              color: '#fbbf24',
+                              fontWeight: '800',
+                              border: '1px solid rgba(251, 191, 36, 0.3)'
+                            }}>
+                              {pkg.badge}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: isSelected ? 'var(--accent-cyan)' : 'var(--text-muted)', fontWeight: '700', marginTop: '2px' }}>
+                          ⏱️ Entrega: {pkg.deliveryDays}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Price & WhatsApp Button if active */}
+                    <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                      <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#34d399', letterSpacing: '0.02em' }}>
+                        {formatPrice(pkg.priceUsdt)}
+                      </div>
+                      {currency !== 'USDT' && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          (${pkg.priceUsdt.toFixed(2)} USDT)
+                        </div>
+                      )}
+
+                      {pkg.whatsappBtnEnabled && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleWhatsAppQuote(pkg);
+                          }}
+                          style={{
+                            marginTop: '4px',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            background: '#25D366',
+                            color: '#000',
+                            fontWeight: '800',
+                            fontSize: '0.72rem',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <span>📲 Cotizar</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* PASO 3: RESUMEN DE COMPRA & PAGO */}
+          {/* ========================================================================= */}
           <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TU SALDO DISPONIBLE EN BILLETERA:</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TU SALDO EN BILLETERA:</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: '900', color: hasSufficientBalance ? 'var(--accent-cyan)' : '#f87171' }}>
                   ${walletBalance.toFixed(2)} USDT <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>({formatPrice(walletBalance)})</span>
                 </div>
               </div>
 
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TOTAL A PAGAR:</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '700' }}>TOTAL DE ESTE PAQUETE:</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#fff' }}>
                   {formatPrice(currentPriceUsdt)}
                 </div>
@@ -800,26 +758,51 @@ export default function Likes() {
               </div>
             )}
 
-            <button
-              onClick={handleProceedPayment}
-              disabled={isProcessing || !hasSufficientBalance || !playerData}
-              className="btn-cyan"
-              style={{
-                width: '100%',
-                padding: '16px',
-                fontSize: '1rem',
-                fontWeight: '900',
-                letterSpacing: '0.04em'
-              }}
-            >
-              {isProcessing
-                ? 'Procesando Envío de Likes...'
-                : !playerData
-                ? 'Valida tu ID de Jugador para Continuar'
-                : !hasSufficientBalance
-                ? 'Saldo Insuficiente (Recarga tu Billetera)'
-                : `💎 Pagar con Billetera ($${currentPriceUsdt.toFixed(2)} USDT)`}
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleProceedPayment}
+                disabled={isProcessing || !hasSufficientBalance || !playerData}
+                className="btn-cyan"
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  fontSize: '1rem',
+                  fontWeight: '900',
+                  letterSpacing: '0.04em',
+                  minWidth: '220px'
+                }}
+              >
+                {isProcessing
+                  ? 'Procesando Envío de Likes...'
+                  : !playerData
+                  ? '👆 Valida tu UID Arriba para Continuar'
+                  : !hasSufficientBalance
+                  ? 'Saldo Insuficiente (Recarga tu Billetera)'
+                  : `💎 Comprar ${selectedPackage?.title} ($${currentPriceUsdt.toFixed(2)} USDT)`}
+              </button>
+
+              {selectedPackage?.whatsappBtnEnabled && (
+                <button
+                  type="button"
+                  onClick={() => handleWhatsAppQuote(selectedPackage)}
+                  style={{
+                    padding: '16px 20px',
+                    borderRadius: 'var(--radius-md)',
+                    background: '#25D366',
+                    color: '#000',
+                    fontWeight: '900',
+                    fontSize: '0.95rem',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <span>📲 Comprar por WhatsApp</span>
+                </button>
+              )}
+            </div>
           </div>
         </>
       )}

@@ -34,7 +34,9 @@ export default function AdminLikes() {
   const [pkgDeliveryDays, setPkgDeliveryDays] = useState('1 DÍA');
   const [pkgPriceUsdt, setPkgPriceUsdt] = useState('7.09');
   const [pkgBadge, setPkgBadge] = useState('POPULAR 🔥');
-  const [pkgImageUrl, setPkgImageUrl] = useState('');
+  const [pkgImageUrl, setPkgImageUrl] = useState('/likes-badge.jpg');
+  const [pkgIsActive, setPkgIsActive] = useState(true);
+  const [pkgWhatsappBtnEnabled, setPkgWhatsappBtnEnabled] = useState(false);
   const [uploadingPkgImg, setUploadingPkgImg] = useState(false);
   const [savingPkg, setSavingPkg] = useState(false);
 
@@ -210,7 +212,9 @@ export default function AdminLikes() {
     setPkgDeliveryDays('1 DÍA');
     setPkgPriceUsdt('7.09');
     setPkgBadge('POPULAR 🔥');
-    setPkgImageUrl('https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png');
+    setPkgImageUrl('/likes-badge.jpg');
+    setPkgIsActive(true);
+    setPkgWhatsappBtnEnabled(false);
   };
 
   const handleOpenEditPackage = (pkg) => {
@@ -220,7 +224,21 @@ export default function AdminLikes() {
     setPkgDeliveryDays(pkg.deliveryDays);
     setPkgPriceUsdt(String(pkg.priceUsdt));
     setPkgBadge(pkg.badge || '');
-    setPkgImageUrl(pkg.imageUrl || '');
+    setPkgImageUrl(pkg.imageUrl || '/likes-badge.jpg');
+    setPkgIsActive(pkg.isActive !== false);
+    setPkgWhatsappBtnEnabled(Boolean(pkg.whatsappBtnEnabled || pkg.whatsapp_quote_enabled));
+  };
+
+  const handleTogglePackageActive = async (pkg) => {
+    const updatedPkg = { ...pkg, isActive: !pkg.isActive };
+    const updated = await saveLikesPackage(updatedPkg);
+    setPackages(updated);
+  };
+
+  const handleTogglePackageWhatsapp = async (pkg) => {
+    const updatedPkg = { ...pkg, whatsappBtnEnabled: !pkg.whatsappBtnEnabled };
+    const updated = await saveLikesPackage(updatedPkg);
+    setPackages(updated);
   };
 
   const handleSavePackage = async (e) => {
@@ -234,8 +252,9 @@ export default function AdminLikes() {
       deliveryDays: pkgDeliveryDays.trim() || '1 DÍA',
       priceUsdt: Number(pkgPriceUsdt),
       badge: pkgBadge.trim(),
-      imageUrl: pkgImageUrl.trim() || 'https://raw.githubusercontent.com/hexated/freefire-data/main/icons/avatars/avatar_1.png',
-      isActive: true,
+      imageUrl: pkgImageUrl.trim() || '/likes-badge.jpg',
+      isActive: pkgIsActive,
+      whatsappBtnEnabled: pkgWhatsappBtnEnabled,
       sortOrder: editingPkg ? editingPkg.sortOrder : packages.length + 1
     };
 
@@ -243,6 +262,7 @@ export default function AdminLikes() {
       const updated = await saveLikesPackage(payload);
       setPackages(updated);
       setEditingPkg(null);
+      setPkgTitle('');
       alert('¡Paquete de Likes guardado exitosamente!');
     } catch (err) {
       alert('Error guardando paquete: ' + err.message);
@@ -658,6 +678,19 @@ export default function AdminLikes() {
                       style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
                     />
                   </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: '700', marginBottom: '4px' }}>
+                      Insignia / Badge:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. POPULAR 🔥"
+                      value={pkgBadge}
+                      onChange={(e) => setPkgBadge(e.target.value)}
+                      style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                  </div>
                 </div>
 
                 {/* Photo / Image Upload for Package */}
@@ -678,11 +711,12 @@ export default function AdminLikes() {
                       justifyContent: 'center',
                       flexShrink: 0
                     }}>
-                      {pkgImageUrl ? (
-                        <img src={pkgImageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <span>⚡</span>
-                      )}
+                      <img
+                        src={pkgImageUrl || '/likes-badge.jpg'}
+                        alt=""
+                        onError={(e) => { e.target.onerror = null; e.target.src = '/likes-badge.jpg'; }}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
                     </div>
                     <input
                       type="text"
@@ -716,6 +750,35 @@ export default function AdminLikes() {
                   </div>
                 </div>
 
+                {/* Stock Visibility and WhatsApp Quote Toggles */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={pkgIsActive}
+                      onChange={(e) => setPkgIsActive(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: 'var(--accent-cyan)' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff' }}>👁️ Paquete Activo (Visible en Tienda)</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Desactiva para pausar este paquete temporalmente sin borrarlo</div>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={pkgWhatsappBtnEnabled}
+                      onChange={(e) => setPkgWhatsappBtnEnabled(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#25D366' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#25D366' }}>📲 Habilitar Botón de WhatsApp</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Muestra el botón de cotizar/comprar por WhatsApp para esta cantidad</div>
+                    </div>
+                  </label>
+                </div>
+
                 <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
                   <button type="submit" disabled={savingPkg} className="btn-cyan" style={{ padding: '10px 24px', fontSize: '0.88rem' }}>
                     {savingPkg ? 'Guardando...' : '💾 Guardar Paquete'}
@@ -737,7 +800,8 @@ export default function AdminLikes() {
                   borderRadius: 'var(--radius-md)',
                   padding: '14px 18px',
                   background: '#0d111a',
-                  border: '1px solid var(--border-glass)',
+                  border: pkg.isActive !== false ? '1px solid var(--border-glass)' : '1px dashed rgba(239, 68, 68, 0.4)',
+                  opacity: pkg.isActive !== false ? 1 : 0.65,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -747,8 +811,8 @@ export default function AdminLikes() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <div style={{
-                    width: '46px',
-                    height: '46px',
+                    width: '48px',
+                    height: '48px',
                     borderRadius: '10px',
                     background: 'rgba(255, 255, 255, 0.04)',
                     border: '1px solid var(--border-cyan)',
@@ -758,24 +822,36 @@ export default function AdminLikes() {
                     overflow: 'hidden',
                     flexShrink: 0
                   }}>
-                    {pkg.imageUrl ? (
-                      <img src={pkg.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <span>⚡</span>
-                    )}
+                    <img
+                      src={pkg.imageUrl || '/likes-badge.jpg'}
+                      alt=""
+                      onError={(e) => { e.target.onerror = null; e.target.src = '/likes-badge.jpg'; }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
                   </div>
 
                   <div>
-                    <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#fff' }}>
-                      {pkg.title} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({Number(pkg.quantity).toLocaleString()} Likes)</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '1.15rem', fontWeight: '900', color: '#fff' }}>
+                        {pkg.title}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        ({Number(pkg.quantity).toLocaleString()} Likes)
+                      </span>
+                      {pkg.badge && (
+                        <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', fontWeight: 'bold' }}>
+                          {pkg.badge}
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>
-                      Entrega: {pkg.deliveryDays}
+                    <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700', marginTop: '2px' }}>
+                      ⏱️ Entrega: {pkg.deliveryDays}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                  {/* Price Tags */}
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#34d399' }}>
                       ${Number(pkg.priceUsdt).toFixed(2)} USD
@@ -785,7 +861,44 @@ export default function AdminLikes() {
                     </div>
                   </div>
 
+                  {/* Stock & WhatsApp Quick Toggles */}
                   <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePackageActive(pkg)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        background: pkg.isActive !== false ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: pkg.isActive !== false ? '#34d399' : '#f87171',
+                        border: pkg.isActive !== false ? '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                      }}
+                      title="Activar / Desactivar visibilidad al público"
+                    >
+                      {pkg.isActive !== false ? '👁️ Activo' : '🚫 Oculto'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePackageWhatsapp(pkg)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        background: pkg.whatsappBtnEnabled ? 'rgba(37, 211, 102, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                        color: pkg.whatsappBtnEnabled ? '#25D366' : 'var(--text-muted)',
+                        border: pkg.whatsappBtnEnabled ? '1px solid #25D366' : '1px solid var(--border-glass)'
+                      }}
+                      title="Activar / Desactivar botón de WhatsApp para cotizar"
+                    >
+                      {pkg.whatsappBtnEnabled ? '📲 WhatsApp ON' : '📲 WhatsApp OFF'}
+                    </button>
+
                     <button
                       onClick={() => handleOpenEditPackage(pkg)}
                       style={{ padding: '6px 12px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', fontSize: '0.78rem', cursor: 'pointer', fontWeight: 'bold' }}
