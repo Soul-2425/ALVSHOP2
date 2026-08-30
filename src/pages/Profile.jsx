@@ -181,7 +181,7 @@ export default function Profile() {
 
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({
+        const { error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
           options: {
@@ -191,7 +191,11 @@ export default function Profile() {
             }
           }
         });
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('already registered')) throw new Error('Este correo ya está registrado. Inicia sesión en su lugar.');
+          if (error.message.includes('Password')) throw new Error('La contraseña debe tener al menos 6 caracteres.');
+          throw error;
+        }
         alert('¡Cuenta creada con éxito! Ya puedes iniciar sesión.');
         setIsSignUp(false);
       } else {
@@ -199,11 +203,36 @@ export default function Profile() {
           email: authEmail,
           password: authPassword
         });
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) throw new Error('Correo o contraseña incorrectos. Verifica tus datos.');
+          if (error.message.includes('Email not confirmed')) throw new Error('Debes confirmar tu correo electrónico antes de iniciar sesión.');
+          throw error;
+        }
         if (data.user) fetchProfile(data.user.id);
       }
     } catch (err) {
       setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!authEmail) {
+      setAuthError('Por favor, ingresa tu correo electrónico en el campo superior para recuperar la contraseña.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
+        redirectTo: window.location.origin + '/profile'
+      });
+      if (error) throw error;
+      alert(`✅ Se ha enviado un enlace de recuperación al correo: ${authEmail}\nRevisa tu bandeja de entrada o spam.`);
+    } catch (err) {
+      if (err.message.includes('rate limit')) setAuthError('Por favor espera un momento antes de solicitar otro enlace.');
+      else setAuthError('Error al solicitar recuperación: ' + err.message);
     } finally {
       setAuthLoading(false);
     }
@@ -672,7 +701,18 @@ export default function Profile() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Contraseña</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Contraseña</label>
+                {!isSignUp && (
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.7rem', cursor: 'pointer', fontWeight: '600' }}
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                )}
+              </div>
               <input
                 type="password"
                 required

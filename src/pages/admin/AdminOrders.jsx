@@ -17,6 +17,11 @@ export default function AdminOrders() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Likes Delivery Modal State
+  const [deliveryModalOrder, setDeliveryModalOrder] = useState(null);
+  const [likesAddedInput, setLikesAddedInput] = useState('');
+  const [publishToFeed, setPublishToFeed] = useState(true);
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
@@ -245,6 +250,22 @@ export default function AdminOrders() {
   // Handle Status Update & Automatic Stock Deduction
   const handleUpdateOrderStatus = async (newStatus) => {
     if (!selectedOrder) return;
+    
+    // Check if it's a Likes order and we want to mark it as Completed
+    let parsedNotes = {};
+    try {
+      parsedNotes = typeof selectedOrder.customer_notes === 'string'
+        ? JSON.parse(selectedOrder.customer_notes)
+        : selectedOrder.customer_notes || {};
+    } catch (e) {}
+
+    if (newStatus === 'Completed' && parsedNotes.service_type === 'Free Fire Likes') {
+      setDeliveryModalOrder(selectedOrder);
+      setLikesAddedInput(parsedNotes.likes_to_add || '');
+      setPublishToFeed(true);
+      return; // Stop here, wait for modal submission
+    }
+
     setUpdatingStatus(true);
 
     try {
@@ -266,13 +287,6 @@ export default function AdminOrders() {
         }
 
         // 2. Extract UID and Trigger Supplier API
-        let parsedNotes = {};
-        try {
-          parsedNotes = typeof selectedOrder.customer_notes === 'string'
-            ? JSON.parse(selectedOrder.customer_notes)
-            : selectedOrder.customer_notes || {};
-        } catch (e) {}
-
         const targetUid = parsedNotes.target_uid || parsedNotes['ID de Jugador (UID)'] || parsedNotes.uid || selectedOrder.order_items?.[0]?.fields_data?.['ID de Jugador (UID)'] || '';
         const productName = selectedOrder.order_items?.[0]?.products?.name || 'Recarga de Diamantes';
 
@@ -571,6 +585,69 @@ export default function AdminOrders() {
       alert('Error eliminando pedidos por rango: ' + err.message);
     } finally {
       setDeletingRangeOrders(false);
+    }
+  };
+
+  // Confirm Likes Delivery
+  const handleConfirmLikesDelivery = async () => {
+    if (!deliveryModalOrder) return;
+    setUpdatingStatus(true);
+    
+    try {
+      let parsedNotes = typeof deliveryModalOrder.customer_notes === 'string'
+        ? JSON.parse(deliveryModalOrder.customer_notes) : deliveryModalOrder.customer_notes || {};
+      
+      const likesAdded = Number(likesAddedInput) || 0;
+      const likesBefore = Number(parsedNotes.likes_before) || 0;
+      const likesNow = likesBefore + likesAdded;
+      
+      const updatedNotes = {
+        ...parsedNotes,
+        likes_added_actual: likesAdded,
+        likes_after: likesNow
+      };
+
+      // 1. Update Order
+      const { error } = await supabase.from('orders').update({
+        status: 'Completed',
+        customer_notes: JSON.stringify(updatedNotes)
+      }).eq('id', deliveryModalOrder.id);
+
+      if (error) throw error;
+
+      // 2. Publish to Feed (Community) if checked
+      if (publishToFeed) {
+        try {
+          const feedContent = `✅ ¡Pedido completado exitosamente para **${parsedNotes.validated_nickname || 'Jugador'}**!\nSe agregaron **+${likesAdded.toLocaleString()} Likes** a su cuenta oficial de Free Fire.\n\nRegión: ${parsedNotes.region || 'Desconocida'}\nLikes Actuales: ${likesNow.toLocaleString()} ❤️`;
+          await supabase.from('feed_posts').insert({
+            user_id: user.id,
+            content: feedContent,
+            images: [], // Optionally generate and save the Comprobante 2 image URL here later
+            likes: 0
+          });
+        } catch (feedErr) {
+          console.warn('Could not post to feed', feedErr);
+        }
+      }
+
+      // 3. Notify user
+      if (deliveryModalOrder.user_id) {
+        notifyOrderCompleted({
+          orderId: deliveryModalOrder.id,
+          userId: deliveryModalOrder.user_id,
+          product: 'Paquete de Likes FF',
+          amount: deliveryModalOrder.total_usdt
+        });
+      }
+
+      alert('✅ Entrega de Likes Confirmada. Comprobante Generado.');
+      setDeliveryModalOrder(null);
+      setSelectedOrder(null);
+      loadOrders();
+    } catch (err) {
+      alert('Error confirmando entrega: ' + err.message);
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -1499,6 +1576,126 @@ export default function AdminOrders() {
                 border: '1px solid rgba(255, 255, 255, 0.1)'
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Confirmation Modal for Likes */}
+      {deliveryModalOrder && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 150,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div className="glass-panel animate-fade" style={{
+            width: '100%',
+            maxWidth: '500px',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            border: '2px solid #34d399',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            background: 'linear-gradient(145deg, #0f172a 0%, #1e1b4b 100%)',
+            boxShadow: '0 8px 32px rgba(52, 211, 153, 0.2)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#34d399' }}>✅ CONFIRMAR ENTREGA DE LIKES</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Pedido #{deliveryModalOrder.id.slice(0, 8)}
+                </div>
+              </div>
+              <button onClick={() => setDeliveryModalOrder(null)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            {(() => {
+              let parsedNotes = {};
+              try { parsedNotes = JSON.parse(deliveryModalOrder.customer_notes || '{}'); } catch(e){}
+              const likesBefore = Number(parsedNotes.likes_before) || 0;
+              const likesAdded = Number(likesAddedInput) || 0;
+              const likesNow = likesBefore + likesAdded;
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Ficha Jugador */}
+                  <div style={{ background: 'rgba(255,255,255,0.05)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Jugador:</span>
+                      <strong style={{ color: '#fff' }}>{parsedNotes.validated_nickname || 'N/A'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>ID (UID):</span>
+                      <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{parsedNotes.target_uid || 'N/A'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Región:</span>
+                      <span style={{ color: '#fff' }}>{parsedNotes.region || 'N/A'}</span>
+                    </div>
+                  </div>
+
+                  {/* Likes Calc */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Likes Antes:</span>
+                      <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{likesBefore.toLocaleString()} ❤️</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Likes Añadidos:</span>
+                      <input 
+                        type="number"
+                        value={likesAddedInput}
+                        onChange={(e) => setLikesAddedInput(e.target.value)}
+                        style={{
+                          width: '100px',
+                          background: 'rgba(52, 211, 153, 0.1)',
+                          border: '1px solid #34d399',
+                          color: '#34d399',
+                          padding: '6px',
+                          borderRadius: '6px',
+                          textAlign: 'right',
+                          fontWeight: 'bold'
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed rgba(255,255,255,0.2)', paddingTop: '10px' }}>
+                      <span style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 'bold' }}>Likes Ahora:</span>
+                      <span style={{ color: '#34d399', fontSize: '1.2rem', fontWeight: 'bold' }}>{likesNow.toLocaleString()} 🎯</span>
+                    </div>
+                  </div>
+                  
+                  {/* Feed Toggle */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', cursor: 'pointer', fontSize: '0.85rem', color: '#fff' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={publishToFeed} 
+                      onChange={(e) => setPublishToFeed(e.target.checked)} 
+                    />
+                    📢 Publicar éxito en el feed de la comunidad
+                  </label>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button onClick={() => setDeliveryModalOrder(null)} className="btn-glass" style={{ flex: 1, padding: '10px' }}>
+                      Cancelar
+                    </button>
+                    <button 
+                      onClick={handleConfirmLikesDelivery} 
+                      disabled={updatingStatus}
+                      className="btn-cyan" 
+                      style={{ flex: 2, padding: '10px', fontWeight: 'bold', background: '#34d399', color: '#000' }}
+                    >
+                      {updatingStatus ? 'Procesando...' : 'GUARDAR Y COMPLETAR ✅'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

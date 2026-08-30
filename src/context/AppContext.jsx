@@ -234,6 +234,7 @@ export function AppProvider({ children }) {
         const activeCategoryButtonText = data.category_button_text || data.social_links?.category_button_text || 'Explorar Productos';
         const activeSiteTitle = data.site_title || data.social_links?.site_title || 'ALVSHOP - Recargas & Cuentas Digitales';
         const activeSiteTagline = data.site_tagline || data.social_links?.site_tagline || 'Diamantes Free Fire, Pines Digitales, Cuentas Streaming y Aumento de Likes con entrega 100% garantizada.';
+        const isStoreActive = data.store_active !== false; // default true if undefined
 
         const fullConfig = {
           ...data,
@@ -251,7 +252,8 @@ export function AppProvider({ children }) {
           binance_name: binanceName,
           binance_qr_url: binanceQrUrl,
           binance_deeplink_url: binanceDeeplink,
-          binance_usdt_address: binanceUsdtAddress
+          binance_usdt_address: binanceUsdtAddress,
+          store_active: isStoreActive
         };
 
         setConfig(prev => ({

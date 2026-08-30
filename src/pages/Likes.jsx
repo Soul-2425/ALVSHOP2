@@ -329,64 +329,111 @@ export default function Likes() {
               : '📋 Tu orden ha sido registrada en el panel. El administrador realizará el envío en el plazo estimado.'}
           </p>
 
-          <div style={{
-            background: '#0d111a',
-            border: '1px solid var(--border-glass)',
-            borderRadius: 'var(--radius-md)',
-            padding: '14px 16px',
-            marginBottom: '18px',
-            textAlign: 'left',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            fontSize: '0.82rem'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Jugador Verificado:</span>
-              <strong style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>👑</span> {orderSuccess.playerNick}
-              </strong>
+          <div
+            id="comprobante-pedido"
+            style={{
+              background: 'linear-gradient(145deg, #0f172a 0%, #1e1b4b 100%)',
+              border: '2px solid #34d399',
+              borderRadius: 'var(--radius-lg)',
+              padding: '24px 20px',
+              marginBottom: '18px',
+              textAlign: 'left',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              fontSize: '0.85rem',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: '0 8px 32px rgba(52, 211, 153, 0.15)'
+            }}
+          >
+            {/* Watermark/Logo */}
+            <div style={{ position: 'absolute', top: '10px', right: '15px', opacity: 0.1, fontSize: '4rem' }}>
+              ALVSHOP
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>ID / UID Oficial:</span>
+
+            <div style={{ textAlign: 'center', marginBottom: '8px', borderBottom: '1px dashed rgba(255,255,255,0.2)', paddingBottom: '12px' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>COMPROBANTE OFICIAL</div>
+              <h3 style={{ color: '#fff', fontSize: '1.2rem', margin: '4px 0 0 0', letterSpacing: '0.05em' }}>PEDIDO RECIBIDO</h3>
+              <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: '4px' }}>ESTADO: ⏳ EN PROCESO</div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-muted)' }}>ID de Orden:</span>
+              <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold', fontFamily: 'monospace' }}>#{orderSuccess.orderId || Math.floor(Math.random()*100000)}</span>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Jugador:</span>
+              <strong style={{ color: '#fff' }}>{orderSuccess.playerNick}</strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-muted)' }}>UID (Free Fire):</span>
               <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{orderSuccess.targetUid}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Likes Antes ➔ Meta:</span>
-              <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{orderSuccess.likesBefore.toLocaleString()} ❤️ ➔ {orderSuccess.targetLikesFinal.toLocaleString()} 🎯</span>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Likes Antes:</span>
+              <span style={{ color: '#fff', fontWeight: 'bold' }}>{orderSuccess.likesBefore.toLocaleString()} ❤️</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Likes Añadidos:</span>
-              <strong style={{ color: '#34d399' }}>+{orderSuccess.likesToAdd.toLocaleString()} LIKES</strong>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(52, 211, 153, 0.05)', padding: '6px', borderRadius: '4px' }}>
+              <span style={{ color: '#34d399', fontWeight: 'bold' }}>Likes a Añadir:</span>
+              <strong style={{ color: '#34d399', fontSize: '1rem' }}>+{orderSuccess.likesToAdd.toLocaleString()}</strong>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Total Pagado:</span>
-              <strong style={{ color: '#fbbf24' }}>${orderSuccess.priceUsdt.toFixed(2)} USDT</strong>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(251, 191, 36, 0.05)', padding: '6px', borderRadius: '4px' }}>
+              <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>Meta Final:</span>
+              <strong style={{ color: '#fbbf24', fontSize: '1rem' }}>{orderSuccess.targetLikesFinal.toLocaleString()} 🎯</strong>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Entrega Estimada:</span>
-              <span style={{ color: '#fff', fontWeight: 'bold' }}>{orderSuccess.deliveryTime}</span>
+
+            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.2)', paddingTop: '12px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Fecha:</span>
+                <span style={{ color: '#fff', fontSize: '0.75rem' }}>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}</span>
+              </div>
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={async () => {
+                try {
+                  const html2canvas = (await import('html2canvas')).default;
+                  const element = document.getElementById('comprobante-pedido');
+                  const canvas = await html2canvas(element, { backgroundColor: '#0f172a' });
+                  const dataUrl = canvas.toDataURL('image/png');
+                  const link = document.createElement('a');
+                  link.download = `Comprobante_Pedido_ALVSHOP_${orderSuccess.targetUid}.png`;
+                  link.href = dataUrl;
+                  link.click();
+                } catch (e) {
+                  alert('Error al descargar comprobante.');
+                }
+              }}
+              className="btn-cyan"
+              style={{ padding: '10px 18px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              📥 Descargar Comprobante
+            </button>
             <button
               onClick={() => {
                 setOrderSuccess(null);
                 setTargetUid('');
                 setPlayerData(null);
               }}
-              className="btn-cyan"
-              style={{ padding: '8px 16px', fontSize: '0.82rem' }}
+              className="btn-glass"
+              style={{ padding: '10px 18px', fontSize: '0.85rem' }}
             >
               ➕ Solicitar Otro Paquete
             </button>
             <button
               onClick={() => navigate('/profile?tab=orders')}
               className="btn-glass"
-              style={{ padding: '8px 16px', fontSize: '0.82rem' }}
+              style={{ padding: '10px 18px', fontSize: '0.85rem' }}
             >
-              👤 Ver en Mis Pedidos
+              👤 Ver Mis Pedidos
             </button>
           </div>
         </div>

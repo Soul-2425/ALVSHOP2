@@ -661,65 +661,43 @@ export default function ProductDetail() {
 
             {playerNickname && (
               <div style={{
-                background: 'linear-gradient(135deg, rgba(13, 27, 42, 0.9) 0%, rgba(6, 78, 59, 0.4) 100%)',
+                background: 'rgba(0, 0, 0, 0.45)',
                 border: '1px solid #34d399',
                 borderRadius: 'var(--radius-md)',
-                padding: '14px 16px',
+                padding: '16px',
                 marginBottom: '18px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                boxShadow: '0 4px 20px rgba(52, 211, 153, 0.15)'
+                flexDirection: 'column',
+                gap: '12px'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div
-                    style={{
-                      width: '44px',
-                      height: '44px',
-                      borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #1d4ed8 0%, #06b6d4 100%)',
-                      border: '1.5px solid var(--accent-cyan)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.25rem',
-                      fontWeight: '900',
-                      color: '#fff',
-                      letterSpacing: '-0.02em',
-                      boxShadow: '0 0 15px rgba(6, 182, 212, 0.35)',
-                      flexShrink: 0
-                    }}
-                  >
-                    FF
-                  </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <div>
-                    <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <span>✓ CUENTA OFICIAL VERIFICADA</span>
                     </div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#fff', letterSpacing: '0.02em', marginTop: '2px' }}>
                       {playerNickname}
                     </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>
+                      UID: {Object.values(formData).find(val => /^\d{5,}$/.test(val)) || ''}
+                    </div>
                   </div>
-                </div>
 
-                {/* Account Stats: Nivel, Likes, Región */}
-                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                     {playerLevel && (
-                      <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '4px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
                         ⭐ Nivel {playerLevel}
                       </span>
                     )}
-                    {playerLikes && (
-                      <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '3px 8px', borderRadius: '4px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-                        👍 {Number(playerLikes).toLocaleString()}
+                    {playerLikes !== null && (
+                      <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                        👍 {Number(playerLikes).toLocaleString()} Likes
                       </span>
                     )}
+                    <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.08)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800' }}>
+                      🌎 Región: {playerRegion || 'Desconocida'}
+                    </span>
                   </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span>🌎 Región:</span> <strong style={{ color: '#fff' }}>{playerRegion || 'US'}</strong>
-                  </span>
                 </div>
               </div>
             )}

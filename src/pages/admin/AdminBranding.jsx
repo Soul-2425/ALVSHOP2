@@ -18,6 +18,7 @@ export default function AdminBranding() {
   const [logoUrl, setLogoUrl] = useState('');
   const [faviconUrl, setFaviconUrl] = useState('');
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [storeActive, setStoreActive] = useState(true);
 
   // Social Links
   const [socials, setSocials] = useState({
@@ -35,6 +36,7 @@ export default function AdminBranding() {
   const [newApiName, setNewApiName] = useState('');
   const [newApiEndpoint, setNewApiEndpoint] = useState('');
   const [newApiMethod, setNewApiMethod] = useState('POST');
+  const [newApiKey, setNewApiKey] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export default function AdminBranding() {
       if (config.favicon_url) setFaviconUrl(config.favicon_url);
       if (config.social_links) setSocials(config.social_links);
       if (config.custom_head_scripts) setCustomHeadScripts(config.custom_head_scripts);
+      if (config.store_active !== undefined) setStoreActive(config.store_active);
     }
 
     async function loadIntegrations() {
@@ -136,7 +139,8 @@ export default function AdminBranding() {
         logo_url: logoUrl,
         favicon_url: faviconUrl,
         social_links: updatedSocials,
-        custom_head_scripts: customHeadScripts
+        custom_head_scripts: customHeadScripts,
+        store_active: storeActive
       };
 
       try {
@@ -176,6 +180,7 @@ export default function AdminBranding() {
         name: newApiName,
         endpoint_url: newApiEndpoint,
         http_method: newApiMethod,
+        api_key: newApiKey,
         is_active: true
       }).select().single();
 
@@ -184,6 +189,7 @@ export default function AdminBranding() {
       setIntegrations([data, ...integrations]);
       setNewApiName('');
       setNewApiEndpoint('');
+      setNewApiKey('');
       alert('¡Conector de API de proveedor agregado exitosamente!');
     } catch (err) {
       alert('Error agregando API: ' + err.message);
@@ -197,6 +203,37 @@ export default function AdminBranding() {
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           Cambia los colores del sistema en tiempo real, logotipos, enlaces sociales y conecta APIs sin tocar código
         </p>
+      </div>
+
+      <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-md)' }}>
+        <h4 style={{ fontSize: '1.05rem', margin: '0 0 16px 0', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>🚨</span> Botón de Pánico Global
+        </h4>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'rgba(255,0,0,0.05)', border: '1px solid rgba(255,0,0,0.2)', borderRadius: '8px' }}>
+          <div>
+            <div style={{ fontWeight: '800', color: storeActive ? '#fff' : '#f87171' }}>
+              {storeActive ? 'Tienda Activa (Operando Normalmente)' : 'Tienda en Mantenimiento (CERRADA)'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Al apagar la tienda, los clientes verán una página de mantenimiento. Los administradores seguirán teniendo acceso.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStoreActive(!storeActive)}
+            style={{
+              background: storeActive ? '#22c55e' : '#f87171',
+              color: '#fff',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            {storeActive ? 'Apagar Tienda' : 'Encender Tienda'}
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSaveBranding} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -493,7 +530,7 @@ export default function AdminBranding() {
           Integra proveedores de recargas automatizadas sin necesidad de tocar el código:
         </p>
 
-        <form onSubmit={handleAddApiIntegration} style={{ display: 'grid', gridTemplateColumns: '2fr 3fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+        <form onSubmit={handleAddApiIntegration} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr auto', gap: '8px', marginBottom: '16px' }}>
           <input
             type="text"
             required
@@ -510,6 +547,13 @@ export default function AdminBranding() {
             onChange={(e) => setNewApiEndpoint(e.target.value)}
             style={{ padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
           />
+          <input
+            type="text"
+            placeholder="API Key (Opcional)"
+            value={newApiKey}
+            onChange={(e) => setNewApiKey(e.target.value)}
+            style={{ padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+          />
           <select
             value={newApiMethod}
             onChange={(e) => setNewApiMethod(e.target.value)}
@@ -518,7 +562,7 @@ export default function AdminBranding() {
             <option value="POST">POST</option>
             <option value="GET">GET</option>
           </select>
-          <button type="submit" className="btn-cyan" style={{ padding: '8px', fontSize: '0.8rem' }}>
+          <button type="submit" className="btn-cyan" style={{ padding: '8px 16px', fontSize: '0.8rem' }}>
             ➕ Conectar
           </button>
         </form>

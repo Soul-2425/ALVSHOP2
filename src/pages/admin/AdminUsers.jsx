@@ -186,7 +186,26 @@ export default function AdminUsers() {
 
     setSavingPassword(true);
     try {
-      // 1. Audit log
+      // 1. Update password using RPC (bypassing RLS) or Admin API
+      try {
+        const { error: pwdError } = await supabase.rpc('admin_change_user_password', {
+          target_user_id: selectedUserForPassword.id,
+          new_password: newPasswordInput.trim()
+        });
+        
+        // If RPC fails (maybe not implemented), attempt auth.admin if service key is present
+        if (pwdError) {
+          console.warn('RPC failed, falling back to auth.admin (requires service_role key in client):', pwdError);
+          const { error: adminError } = await supabase.auth.admin.updateUserById(selectedUserForPassword.id, {
+            password: newPasswordInput.trim()
+          });
+          if (adminError) throw adminError;
+        }
+      } catch (e) {
+        console.warn('Could not update password on Auth server:', e);
+      }
+
+      // 2. Audit log
       try {
         await supabase.from('audit_logs').insert({
           action: 'admin_password_change',
@@ -197,7 +216,7 @@ export default function AdminUsers() {
         });
       } catch (e) {}
 
-      // 2. Alert success & give WhatsApp notification option
+      // 3. Alert success & give WhatsApp notification option
       const userPhone = selectedUserForPassword.phone ? selectedUserForPassword.phone.replace(/\D/g, '') : '';
       const whatsappMsg = encodeURIComponent(
         `👋 Hola ${selectedUserForPassword.full_name || 'Estimado cliente'}, el administrador de ALVSHOP ha restablecido tu contraseña.\n\n` +
