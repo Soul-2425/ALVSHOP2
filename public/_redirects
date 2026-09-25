@@ -1,1 +1,10 @@
-/*    /index.html   200
+/api/v1/supplier/wallet        https://panel.recargasamerica.com/api/v1/wallet        200!
+/api/v1/supplier/validate      https://panel.recargasamerica.com/api/v1/pins/validate 200!
+/api/v1/supplier/buy           https://panel.recargasamerica.com/api/v1/buy/pins      200!
+/api/v1/supplier/products/pins https://panel.recargasamerica.com/api/v1/products/pins 200!
+/api/v1/supplier/products/games https://panel.recargasamerica.com/api/v1/products/games 200!
+/api/v1/supplier/products/streaming https://panel.recargasamerica.com/api/v1/products/streaming 200!
+/api/v1/supplier/buy/streaming https://panel.recargasamerica.com/api/v1/buy/streaming 200!
+/api/v1/supplier/buy/games     https://panel.recargasamerica.com/api/v1/buy/games     200!
+/api/v1/supplier/*             https://panel.recargasamerica.com/api/v1/:splat        200!
+/*                             /index.html                                            200

@@ -124,109 +124,79 @@ function balanceApiPlugin() {
           return
         }
 
-        // Proxy for Recargas América Wallet
-        if (parsedUrl === '/api/v1/supplier/wallet') {
-          const authHeader = req.headers['authorization'] || 'Bearer ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb'
-          import('https').then(({ default: https }) => {
-            const proxyReq = https.request({
-              hostname: 'panel.recargasamerica.com',
-              path: '/api/v1/wallet',
-              method: 'GET',
-              headers: {
-                'Authorization': authHeader,
-                'Accept': 'application/json'
-              }
-            }, (proxyRes) => {
-              let pData = ''
-              proxyRes.on('data', c => pData += c)
-              proxyRes.on('end', () => {
+        // Dynamic Wildcard Proxy for Recargas América V1 API
+        if (parsedUrl.startsWith('/api/v1/supplier')) {
+          if (req.method === 'OPTIONS') {
+            res.setHeader('Access-Control-Allow-Origin', '*')
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept, Idempotency-Key')
+            res.statusCode = 204
+            res.end()
+            return
+          }
+
+          // Determine remote path
+          let remotePath = parsedUrl.replace('/api/v1/supplier', '/api/v1')
+          // Backwards-compatible aliases
+          if (parsedUrl === '/api/v1/supplier/validate') {
+            remotePath = '/api/v1/pins/validate'
+          } else if (parsedUrl === '/api/v1/supplier/buy') {
+            remotePath = '/api/v1/buy/pins'
+          }
+
+          const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+          const fullRemotePath = `${remotePath}${queryStr}`
+
+          const authHeader = req.headers['authorization'] || 'Bearer ra_1akR4lKb3YnUaYGoDTIc7C7lB02oeivmjG2c9N92'
+          const idempotencyKey = req.headers['idempotency-key']
+
+          const forwardHeaders = {
+            'Authorization': authHeader,
+            'Accept': 'application/json'
+          }
+          if (idempotencyKey) {
+            forwardHeaders['Idempotency-Key'] = idempotencyKey
+          }
+          if (req.headers['content-type']) {
+            forwardHeaders['Content-Type'] = req.headers['content-type']
+          } else if (req.method === 'POST' || req.method === 'PUT') {
+            forwardHeaders['Content-Type'] = 'application/json'
+          }
+
+          let body = ''
+          req.on('data', chunk => { body += chunk })
+          req.on('end', () => {
+            import('https').then(({ default: https }) => {
+              const proxyReq = https.request({
+                hostname: 'panel.recargasamerica.com',
+                path: fullRemotePath,
+                method: req.method || 'GET',
+                headers: forwardHeaders
+              }, (proxyRes) => {
+                let pData = ''
+                proxyRes.on('data', c => pData += c)
+                proxyRes.on('end', () => {
+                  res.setHeader('Content-Type', 'application/json')
+                  res.setHeader('Access-Control-Allow-Origin', '*')
+                  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept, Idempotency-Key')
+                  res.statusCode = proxyRes.statusCode || 200
+                  res.end(pData)
+                })
+              })
+              proxyReq.on('error', (e) => {
+                res.statusCode = 502
                 res.setHeader('Content-Type', 'application/json')
                 res.setHeader('Access-Control-Allow-Origin', '*')
-                res.statusCode = proxyRes.statusCode || 200
-                res.end(pData)
+                res.end(JSON.stringify({ success: false, error: e.message, code: 'PROXY_GATEWAY_ERROR' }))
               })
-            })
-            proxyReq.on('error', (e) => {
+              if (body) {
+                proxyReq.write(body)
+              }
+              proxyReq.end()
+            }).catch(err => {
               res.statusCode = 500
               res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ success: false, error: e.message }))
-            })
-            proxyReq.end()
-          })
-          return
-        }
-
-        // Proxy for Recargas América Validate UID
-        if (parsedUrl === '/api/v1/supplier/validate' && req.method === 'POST') {
-          const authHeader = req.headers['authorization'] || 'Bearer ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb'
-          let body = ''
-          req.on('data', chunk => { body += chunk })
-          req.on('end', () => {
-            import('https').then(({ default: https }) => {
-              const proxyReq = https.request({
-                hostname: 'panel.recargasamerica.com',
-                path: '/api/v1/pins/validate',
-                method: 'POST',
-                headers: {
-                  'Authorization': authHeader,
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json'
-                }
-              }, (proxyRes) => {
-                let pData = ''
-                proxyRes.on('data', c => pData += c)
-                proxyRes.on('end', () => {
-                  res.setHeader('Content-Type', 'application/json')
-                  res.setHeader('Access-Control-Allow-Origin', '*')
-                  res.statusCode = proxyRes.statusCode || 200
-                  res.end(pData)
-                })
-              })
-              proxyReq.on('error', (e) => {
-                res.statusCode = 500
-                res.setHeader('Content-Type', 'application/json')
-                res.end(JSON.stringify({ success: false, error: e.message }))
-              })
-              proxyReq.write(body)
-              proxyReq.end()
-            })
-          })
-          return
-        }
-
-        // Proxy for Recargas América Buy
-        if (parsedUrl === '/api/v1/supplier/buy' && req.method === 'POST') {
-          const authHeader = req.headers['authorization'] || 'Bearer ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb'
-          let body = ''
-          req.on('data', chunk => { body += chunk })
-          req.on('end', () => {
-            import('https').then(({ default: https }) => {
-              const proxyReq = https.request({
-                hostname: 'panel.recargasamerica.com',
-                path: '/api/v1/buy/pins',
-                method: 'POST',
-                headers: {
-                  'Authorization': authHeader,
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json'
-                }
-              }, (proxyRes) => {
-                let pData = ''
-                proxyRes.on('data', c => pData += c)
-                proxyRes.on('end', () => {
-                  res.setHeader('Content-Type', 'application/json')
-                  res.setHeader('Access-Control-Allow-Origin', '*')
-                  res.statusCode = proxyRes.statusCode || 200
-                  res.end(pData)
-                })
-              })
-              proxyReq.on('error', (e) => {
-                res.statusCode = 500
-                res.setHeader('Content-Type', 'application/json')
-                res.end(JSON.stringify({ success: false, error: e.message }))
-              })
-              proxyReq.write(body)
-              proxyReq.end()
+              res.end(JSON.stringify({ success: false, error: err.message, code: 'PROXY_INIT_ERROR' }))
             })
           })
           return

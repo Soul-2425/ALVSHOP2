@@ -15,18 +15,64 @@ export default function Likes() {
   const currentRateGtq = Number(config?.usdt_gtq_rate || exchangeRate || 7.80);
   const walletBalance = Number(profile?.wallet_balance || 0);
 
-  // Packages list & Selection
-  const [packagesList, setPackagesList] = useState(DEFAULT_LIKES_PACKAGES);
-  const [selectedPackage, setSelectedPackage] = useState(DEFAULT_LIKES_PACKAGES[0]);
+  // Packages list & Selection (Optimistic instant load from cache or defaults)
+  const [packagesList, setPackagesList] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_likes_packages_custom') || localStorage.getItem('alv_likes_packages');
+      if (cached) {
+        const arr = JSON.parse(cached);
+        if (Array.isArray(arr) && arr.length > 0) {
+          const visible = arr.filter(p => p.isActive !== false);
+          if (visible.length > 0) return visible;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_LIKES_PACKAGES || [];
+  });
+  const [selectedPackage, setSelectedPackage] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_likes_packages_custom') || localStorage.getItem('alv_likes_packages');
+      if (cached) {
+        const arr = JSON.parse(cached);
+        if (Array.isArray(arr) && arr.length > 0) {
+          const visible = arr.filter(p => p.isActive !== false);
+          if (visible.length > 0) return visible[0];
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_LIKES_PACKAGES?.[0] || null;
+  });
 
   useEffect(() => {
-    getLikesPackages().then(list => {
+    const loadPkgs = async () => {
+      const list = await getLikesPackages();
       if (list && list.length > 0) {
         const visible = list.filter(p => p.isActive !== false);
         setPackagesList(visible);
-        setSelectedPackage(visible[0] || list[0]);
+        setSelectedPackage(prev => {
+          if (!prev) return visible[0];
+          const found = visible.find(p => p.id === prev.id);
+          return found || visible[0];
+        });
       }
-    });
+    };
+    loadPkgs();
+
+    const handleUpdated = (e) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        const visible = e.detail.filter(p => p.isActive !== false);
+        setPackagesList(visible);
+      } else {
+        loadPkgs();
+      }
+    };
+
+    window.addEventListener('alv_likes_packages_updated', handleUpdated);
+    window.addEventListener('storage', handleUpdated);
+    return () => {
+      window.removeEventListener('alv_likes_packages_updated', handleUpdated);
+      window.removeEventListener('storage', handleUpdated);
+    };
   }, []);
 
   // Input & Player State (Top Verification)
@@ -97,7 +143,7 @@ export default function Likes() {
   // WhatsApp Quote / Order Handler
   const handleWhatsAppQuote = (pkg) => {
     const p = pkg || selectedPackage;
-    const supportPhone = (config?.whatsapp_number || '50200000000').replace(/\D/g, '');
+    const supportPhone = (config?.social_links?.whatsapp || config?.whatsapp_number || '50200000000').replace(/\D/g, '');
     const uidStr = targetUid.trim() ? `UID: ${targetUid.trim()}` : 'UID: (Por ingresar)';
     const nickStr = playerData?.nickname ? `Jugador: ${playerData.nickname}` : '';
 
@@ -220,12 +266,17 @@ export default function Likes() {
         };
       }
 
-      // Save order to user local order history cache for instant viewing in Profile
+      // Save order to user local order history cache and global admin pool for instant viewing
       try {
         const cacheKey = `alv_user_orders_${user.id}`;
         const prevCached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
         const orderToCache = {
           ...createdOrder,
+          profiles: {
+            id: user.id,
+            full_name: profile?.full_name || user.email,
+            email: user.email
+          },
           order_items: [{
             id: `item-${Date.now()}`,
             quantity: 1,
@@ -241,7 +292,25 @@ export default function Likes() {
             }
           }]
         };
-        localStorage.setItem(cacheKey, JSON.stringify([orderToCache, ...prevCached]));
+        
+        const safeSetStorage = (key, data) => {
+          try {
+            localStorage.setItem(key, JSON.stringify(data));
+          } catch (e) {
+            console.warn('Limpiando cache para hacer espacio a los pedidos...');
+            try {
+              localStorage.removeItem('alv_cache_products_v2');
+              localStorage.removeItem('alv_products');
+              localStorage.removeItem('alv_likes_packages_custom');
+              localStorage.setItem(key, JSON.stringify(data));
+            } catch (err) {}
+          }
+        };
+
+        safeSetStorage(cacheKey, [orderToCache, ...prevCached]);
+
+        const prevAll = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        safeSetStorage('alv_all_orders', [orderToCache, ...prevAll.filter(o => o.id !== orderToCache.id)]);
       } catch (e) {}
 
       // Notify Admins
@@ -353,39 +422,36 @@ export default function Likes() {
             </div>
 
             <div style={{ textAlign: 'center', marginBottom: '8px', borderBottom: '1px dashed rgba(255,255,255,0.2)', paddingBottom: '12px' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>COMPROBANTE OFICIAL</div>
+              <div style={{ fontSize: '0.75rem', color: '#34d399', fontWeight: 'bold' }}>COMPROBANTE 1, CLIENTE ✅</div>
               <h3 style={{ color: '#fff', fontSize: '1.2rem', margin: '4px 0 0 0', letterSpacing: '0.05em' }}>PEDIDO RECIBIDO</h3>
-              <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: '4px' }}>ESTADO: ⏳ EN PROCESO</div>
+              <div style={{ fontSize: '0.75rem', color: '#fbbf24', marginTop: '4px', fontWeight: 'bold' }}>
+                Estado: ⏳ RECIBIDO, EN PROCESO...
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-muted)' }}>ID de Orden:</span>
-              <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold', fontFamily: 'monospace' }}>#{orderSuccess.orderId || Math.floor(Math.random()*100000)}</span>
-            </div>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Jugador:</span>
+              <span style={{ color: 'var(--text-muted)' }}>Nick:</span>
               <strong style={{ color: '#fff' }}>{orderSuccess.playerNick}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-muted)' }}>UID (Free Fire):</span>
+              <span style={{ color: 'var(--text-muted)' }}>ID:</span>
               <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{orderSuccess.targetUid}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '4px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Likes Antes:</span>
-              <span style={{ color: '#fff', fontWeight: 'bold' }}>{orderSuccess.likesBefore.toLocaleString()} ❤️</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Likes Actuales:</span>
+              <span style={{ color: '#fff', fontWeight: 'bold' }}>{orderSuccess.likesBefore.toLocaleString()}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(52, 211, 153, 0.05)', padding: '6px', borderRadius: '4px' }}>
-              <span style={{ color: '#34d399', fontWeight: 'bold' }}>Likes a Añadir:</span>
-              <strong style={{ color: '#34d399', fontSize: '1rem' }}>+{orderSuccess.likesToAdd.toLocaleString()}</strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(52, 211, 153, 0.08)', padding: '6px 10px', borderRadius: '4px' }}>
+              <span style={{ color: '#34d399', fontWeight: 'bold' }}>LIKES AÑADIR:</span>
+              <strong style={{ color: '#34d399', fontSize: '1.05rem' }}>+{orderSuccess.likesToAdd.toLocaleString()}</strong>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(251, 191, 36, 0.05)', padding: '6px', borderRadius: '4px' }}>
-              <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>Meta Final:</span>
-              <strong style={{ color: '#fbbf24', fontSize: '1rem' }}>{orderSuccess.targetLikesFinal.toLocaleString()} 🎯</strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(251, 191, 36, 0.08)', padding: '6px 10px', borderRadius: '4px' }}>
+              <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>META:</span>
+              <strong style={{ color: '#fbbf24', fontSize: '1.05rem' }}>{orderSuccess.targetLikesFinal.toLocaleString()}</strong>
             </div>
 
             <div style={{ borderTop: '1px dashed rgba(255,255,255,0.2)', paddingTop: '12px', marginTop: '4px' }}>
@@ -462,7 +528,7 @@ export default function Likes() {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <input
                   type="text"
-                  placeholder="Ingresa tu ID / UID (Ej. 29386038)"
+                  placeholder="Ingresa tu ID"
                   value={targetUid}
                   onChange={(e) => {
                     setTargetUid(e.target.value);
@@ -540,10 +606,10 @@ export default function Likes() {
 
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
-                        ⭐ Nivel {playerData.level}
+                        ⭐ Nivel {playerData.level || '-'}
                       </span>
                       <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-                        👍 {playerData.liked.toLocaleString()} Likes
+                        👍 {playerData.liked !== null && playerData.liked !== undefined ? playerData.liked.toLocaleString() : '-'} Likes
                       </span>
                       <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.08)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800' }}>
                         🌎 Región: {playerData.region}
@@ -564,7 +630,7 @@ export default function Likes() {
                   }}>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700' }}>LIKES ACTUALES</div>
-                      <div style={{ fontSize: '1rem', fontWeight: '900', color: '#fff' }}>{playerData.liked.toLocaleString()} ❤️</div>
+                      <div style={{ fontSize: '1rem', fontWeight: '900', color: '#fff' }}>{playerData.liked !== null && playerData.liked !== undefined ? playerData.liked.toLocaleString() : '-'} ❤️</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: '700' }}>A AÑADIR</div>
@@ -572,51 +638,76 @@ export default function Likes() {
                     </div>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: '700' }}>META FINAL</div>
-                      <div style={{ fontSize: '1rem', fontWeight: '900', color: '#34d399' }}>{(playerData.liked + Number(selectedPackage?.quantity || 2000)).toLocaleString()} 🎯</div>
+                      <div style={{ fontSize: '1rem', fontWeight: '900', color: '#34d399' }}>{playerData.liked !== null && playerData.liked !== undefined ? (playerData.liked + Number(selectedPackage?.quantity || 2000)).toLocaleString() : '?'} 🎯</div>
                     </div>
                   </div>
 
-                  {/* Top Action Box: Buy Button or WhatsApp Quote Button */}
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
-                    <button
-                      onClick={handleProceedPayment}
-                      disabled={isProcessing || !hasSufficientBalance}
-                      className="btn-cyan"
-                      style={{
-                        flex: 1,
-                        padding: '14px 20px',
-                        fontSize: '0.95rem',
-                        fontWeight: '900',
-                        letterSpacing: '0.03em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        minWidth: '220px'
-                      }}
-                    >
-                      {isProcessing
-                        ? 'Procesando Envío de Likes...'
-                        : !hasSufficientBalance
-                        ? 'Saldo Insuficiente (Recargar Billetera)'
-                        : `💎 Comprar ${selectedPackage?.title} ($${currentPriceUsdt.toFixed(2)} USDT)`}
-                    </button>
-
-                    {selectedPackage?.whatsappBtnEnabled && (
+                  <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+                    {selectedPackage?.priceUsdt > 0 ? (
+                      <>
+                        <button
+                          onClick={handleProceedPayment}
+                          disabled={isProcessing || !hasSufficientBalance}
+                          className="btn-cyan"
+                          style={{
+                            flex: 1,
+                            padding: '14px 20px',
+                            fontSize: '0.95rem',
+                            fontWeight: '900',
+                            letterSpacing: '0.03em',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            minWidth: '220px'
+                          }}
+                        >
+                          {isProcessing
+                            ? 'Procesando Envío de Likes...'
+                            : !hasSufficientBalance
+                            ? 'Saldo Insuficiente (Recargar Billetera)'
+                            : `💎 Comprar ${selectedPackage?.title} ($${currentPriceUsdt.toFixed(2)} USDT)`}
+                        </button>
+                        
+                        {selectedPackage?.whatsappBtnEnabled && (
+                          <button
+                            onClick={() => handleWhatsAppQuote(selectedPackage)}
+                            style={{
+                              padding: '14px 18px',
+                              borderRadius: 'var(--radius-md)',
+                              fontSize: '0.9rem',
+                              fontWeight: '800',
+                              background: '#25D366',
+                              color: '#000',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px'
+                            }}
+                          >
+                            <span>📲 Cotizar por WhatsApp</span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
                       <button
                         onClick={() => handleWhatsAppQuote(selectedPackage)}
                         style={{
-                          padding: '14px 18px',
+                          width: '100%',
+                          padding: '16px 20px',
                           borderRadius: 'var(--radius-md)',
-                          fontSize: '0.9rem',
-                          fontWeight: '800',
+                          fontSize: '1rem',
+                          fontWeight: '900',
                           background: '#25D366',
                           color: '#000',
                           border: 'none',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '6px'
+                          justifyContent: 'center',
+                          gap: '8px'
                         }}
                       >
                         <span>📲 Cotizar por WhatsApp</span>
@@ -642,6 +733,12 @@ export default function Likes() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {packagesList.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '30px 20px', color: 'var(--text-muted)' }}>
+                  <div className="spinner-medium" style={{ margin: '0 auto 10px auto' }} />
+                  Cargando paquetes de Likes oficiales...
+                </div>
+              )}
               {packagesList.map((pkg) => {
                 const isSelected = selectedPackage?.id === pkg.id;
 
@@ -717,12 +814,20 @@ export default function Likes() {
 
                     {/* Right: Price & WhatsApp Button if active */}
                     <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                      <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#34d399', letterSpacing: '0.02em' }}>
-                        {formatPrice(pkg.priceUsdt)}
-                      </div>
-                      {currency !== 'USDT' && (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          (${pkg.priceUsdt.toFixed(2)} USDT)
+                      {pkg.priceUsdt > 0 ? (
+                        <>
+                          <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#34d399', letterSpacing: '0.02em' }}>
+                            {formatPrice(pkg.priceUsdt)}
+                          </div>
+                          {currency !== 'USDT' && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                              (${pkg.priceUsdt.toFixed(2)} USDT)
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ fontSize: '1rem', fontWeight: '900', color: '#fbbf24', letterSpacing: '0.02em' }}>
+                          POR COTIZAR
                         </div>
                       )}
 

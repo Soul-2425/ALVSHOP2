@@ -10,52 +10,90 @@ export default function Feed() {
   const [newPostText, setNewPostText] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
   const [commentInputs, setCommentInputs] = useState({});
   const [activeCommentBox, setActiveCommentBox] = useState(null);
 
   useEffect(() => {
     async function loadFeed() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('feed_posts')
-        .select('*, profiles(full_name), feed_comments(*, profiles(full_name)), feed_likes(user_id)')
-        .order('created_at', { ascending: false });
+      let loadedPosts = [];
 
-      if (data && !error && data.length > 0) {
-        setPosts(data);
-      } else {
-        // Sample community posts
-        setPosts([
-          {
-            id: 'p1',
-            title: '🔥 ¡Nuevos Pases de Free Fire Disponibles!',
-            content: 'Ya tenemos activo el nuevo evento con 10% de diamantes extra en todas las recargas superiores a 500 diamantes. ¡Aprovechen!',
-            media_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
-            likes_count: 24,
-            created_at: '2026-08-18T18:00:00Z',
-            profiles: { full_name: 'Admin ALV' },
-            feed_comments: [
-              { id: 'c1', content: '¿Aceptan Banrural?', profiles: { full_name: 'Manuel R.' } },
-              { id: 'c2', content: 'Sí, las transferencias en Quetzales se aprueban en minutos.', profiles: { full_name: 'Admin ALV' } }
-            ],
-            feed_likes: []
-          },
-          {
-            id: 'p2',
-            title: '🎬 Cuentas de Netflix & Disney+ Renovadas',
-            content: 'Se cargaron más de 50 perfiles nuevos con garantía de 30 días. Recuerden ingresar a su perfil para ver sus credenciales una vez completada la compra.',
-            likes_count: 18,
-            created_at: '2026-08-17T20:15:00Z',
-            profiles: { full_name: 'Soporte ALV' },
-            feed_comments: [],
-            feed_likes: []
-          }
-        ]);
+      try {
+        const { data, error } = await supabase
+          .from('feed_posts')
+          .select('*, profiles(full_name), feed_comments(*, profiles(full_name)), feed_likes(user_id)')
+          .order('created_at', { ascending: false });
+
+        if (data && !error && data.length > 0) {
+          loadedPosts = data;
+        }
+      } catch (err) {
+        console.warn('Error loading feed from Supabase:', err);
       }
+
+      // Merge with local persistent feed cache
+      try {
+        const localFeed = JSON.parse(localStorage.getItem('alv_feed_posts') || '[]');
+        const combined = [...loadedPosts];
+        
+        for (const lp of localFeed) {
+          if (!combined.some(p => p.id === lp.id || (p.content === lp.content && Math.abs(new Date(p.created_at) - new Date(lp.created_at)) < 60000))) {
+            combined.push(lp);
+          }
+        }
+        
+        combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        if (combined.length > 0) {
+          setPosts(combined);
+        } else {
+          // Default initial community posts
+          setPosts([
+            {
+              id: 'p1',
+              title: '🔥 ¡Nuevos Pases de Free Fire Disponibles!',
+              content: 'Ya tenemos activo el nuevo evento con 10% de diamantes extra en todas las recargas superiores a 500 diamantes. ¡Aprovechen!',
+              media_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
+              likes_count: 24,
+              created_at: '2026-08-18T18:00:00Z',
+              profiles: { full_name: 'Admin ALV' },
+              feed_comments: [
+                { id: 'c1', content: '¿Aceptan Banrural?', profiles: { full_name: 'Manuel R.' } },
+                { id: 'c2', content: 'Sí, las transferencias en Quetzales se aprueban en minutos.', profiles: { full_name: 'Admin ALV' } }
+              ],
+              feed_likes: []
+            }
+          ]);
+        }
+      } catch (e) {
+        if (loadedPosts.length > 0) setPosts(loadedPosts);
+      }
+
       setLoading(false);
     }
 
     loadFeed();
+
+    // Supabase Realtime Listener for Instant Feed Updates
+    const feedChannel = supabase
+      .channel('public-feed-channel')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'feed_posts' },
+        (payload) => {
+          if (payload.new) {
+            setPosts((prev) => {
+              if (prev.some(p => p.id === payload.new.id)) return prev;
+              return [{ ...payload.new, feed_comments: [], feed_likes: [] }, ...prev];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(feedChannel);
+    };
   }, []);
 
   const handleCreatePost = async (e) => {
@@ -68,14 +106,35 @@ export default function Feed() {
 
     setSubmitting(true);
     try {
+      let uploadedImageUrls = [];
+      
+      if (selectedImage) {
+        const fileExt = selectedImage.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('payment-receipts') // Usamos un bucket genérico por ahora
+          .upload(`feed/${fileName}`, selectedImage);
+          
+        if (uploadError) {
+          console.warn('Error uploading feed image:', uploadError);
+        } else if (uploadData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('payment-receipts')
+            .getPublicUrl(`feed/${fileName}`);
+          uploadedImageUrls.push(publicUrl);
+        }
+      }
+
       const { data, error } = await supabase.from('feed_posts').insert({
         user_id: user.id,
-        content: newPostText
+        content: newPostText,
+        images: uploadedImageUrls
       }).select('*, profiles(full_name)').single();
 
       if (data && !error) {
         setPosts([ { ...data, feed_comments: [], feed_likes: [] }, ...posts ]);
         setNewPostText('');
+        setSelectedImage(null);
 
         // Notify Admins
         notifyAdminFeedInteraction({
@@ -237,7 +296,24 @@ export default function Feed() {
               fontSize: '0.9rem'
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ cursor: 'pointer', color: 'var(--accent-cyan)', fontSize: '1.2rem' }}>
+                📷
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => setSelectedImage(e.target.files[0])}
+                />
+              </label>
+              {selectedImage && <span style={{ fontSize: '0.75rem', color: '#fff' }}>{selectedImage.name}</span>}
+              {selectedImage && (
+                <button type="button" onClick={() => setSelectedImage(null)} style={{ background: 'none', color: '#f87171', border: 'none', cursor: 'pointer', fontSize: '1rem' }}>
+                  ✕
+                </button>
+              )}
+            </div>
             <button type="submit" disabled={submitting} className="btn-cyan" style={{ fontSize: '0.85rem', padding: '8px 20px' }}>
               {submitting ? 'Publicando...' : 'Publicar ➔'}
             </button>
@@ -290,6 +366,18 @@ export default function Feed() {
                   alt="Post Media"
                   style={{ width: '100%', maxHeight: '320px', objectFit: 'cover', borderRadius: 'var(--radius-md)', marginBottom: '14px' }}
                 />
+              )}
+              {post.images && post.images.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                  {post.images.map((imgUrl, i) => (
+                    <img
+                      key={i}
+                      src={imgUrl}
+                      alt="Attached Media"
+                      style={{ width: '100%', maxHeight: '320px', objectFit: 'contain', borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.5)' }}
+                    />
+                  ))}
+                </div>
               )}
 
               {/* Interactions Bar */}

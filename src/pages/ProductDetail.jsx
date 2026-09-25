@@ -235,7 +235,8 @@ export default function ProductDetail() {
   const hasSufficientBalance = currentActualBalance >= finalPriceUsdt;
 
   // Submit Order Checkout with Triple Flow & Rate Limiting Shield
-  const handleProceedPayment = async () => {
+  const handleProceedPayment = async (overrideMethod = null) => {
+    const activeMethod = typeof overrideMethod === "string" ? overrideMethod : activeMethod;
     if (!user) {
       navigate('/profile');
       return;
@@ -262,7 +263,7 @@ export default function ProductDetail() {
     }
 
     // FLOW A: WALLET PAYMENT
-    if (paymentMethod === 'Wallet') {
+    if (activeMethod === 'Wallet') {
       const realBal = currentActualBalance;
       if (realBal < finalPriceUsdt) {
         alert(`Saldo insuficiente en tu billetera. Cuentas con $${realBal.toFixed(2)} USDT y el total es de $${finalPriceUsdt.toFixed(2)} USDT.`);
@@ -275,7 +276,7 @@ export default function ProductDetail() {
     try {
       // Upload / Convert Receipt if provided for Manual Payments
       let uploadedReceiptUrl = null;
-      if (paymentMethod !== 'Wallet' && receiptFile) {
+      if (activeMethod !== 'Wallet' && receiptFile) {
         setUploadingReceipt(true);
         try {
           const res = await uploadOptimizedReceipt(receiptFile, 'receipts');
@@ -290,22 +291,22 @@ export default function ProductDetail() {
       // Method label & converted summary
       let methodLabel = 'Billetera Interna';
       let convertedTotalText = `$${finalPriceUsdt.toFixed(2)} USDT`;
-      if (paymentMethod === 'Binance') {
+      if (activeMethod === 'Binance') {
         methodLabel = 'Binance Pay (Manual USDT)';
         convertedTotalText = `$${finalPriceUsdt.toFixed(2)} USDT`;
-      } else if (paymentMethod === 'GTQ' || paymentMethod === 'Manual') {
+      } else if (activeMethod === 'GTQ' || activeMethod === 'Manual') {
         methodLabel = 'Transferencia Bancaria (Quetzales GTQ)';
         convertedTotalText = `Q${finalPriceGtq} GTQ`;
-      } else if (paymentMethod === 'MXN') {
+      } else if (activeMethod === 'MXN') {
         methodLabel = 'Transferencia SPEI (Pesos Mexicanos MXN)';
         convertedTotalText = `$${finalPriceMxn} MXN`;
-      } else if (paymentMethod === 'COP') {
+      } else if (activeMethod === 'COP') {
         methodLabel = 'Transferencia Nequi/Bancolombia (Pesos Colombianos COP)';
         convertedTotalText = `$${finalPriceCop} COP`;
       }
 
       // 1. Create Order in Supabase with robust error resilience
-      const newOrderStatus = paymentMethod === 'Wallet' ? 'Completed' : 'Verification';
+      const newOrderStatus = activeMethod === 'Wallet' ? 'Completed' : 'Verification';
       let orderData = null;
 
       try {
@@ -316,7 +317,7 @@ export default function ProductDetail() {
             total_usdt: finalPriceUsdt,
             total_gtq: Number(finalPriceGtq),
             status: newOrderStatus,
-            payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Manual',
+            payment_method: activeMethod === 'Wallet' ? 'Wallet' : 'Manual',
             bank_receipt_url: uploadedReceiptUrl,
             coupon_id: appliedCoupon?.id || null,
             discount_amount_usdt: discountUsdt,
@@ -324,7 +325,7 @@ export default function ProductDetail() {
               ...formData,
               payment_gateway: methodLabel,
               method_label: methodLabel,
-              payment_method_selected: paymentMethod,
+              payment_method_selected: activeMethod,
               converted_amount_text: convertedTotalText,
               binance_transaction_id: binanceTxId || '',
               validated_nickname: playerNickname || '',
@@ -348,7 +349,7 @@ export default function ProductDetail() {
           total_usdt: finalPriceUsdt,
           total_gtq: Number(finalPriceGtq),
           status: newOrderStatus,
-          payment_method: paymentMethod === 'Wallet' ? 'Wallet' : 'Manual',
+          payment_method: activeMethod === 'Wallet' ? 'Wallet' : 'Manual',
           created_at: new Date().toISOString()
         };
       }
@@ -370,7 +371,28 @@ export default function ProductDetail() {
       } catch (e) {}
 
       // 3. EXECUTE FLOW A (WALLET): Deduct balance, deduct stock & AUTO-DISPATCH RECHARGE
-      if (paymentMethod === 'Wallet') {
+      if (activeMethod === 'Wallet') {
+        const isGameRecharge = product?.validation_type === 'Free Fire' || product?.category_id === 'free-fire' || product?.name?.toLowerCase().includes('diamante') || product?.name?.toLowerCase().includes('free fire') || formData['ID de Jugador (UID)'];
+
+        let rechargeRes = null;
+        if (isGameRecharge) {
+          try {
+            rechargeRes = await processGameRecharge({
+              order_id: orderData.id,
+              uid: formData['ID de Jugador (UID)'] || formData.uid || '',
+              nickname: playerNickname || '',
+              product_name: product.name,
+              total_usdt: finalPriceUsdt
+            });
+          } catch (recErr) {
+            console.warn('Error llamando proveedor de recargas:', recErr);
+          }
+        }
+
+        const isRechargeSuccessful = rechargeRes?.success === true;
+        const finalStatus = isRechargeSuccessful ? 'Completed' : (isGameRecharge ? 'Pending' : 'Completed');
+
+        // Deduct wallet balance
         const newBal = Number(Math.max(0, walletBalance - finalPriceUsdt).toFixed(2));
         if (updateUserWalletBalance) {
           updateUserWalletBalance(user.id, newBal, user.email);
@@ -385,8 +407,8 @@ export default function ProductDetail() {
             type: 'Purchase',
             amount_usdt: finalPriceUsdt,
             order_id: orderData.id,
-            status: 'Completed',
-            notes: `Compra de ${product.name}`
+            status: finalStatus,
+            notes: `Compra de ${product.name} (${finalStatus === 'Completed' ? 'Auto-Despachado' : 'Pendiente Entrega Manual'})`
           });
         } catch (e) {}
 
@@ -398,30 +420,34 @@ export default function ProductDetail() {
           } catch (e) {}
         }
 
-        // Instant notification to customer
+        // Update order status and supplier ID in Supabase
+        const supplierNote = isRechargeSuccessful 
+          ? `WALLET_PAY | AUTO_DELIVERED | TX:${rechargeRes?.mappedData?.supplier_transaction_id || 'OK'}`
+          : `WALLET_PAY | MANUAL_DELIVERY_REQUIRED | Reason:${rechargeRes?.error || 'Proveedor Offline'}`;
+
         try {
-          notifyOrderCompleted({ orderId: orderData.id, userId: user.id, amount: finalPriceUsdt });
+          await supabase
+            .from('orders')
+            .update({
+              status: finalStatus,
+              bank_receipt_url: supplierNote
+            })
+            .eq('id', orderData.id);
         } catch (e) {}
 
-        // Trigger Supplier automated recharge via Recargas América API
-        try {
-          const rechargeRes = await processGameRecharge({
-            order_id: orderData.id,
-            uid: formData['ID de Jugador (UID)'] || formData.uid || '',
-            nickname: playerNickname || '',
-            product_name: product.name,
-            total_usdt: finalPriceUsdt
+        if (isRechargeSuccessful) {
+          notifyOrderCompleted({ orderId: orderData.id, userId: user.id, amount: finalPriceUsdt });
+        } else if (isGameRecharge) {
+          sendPushNotification({
+            userId: user.id,
+            title: '⏳ Pedido Recibido (En Proceso de Entrega)',
+            body: `Tu orden #${orderData.id.slice(0, 8)} de ${product.name} fue pagada con saldo. Los diamantes serán acreditados manualmente en unos momentos.`,
+            type: 'order_created',
+            metadata: { orderId: orderData.id, url: '/profile?tab=orders' }
           });
 
-          if (rechargeRes?.mappedData?.supplier_transaction_id) {
-            await supabase
-              .from('orders')
-              .update({
-                bank_receipt_url: `WALLET_PAY | SUPPLIER:${rechargeRes.mappedData.supplier_transaction_id}`
-              })
-              .eq('id', orderData.id);
-          }
-        } catch (e) {}
+          alert(`✅ ¡Pago recibido con éxito!\n\nNota: La pasarela automática externa está temporalmente en mantenimiento, por lo que tu pedido #${orderData.id.slice(0, 8)} ha sido asignado a un Administrador para su entrega manual inmediata.`);
+        }
       } else {
         // Notification for manual order (Pending Admin Review)
         sendPushNotification({
@@ -458,12 +484,12 @@ export default function ProductDetail() {
         localStorage.setItem('alv_all_orders', JSON.stringify([orderToCache, ...prevAll.filter(o => o.id !== orderToCache.id)]));
       } catch (e) {}
 
-      // Notify Admins with PUSH ALERT & SOUND
+      // Notify Admins with single clean PUSH ALERT & SOUND
       notifyAdminNewOrder({
         orderId: orderData.id,
         amount: finalPriceUsdt,
-        customerName: profile?.full_name || user.email,
-        paymentMethod: methodLabel
+        customerName: playerNickname || profile?.full_name || user.email,
+        activeMethod: methodLabel
       });
 
       setOrderSuccess({ ...orderData, methodLabel, convertedTotalText });
@@ -543,7 +569,7 @@ export default function ProductDetail() {
             <img
               src={product.image_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=700'}
               alt={product.name}
-              style={{ width: '100%', height: '360px', objectFit: 'cover', display: 'block' }}
+              style={{ width: '100%', height: 'auto', maxHeight: '220px', objectFit: 'contain', display: 'block', background: '#0a0e1a' }}
             />
             <div style={{
               position: 'absolute',
@@ -574,8 +600,9 @@ export default function ProductDetail() {
             <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
               {product.subcategories?.categories?.name || 'Recargas Oficiales'}
             </div>
-            <h1 style={{ fontSize: '1.6rem', fontWeight: '900', marginBottom: '10px', color: '#fff' }}>
-              {product.name}
+            <h1 style={{ fontSize: '1.6rem', fontWeight: '900', marginBottom: '10px', color: '#fff', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img src={product.image_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=700'} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-cyan)' }} />
+              <span>{product.name}</span>
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: '1.5', marginBottom: '18px' }}>
               {product.description || 'Recarga rápida directa a tu cuenta de Free Fire por UID con entrega inmediata.'}
@@ -626,7 +653,7 @@ export default function ProductDetail() {
                   <input
                     type="text"
                     required={field.is_required}
-                    placeholder={`Ingresa tu ${field.field_name}...`}
+                    placeholder="Ingresa tu ID"
                     value={formData[field.field_name] || ''}
                     onChange={(e) => handleInputChange(field.field_name, e.target.value)}
                     onBlur={(e) => {
@@ -684,16 +711,12 @@ export default function ProductDetail() {
                   </div>
 
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    {playerLevel && (
-                      <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
-                        ⭐ Nivel {playerLevel}
-                      </span>
-                    )}
-                    {playerLikes !== null && (
-                      <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-                        👍 {Number(playerLikes).toLocaleString()} Likes
-                      </span>
-                    )}
+                    <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                      ⭐ Nivel {playerLevel || '-'}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                      👍 {playerLikes !== null ? Number(playerLikes).toLocaleString() : '-'} Likes
+                    </span>
                     <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.08)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800' }}>
                       🌎 Región: {playerRegion || 'Desconocida'}
                     </span>
@@ -711,7 +734,13 @@ export default function ProductDetail() {
 
           {/* Action Button */}
           <button
-            onClick={() => setShowCheckout(true)}
+            onClick={() => {
+              if (hasSufficientBalance) {
+                handleProceedPayment("Wallet");
+              } else {
+                setShowCheckout(true);
+              }
+            }}
             className="btn-cyan"
             style={{ width: '100%', padding: '14px', fontSize: '1rem', fontWeight: '800' }}
           >
@@ -1147,13 +1176,15 @@ export default function ProductDetail() {
                     <div style={{ fontWeight: '800', color: 'var(--accent-cyan)', marginBottom: '8px' }}>
                       🇬🇹 Cuentas Bancarias en Quetzales (Guatemala):
                     </div>
-                    {(config?.bank_accounts || [{ bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }]).map((acc, i) => (
-                      <div key={i} style={{ marginBottom: '8px', background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 'var(--radius-sm)' }}>
-                        <div><strong>Banco:</strong> {acc.bank}</div>
-                        <div><strong>No. Cuenta:</strong> <span style={{ color: '#fbbf24', fontWeight: '800' }}>{acc.account_number}</span> ({acc.type})</div>
-                        <div><strong>Titular:</strong> {acc.name}</div>
-                      </div>
-                    ))}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', marginBottom: '8px' }}>
+                      {(config?.bank_accounts || [{ bank: 'Banrural', account_number: '4313076359', type: 'Ahorro', name: 'Jonathan Alvares' }]).map((acc, i) => (
+                        <div key={i} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div><strong>Banco:</strong> {acc.bank}</div>
+                          <div><strong>No. Cuenta:</strong> <span style={{ color: '#fbbf24', fontWeight: '800' }}>{acc.account_number}</span> ({acc.type})</div>
+                          <div><strong>Titular:</strong> {acc.name}</div>
+                        </div>
+                      ))}
+                    </div>
                     <div style={{ marginTop: '8px', color: '#fbbf24', fontSize: '0.9rem', fontWeight: '800' }}>
                       Monto a transferir: Q{(finalPriceUsdt * (config?.usdt_gtq_rate || exchangeRate || 7.80)).toFixed(2)} GTQ
                     </div>

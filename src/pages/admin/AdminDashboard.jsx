@@ -12,27 +12,46 @@ export default function AdminDashboard() {
   });
   const [resellerSales, setResellerSales] = useState([]);
   const [bestSellers, setBestSellers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_all_orders');
+      if (cached && JSON.parse(cached).length > 0) return false;
+    } catch (e) {}
+    return true;
+  });
 
   useEffect(() => {
     async function loadAnalytics() {
       try {
-        const fetchPromise = Promise.all([
-          supabase.from('orders').select('*'),
-          supabase.from('profiles').select('id, full_name, role'),
-          supabase.from('order_items').select('*'),
-          supabase.from('products').select('id, name, cost')
-        ]);
+        let ordRes = { status: 'rejected' };
+        let profRes = { status: 'rejected' };
+        let itemsRes = { status: 'rejected' };
+        let prodsRes = { status: 'rejected' };
 
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout')), 5000)
-        );
+        try {
+          const fetchPromise = Promise.allSettled([
+            supabase.from('orders').select('*').limit(150),
+            supabase.from('profiles').select('id, full_name, role'),
+            supabase.from('order_items').select('*').limit(200),
+            supabase.from('products').select('id, name, cost')
+          ]);
 
-        const [ordRes, profRes, itemsRes, prodsRes] = await Promise.race([fetchPromise, timeoutPromise]);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Analytics timeout')), 2500)
+          );
 
-        const profMap = new Map((profRes?.data || []).map(p => [p.id, p]));
-        const prodMap = new Map((prodsRes?.data || []).map(p => [p.id, p]));
-        const items = (itemsRes?.data || []).map(i => ({
+          const settled = await Promise.race([fetchPromise, timeoutPromise]);
+          ordRes = settled[0];
+          profRes = settled[1];
+          itemsRes = settled[2];
+          prodsRes = settled[3];
+        } catch (e) {
+          console.warn('Analytics timeout, using cache/fallback');
+        }
+
+        const profMap = new Map((profRes.status === 'fulfilled' ? profRes.value?.data || [] : []).map(p => [p.id, p]));
+        const prodMap = new Map((prodsRes.status === 'fulfilled' ? prodsRes.value?.data || [] : []).map(p => [p.id, p]));
+        const items = (itemsRes.status === 'fulfilled' ? itemsRes.value?.data || [] : []).map(i => ({
           ...i,
           products: prodMap.get(i.product_id)
         }));
@@ -43,11 +62,31 @@ export default function AdminDashboard() {
           itemsByOrder.get(i.order_id).push(i);
         });
 
-        const orders = (ordRes?.data || []).map(o => ({
-          ...o,
-          profiles: profMap.get(o.user_id),
-          order_items: itemsByOrder.get(o.id) || []
-        }));
+        let supabaseOrders = [];
+        if (ordRes.status === 'fulfilled' && ordRes.value?.data) {
+          supabaseOrders = ordRes.value.data.map(o => ({
+            ...o,
+            profiles: profMap.get(o.user_id),
+            order_items: itemsByOrder.get(o.id) || []
+          }));
+        }
+
+        // Scan Local Storage for all recent client & server orders
+        let localOrders = [];
+        try {
+          const allStored = localStorage.getItem('alv_all_orders');
+          if (allStored) localOrders = [...localOrders, ...JSON.parse(allStored)];
+        } catch (e) {}
+
+        const mergedMap = new Map();
+        localOrders.forEach(o => {
+          if (o?.id) mergedMap.set(o.id, o);
+        });
+        supabaseOrders.forEach(o => {
+          if (o?.id) mergedMap.set(o.id, o);
+        });
+
+        const orders = Array.from(mergedMap.values());
 
         let grossSales = 0;
         let totalCost = 0;

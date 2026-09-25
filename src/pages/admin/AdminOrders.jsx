@@ -1,14 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
-import { processGameRecharge } from '../../../notificaciones y apis/apis/index';
+import { processGameRecharge, validatePlayerUid } from '../../../notificaciones y apis/apis/index';
 import { notifyOrderCompleted } from '../../../notificaciones y apis/notificaciones/pushService';
 import { burnPaymentLink, releasePaymentLink } from '../../services/paymentLinksService';
 import { useApp } from '../../context/AppContext';
+import { useAlert } from '../../components/CustomAlertModal';
 
 export default function AdminOrders() {
   const { soundEffects, addNotification } = useApp();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { showAlert, showSuccess, showError, showConfirm } = useAlert();
+  
+  // Optimistic Instant Load from Local Storage (0ms delay)
+  const [orders, setOrders] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_all_orders');
+      if (cached) {
+        const arr = JSON.parse(cached);
+        if (Array.isArray(arr) && arr.length > 0) return arr;
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_all_orders');
+      if (cached && JSON.parse(cached).length > 0) return false;
+    } catch (e) {}
+    return true;
+  });
 
   // Filters State
   const [dateFilterPreset, setDateFilterPreset] = useState('all'); // 'all', 'today', '7days', 'this_month', 'custom'
@@ -17,14 +37,19 @@ export default function AdminOrders() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Likes Delivery Modal State
+  // Likes Delivery Modal State (Comprobante 2 Admin)
   const [deliveryModalOrder, setDeliveryModalOrder] = useState(null);
   const [likesAddedInput, setLikesAddedInput] = useState('');
   const [publishToFeed, setPublishToFeed] = useState(true);
+  const [isReverifying, setIsReverifying] = useState(false);
+  const [copiedUid, setCopiedUid] = useState(false);
+  const [livePlayerInfo, setLivePlayerInfo] = useState(null);
+  const [reverifiedLikes, setReverifiedLikes] = useState(null);
+  const [showDeliveriesHistoryModal, setShowDeliveriesHistoryModal] = useState(false);
 
-  // Pagination State
+  // Pagination State (8 pedidos por página para carga rápida)
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
+  const ITEMS_PER_PAGE = 8;
 
   // Date Range Delete Modal State
   const [showDateRangeDeleteModal, setShowDateRangeDeleteModal] = useState(false);
@@ -40,100 +65,72 @@ export default function AdminOrders() {
   const [credentialsInput, setCredentialsInput] = useState('');
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
-  // Load Orders from Multi-layer Synchronizer (Supabase + API + Storage)
+  // Ultra-Fast Load from Multi-layer Synchronizer (Supabase + Local Cache with 2.5s timeout)
   const loadOrders = async () => {
     try {
-      // 1. Fetch Supabase Database
       let supabaseOrders = [];
-      let profMap = new Map();
-      let prodMap = new Map();
-      let itemsByOrder = new Map();
 
       try {
-        const [ordRes, profRes, itemsRes, prodsRes] = await Promise.allSettled([
-          supabase.from('orders').select('*').order('created_at', { ascending: false }),
-          supabase.from('profiles').select('id, full_name, email, phone, role'),
-          supabase.from('order_items').select('*'),
-          supabase.from('products').select('id, name, image_url, subcategory_id')
-        ]);
+        const fetchPromise = (async () => {
+          const { data, error } = await supabase
+            .from('orders')
+            .select('*, profiles(id, full_name, email, phone, role), order_items(*, products(id, name, image_url))')
+            .order('created_at', { ascending: false })
+            .limit(100);
 
-        if (profRes.status === 'fulfilled' && profRes.value.data) {
-          profMap = new Map(profRes.value.data.map(p => [p.id, p]));
-        }
-        if (prodsRes.status === 'fulfilled' && prodsRes.value.data) {
-          prodMap = new Map(prodsRes.value.data.map(p => [p.id, p]));
-        }
-        if (itemsRes.status === 'fulfilled' && itemsRes.value.data) {
-          const items = itemsRes.value.data.map(i => ({
-            ...i,
-            products: prodMap.get(i.product_id)
-          }));
-          items.forEach(i => {
-            if (!itemsByOrder.has(i.order_id)) itemsByOrder.set(i.order_id, []);
-            itemsByOrder.get(i.order_id).push(i);
-          });
-        }
-        if (ordRes.status === 'fulfilled' && ordRes.value.data) {
-          supabaseOrders = ordRes.value.data.map(o => ({
-            ...o,
-            profiles: profMap.get(o.user_id) || o.profiles,
-            order_items: itemsByOrder.get(o.id) || o.order_items || []
-          }));
-        }
+          if (data && !error) return data;
+
+          const [ordRes, profRes, itemsRes, prodsRes] = await Promise.allSettled([
+            supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(60),
+            supabase.from('profiles').select('id, full_name, email, phone, role'),
+            supabase.from('order_items').select('*').limit(150),
+            supabase.from('products').select('id, name, image_url')
+          ]);
+
+          if (ordRes.status === 'fulfilled' && ordRes.value.data) {
+            const profMap = new Map((profRes.value?.data || []).map(p => [p.id, p]));
+            const prodMap = new Map((prodsRes.value?.data || []).map(p => [p.id, p]));
+            const itemsMap = new Map();
+            (itemsRes.value?.data || []).forEach(i => {
+              const enriched = { ...i, products: prodMap.get(i.product_id) };
+              if (!itemsMap.has(i.order_id)) itemsMap.set(i.order_id, []);
+              itemsMap.get(i.order_id).push(enriched);
+            });
+            return ordRes.value.data.map(o => ({
+              ...o,
+              profiles: profMap.get(o.user_id) || o.profiles,
+              order_items: itemsMap.get(o.id) || o.order_items || []
+            }));
+          }
+          return [];
+        })();
+
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Orders timeout')), 2500));
+        supabaseOrders = await Promise.race([fetchPromise, timeoutPromise]);
       } catch (sbErr) {
-        console.warn('Supabase fetch notice:', sbErr);
+        console.warn('Supabase fast fetch fallback:', sbErr);
       }
 
-      // 2. Fetch Backend API Orders backup (if server is active)
-      let backendOrders = [];
-      try {
-        const apiRes = await fetch('/api/v1/orders');
-        if (apiRes.ok) {
-          const apiJson = await apiRes.json();
-          if (Array.isArray(apiJson)) backendOrders = apiJson;
-        }
-      } catch (e) {}
-
-      // 3. Scan Local Storage for any recent client-side orders
+      // Merge with Local Storage cache
       let localOrders = [];
       try {
         const allStored = localStorage.getItem('alv_all_orders');
         if (allStored) localOrders = [...localOrders, ...JSON.parse(allStored)];
-
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('alv_user_orders_')) {
-            try {
-              const uOrders = JSON.parse(localStorage.getItem(key) || '[]');
-              if (Array.isArray(uOrders)) localOrders = [...localOrders, ...uOrders];
-            } catch (e) {}
-          }
-        }
       } catch (e) {}
 
-      // 4. Merge, De-duplicate by ID, and sort by created_at DESC
+      // Merge and sort strictly descending by created_at
       const mergedMap = new Map();
-
-      // Put local orders first
-      localOrders.forEach(o => {
-        if (o?.id) mergedMap.set(o.id, o);
-      });
-
-      // Put backend orders
-      backendOrders.forEach(o => {
-        if (o?.id) mergedMap.set(o.id, { ...(mergedMap.get(o.id) || {}), ...o });
-      });
-
-      // Overlay authoritative Supabase orders
-      supabaseOrders.forEach(o => {
-        if (o?.id) mergedMap.set(o.id, { ...(mergedMap.get(o.id) || {}), ...o });
-      });
+      localOrders.forEach(o => { if (o?.id) mergedMap.set(o.id, o); });
+      (supabaseOrders || []).forEach(o => { if (o?.id) mergedMap.set(o.id, { ...(mergedMap.get(o.id) || {}), ...o }); });
 
       const finalOrders = Array.from(mergedMap.values()).sort((a, b) => {
         return new Date(b.created_at || 0) - new Date(a.created_at || 0);
       });
 
       setOrders(finalOrders);
+      try {
+        localStorage.setItem('alv_all_orders', JSON.stringify(finalOrders));
+      } catch (e) {}
     } catch (err) {
       console.warn('Error synchronizing orders:', err);
     } finally {
@@ -253,6 +250,11 @@ export default function AdminOrders() {
     
     // Check if it's a Likes order and we want to mark it as Completed
     let parsedNotes = {};
+    let shouldPublishFeed = false;
+    const rawNotesStr = typeof selectedOrder.customer_notes === 'string'
+      ? selectedOrder.customer_notes
+      : JSON.stringify(selectedOrder.customer_notes || {});
+
     try {
       parsedNotes = typeof selectedOrder.customer_notes === 'string'
         ? JSON.parse(selectedOrder.customer_notes)
@@ -266,10 +268,15 @@ export default function AdminOrders() {
       return; // Stop here, wait for modal submission
     }
 
+    if (newStatus === 'Completed' && parsedNotes.service_type !== 'Free Fire Likes') {
+      shouldPublishFeed = await showConfirm('¿Deseas publicar esta entrega exitosa en el Feed Comunitario para que los clientes la vean?', '📢 Publicar en Comunidad');
+    }
+
     setUpdatingStatus(true);
 
     try {
       let supplierTxId = null;
+      let rechargeApiReport = null;
 
       // 1. If marking as Completed, trigger automatic actions
       if (newStatus === 'Completed') {
@@ -286,20 +293,29 @@ export default function AdminOrders() {
           }
         }
 
-        // 2. Extract UID and Trigger Supplier API
+        // 2. Extract UID and Trigger Supplier API for Game Recharges
         const targetUid = parsedNotes.target_uid || parsedNotes['ID de Jugador (UID)'] || parsedNotes.uid || selectedOrder.order_items?.[0]?.fields_data?.['ID de Jugador (UID)'] || '';
-        const productName = selectedOrder.order_items?.[0]?.products?.name || 'Recarga de Diamantes';
+        const productName = selectedOrder.order_items?.[0]?.products?.name || parsedNotes.product_name || 'Recarga de Diamantes';
 
-        if (targetUid) {
-          const rechargeRes = await processGameRecharge({
-            order_id: selectedOrder.id,
-            uid: targetUid,
-            nickname: parsedNotes.validated_nickname || '',
-            product_name: productName,
-            total_usdt: selectedOrder.total_usdt
-          });
+        if (targetUid && parsedNotes.service_type !== 'Free Fire Likes') {
+          try {
+            const rechargeRes = await processGameRecharge({
+              order_id: selectedOrder.id,
+              uid: targetUid,
+              nickname: parsedNotes.validated_nickname || '',
+              product_name: productName,
+              total_usdt: selectedOrder.total_usdt
+            });
 
-          supplierTxId = rechargeRes?.mappedData?.supplier_transaction_id;
+            if (rechargeRes?.success) {
+              supplierTxId = rechargeRes?.mappedData?.supplier_transaction_id;
+              rechargeApiReport = `⚡ Recarga enviada exitosamente por la API Recargas América (Tx: ${supplierTxId} | Ref: ${rechargeRes?.mappedData?.reference || supplierTxId})`;
+            } else {
+              rechargeApiReport = `⚠️ Aviso API Proveedor: ${rechargeRes?.error || 'No se pudo enviar automáticamente'}`;
+            }
+          } catch (apiErr) {
+            rechargeApiReport = `⚠️ Error conectando con API: ${apiErr.message}`;
+          }
         }
 
         // 3. Instant push notification to customer
@@ -311,20 +327,59 @@ export default function AdminOrders() {
             amount: selectedOrder.total_usdt
           });
         }
+
+        // 4. Publish to Feed if requested
+        if (shouldPublishFeed) {
+          try {
+            const feedContent = `✅ ¡Pedido entregado exitosamente!\nSe completó la orden de **${productName}** para **${parsedNotes.validated_nickname || selectedOrder.customer_email || 'Cliente'}**.\n\n¡Gracias por preferir ALVSHOP! 🎉`;
+            
+            // 1. Insert into Supabase
+            let insertedData = null;
+            try {
+              const { data: insData } = await supabase.from('feed_posts').insert({
+                user_id: selectedOrder.user_id || user?.id,
+                content: feedContent,
+                images: [],
+                likes_count: 1
+              }).select('*, profiles(full_name)').single();
+              insertedData = insData;
+            } catch (errIns) {
+              console.warn('Supabase feed insert warning:', errIns);
+            }
+
+            // 2. Save to local persistent feed cache for instant feed display
+            try {
+              const localFeed = JSON.parse(localStorage.getItem('alv_feed_posts') || '[]');
+              const newFeedItem = insertedData || {
+                id: `post-${Date.now()}`,
+                content: feedContent,
+                images: [],
+                likes_count: 1,
+                created_at: new Date().toISOString(),
+                profiles: { full_name: parsedNotes.validated_nickname || selectedOrder.profiles?.full_name || 'ALVSHOP' },
+                feed_comments: [],
+                feed_likes: []
+              };
+              localStorage.setItem('alv_feed_posts', JSON.stringify([newFeedItem, ...localFeed]));
+            } catch (e) {}
+
+            // Notificar al cliente que fue publicado
+            if (selectedOrder.user_id) {
+              addNotification?.({
+                type: 'feed_post',
+                title: '📢 Tu pedido está en el Feed',
+                body: `El admin ha publicado tu pedido exitoso en el Feed Comunitario. ¡Ve a comentarlo!`,
+                metadata: { url: '/feed' },
+                user_id: selectedOrder.user_id
+              });
+            }
+          } catch (feedErr) {
+            console.warn('Could not post to feed', feedErr);
+          }
+        }
       }
 
       // 2. Acreditación automática si es un depósito/recarga de saldo de billetera
-      let parsedNotes = {};
-      const rawNotesStr = typeof selectedOrder.customer_notes === 'string'
-        ? selectedOrder.customer_notes
-        : JSON.stringify(selectedOrder.customer_notes || {});
-
-      try {
-        parsedNotes = typeof selectedOrder.customer_notes === 'string'
-          ? JSON.parse(selectedOrder.customer_notes)
-          : selectedOrder.customer_notes || {};
-      } catch (e) {}
-
       const isWalletRecharge = rawNotesStr.toLowerCase().includes('wallet_deposit') ||
         rawNotesStr.toLowerCase().includes('wallet deposit') ||
         rawNotesStr.toLowerCase().includes('recarga') ||
@@ -425,12 +480,15 @@ export default function AdminOrders() {
           .eq('id', selectedOrder.order_items[0].id);
       }
 
-      alert(`¡Estado del pedido actualizado a "${statusConfig[newStatus]?.label || newStatus}"!\n${supplierTxId ? `⚡ Recarga enviada exitosamente por la API (Tx Proveedor: ${supplierTxId})` : 'Stock descontado y cliente notificado.'}`);
+      showSuccess(
+        `¡Estado del pedido actualizado a "${statusConfig[newStatus]?.label || newStatus}"!\n${rechargeApiReport ? rechargeApiReport : 'Saldo acreditado / stock descontado y cliente notificado.'}`,
+        '✅ Pedido Actualizado'
+      );
       setSelectedOrder(null);
       setCredentialsInput('');
       await loadOrders();
     } catch (err) {
-      alert('Error actualizando pedido: ' + err.message);
+      showError('Error actualizando pedido: ' + err.message, '❌ Error al Actualizar');
     } finally {
       setUpdatingStatus(false);
     }
@@ -438,7 +496,8 @@ export default function AdminOrders() {
 
   // Delete Individual Order
   const handleDeleteOrder = async (orderId) => {
-    if (!confirm(`¿Estás seguro de eliminar permanentemente la orden #${orderId.slice(0, 8)}? Esta acción liberará espacio en la base de datos.`)) return;
+    const ok = await showConfirm(`¿Estás seguro de eliminar permanentemente la orden #${orderId.slice(0, 8)}? Esta acción liberará espacio en la base de datos.`, '🗑️ Eliminar Pedido');
+    if (!ok) return;
     setDeletingOrder(true);
     try {
       // 1. Delete associated order items
@@ -588,6 +647,118 @@ export default function AdminOrders() {
     }
   };
 
+  // Re-verify Live Player Likes from Free Fire API
+  const handleReverifyLiveLikesOrder = async (uid, region) => {
+    setIsReverifying(true);
+    try {
+      const res = await validatePlayerUid(uid, 'Free Fire', region || 'US');
+      if (res && res.success) {
+        const liveLikes = Number(res.playerLikes ?? res.likes ?? 0);
+        const liveNick = res.playerName || res.nickname || res.player_nickname || '';
+        const liveLvl = res.playerLevel || res.level || '';
+        const liveReg = res.region || region || 'US';
+
+        setReverifiedLikes(liveLikes);
+        setLivePlayerInfo({
+          nick: liveNick,
+          likes: liveLikes,
+          level: liveLvl,
+          region: liveReg
+        });
+        alert(`✅ ¡Jugador Validado con Éxito desde Free Fire!\n👤 Nick: ${liveNick}\n❤️ Likes Actuales en Free Fire: ${liveLikes.toLocaleString()}\n⭐ Nivel: ${liveLvl}\n🌎 Región: ${liveReg}`);
+      } else if (res && (res.playerLikes !== undefined || res.likes !== undefined)) {
+        const currentRealLikes = Number(res.playerLikes ?? res.likes ?? 0);
+        setReverifiedLikes(currentRealLikes);
+        setLivePlayerInfo({
+          nick: res.playerName || res.nickname || '',
+          likes: currentRealLikes,
+          level: res.playerLevel || '',
+          region: res.region || region || 'US'
+        });
+        alert(`✅ Likes Re-verificados en vivo: ${currentRealLikes.toLocaleString()} ❤️`);
+      } else {
+        alert('⚠️ No se pudo obtener el conteo de likes en vivo. ' + (res?.error || 'Verifica el ID y la región.'));
+      }
+    } catch (e) {
+      alert('Error consultando API de Free Fire: ' + e.message);
+    } finally {
+      setIsReverifying(false);
+    }
+  };
+
+  // Record Daily Progressive Likes Delivery
+  const handleRecordDailyDeliveryOrder = async (order, amountToAddNum) => {
+    if (!order) return;
+    setUpdatingStatus(true);
+    try {
+      let parsedNotes = {};
+      try { parsedNotes = JSON.parse(order.customer_notes || '{}'); } catch (e) {}
+
+      const totalMeta = Number(parsedNotes.likes_to_add || 2000);
+      const dailyDeliveries = Array.isArray(parsedNotes.daily_deliveries) ? parsedNotes.daily_deliveries : [];
+      const currentDelivered = Number(parsedNotes.total_likes_delivered || (dailyDeliveries.length > 0 ? dailyDeliveries.reduce((s, d) => s + Number(d.likes_sent || 0), 0) : Number(parsedNotes.likes_sent || 0)));
+      const dayNum = dailyDeliveries.length + 1;
+
+      const baseStart = reverifiedLikes !== null ? reverifiedLikes : (Number(parsedNotes.likes_before || 0) + currentDelivered);
+      const amountToAdd = Number(amountToAddNum) || 2000;
+      const currentFinalLikes = baseStart + amountToAdd;
+
+      const newEntry = {
+        id: `del-${Date.now()}`,
+        day_number: dayNum,
+        date: new Date().toISOString(),
+        likes_before: baseStart,
+        likes_sent: amountToAdd,
+        likes_now: currentFinalLikes,
+        admin_name: 'Admin',
+        note: `Acreditación Día #${dayNum}`
+      };
+
+      const updatedDeliveries = [...dailyDeliveries, newEntry];
+      const newTotalDelivered = currentDelivered + amountToAdd;
+      const isComplete = newTotalDelivered >= totalMeta;
+
+      const updatedNotes = {
+        ...parsedNotes,
+        likes_before: Number(parsedNotes.likes_before || 0),
+        likes_sent: newTotalDelivered,
+        total_likes_delivered: newTotalDelivered,
+        likes_now: currentFinalLikes,
+        daily_deliveries: updatedDeliveries,
+        last_updated: new Date().toISOString(),
+        completed_at: isComplete ? new Date().toISOString() : parsedNotes.completed_at
+      };
+
+      const newStatus = isComplete ? 'Completed' : order.status;
+
+      await supabase.from('orders').update({
+        status: newStatus,
+        customer_notes: JSON.stringify(updatedNotes)
+      }).eq('id', order.id);
+
+      const updatedOrderObj = {
+        ...order,
+        status: newStatus,
+        customer_notes: JSON.stringify(updatedNotes)
+      };
+
+      setOrders(prev => prev.map(o => o.id === order.id ? updatedOrderObj : o));
+      setDeliveryModalOrder(updatedOrderObj);
+
+      try {
+        const allStored = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        const updatedAll = allStored.map(o => o.id === order.id ? updatedOrderObj : o);
+        localStorage.setItem('alv_all_orders', JSON.stringify(updatedAll));
+      } catch (e) {}
+
+      alert(`✅ ¡Acreditación del Día #${dayNum} guardada con éxito!\n❤️ Likes Enviados Hoy: +${amountToAdd.toLocaleString()}\n📊 Total Acreditado: ${newTotalDelivered.toLocaleString()} / ${totalMeta.toLocaleString()} Likes${isComplete ? '\n🎉 ¡PEDIDO COMPLETADO AL 100%!' : ''}`);
+    } catch (err) {
+      alert('Error registrando entrega diaria: ' + err.message);
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
   // Confirm Likes Delivery
   const handleConfirmLikesDelivery = async () => {
     if (!deliveryModalOrder) return;
@@ -603,8 +774,16 @@ export default function AdminOrders() {
       
       const updatedNotes = {
         ...parsedNotes,
+        likes_before: likesBefore,
         likes_added_actual: likesAdded,
-        likes_after: likesNow
+        likes_sent: likesAdded,
+        likes_to_add: likesAdded,
+        likes_after: likesNow,
+        likes_now: likesNow,
+        target_likes_final: likesNow,
+        region: parsedNotes.region || 'US',
+        player_nickname: parsedNotes.validated_nickname || parsedNotes.player_nickname || 'Jugador',
+        target_uid: parsedNotes.target_uid || parsedNotes['ID de Jugador (UID)'] || 'N/A'
       };
 
       // 1. Update Order
@@ -619,12 +798,34 @@ export default function AdminOrders() {
       if (publishToFeed) {
         try {
           const feedContent = `✅ ¡Pedido completado exitosamente para **${parsedNotes.validated_nickname || 'Jugador'}**!\nSe agregaron **+${likesAdded.toLocaleString()} Likes** a su cuenta oficial de Free Fire.\n\nRegión: ${parsedNotes.region || 'Desconocida'}\nLikes Actuales: ${likesNow.toLocaleString()} ❤️`;
-          await supabase.from('feed_posts').insert({
-            user_id: user.id,
-            content: feedContent,
-            images: [], // Optionally generate and save the Comprobante 2 image URL here later
-            likes: 0
-          });
+          
+          let insertedData = null;
+          try {
+            const { data: insData } = await supabase.from('feed_posts').insert({
+              user_id: deliveryModalOrder.user_id || user?.id,
+              content: feedContent,
+              images: [],
+              likes_count: 1
+            }).select('*, profiles(full_name)').single();
+            insertedData = insData;
+          } catch (errIns) {
+            console.warn('Supabase feed insert warning:', errIns);
+          }
+
+          try {
+            const localFeed = JSON.parse(localStorage.getItem('alv_feed_posts') || '[]');
+            const newFeedItem = insertedData || {
+              id: `post-${Date.now()}`,
+              content: feedContent,
+              images: [],
+              likes_count: 1,
+              created_at: new Date().toISOString(),
+              profiles: { full_name: parsedNotes.validated_nickname || 'ALVSHOP' },
+              feed_comments: [],
+              feed_likes: []
+            };
+            localStorage.setItem('alv_feed_posts', JSON.stringify([newFeedItem, ...localFeed]));
+          } catch (e) {}
         } catch (feedErr) {
           console.warn('Could not post to feed', feedErr);
         }
@@ -844,21 +1045,21 @@ export default function AdminOrders() {
 
       </div>
 
-      {/* Orders Table with Horizontal Scroll for PC & Mobile */}
-      <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', overflowX: 'auto' }}>
-        <table style={{ width: '100%', minWidth: '1050px', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+      {/* Orders Table - Compact and Responsive without horizontal scroll on PC */}
+      <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '16px', overflowX: 'auto' }}>
+        <table style={{ width: '100%', minWidth: '880px', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
-              <th style={{ padding: '10px 8px' }}># ID Orden</th>
-              <th style={{ padding: '10px 8px' }}>Fecha & Hora</th>
-              <th style={{ padding: '10px 8px' }}>Cliente</th>
-              <th style={{ padding: '10px 8px' }}>Producto / Servicio</th>
-              <th style={{ padding: '10px 8px' }}>Datos / UID</th>
-              <th style={{ padding: '10px 8px' }}>Total (USDT)</th>
-              <th style={{ padding: '10px 8px' }}>Método</th>
-              <th style={{ padding: '10px 8px' }}>📸 Comprobante</th>
-              <th style={{ padding: '10px 8px' }}>Estado</th>
-              <th style={{ padding: '10px 8px', textAlign: 'center' }}>Acción</th>
+              <th style={{ padding: '8px 6px' }}># ID</th>
+              <th style={{ padding: '8px 6px' }}>Fecha & Hora</th>
+              <th style={{ padding: '8px 6px' }}>Cliente</th>
+              <th style={{ padding: '8px 6px' }}>Producto</th>
+              <th style={{ padding: '8px 6px' }}>Jugador / UID</th>
+              <th style={{ padding: '8px 6px' }}>Total</th>
+              <th style={{ padding: '8px 6px' }}>Método</th>
+              <th style={{ padding: '8px 6px' }}>📸 Comprobante</th>
+              <th style={{ padding: '8px 6px' }}>Estado</th>
+              <th style={{ padding: '8px 6px', textAlign: 'center' }}>Acción</th>
             </tr>
           </thead>
           <tbody>
@@ -881,63 +1082,56 @@ export default function AdminOrders() {
                 const formattedDate = new Date(ord.created_at).toLocaleString('es-GT', {
                   day: '2-digit',
                   month: 'short',
-                  year: 'numeric',
                   hour: '2-digit',
                   minute: '2-digit'
                 });
-
-                // Extract customer details/notes
-                let parsedNotes = ord.customer_notes || '';
-                try {
-                  const obj = JSON.parse(ord.customer_notes);
-                  parsedNotes = Object.entries(obj).map(([k, v]) => `${k}: ${v}`).join(' | ');
-                } catch (e) {
-                  // Keep as string
-                }
 
                 const hasReceiptImage = ord.bank_receipt_url && (ord.bank_receipt_url.startsWith('data:image') || ord.bank_receipt_url.startsWith('http'));
 
                 return (
                   <tr key={ord.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
                     {/* ID */}
-                    <td style={{ padding: '12px 8px', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+                    <td style={{ padding: '10px 6px', fontWeight: '800', color: 'var(--accent-cyan)' }}>
                       #{ord.id.slice(0, 8)}
                     </td>
 
                     {/* Date */}
-                    <td style={{ padding: '12px 8px', color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '10px 6px', color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
                       {formattedDate}
                     </td>
 
                     {/* Customer */}
-                    <td style={{ padding: '12px 8px' }}>
-                      <div style={{ fontWeight: '700', color: '#fff' }}>{ord.profiles?.full_name || 'Cliente'}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{ord.profiles?.email || 'N/A'}</div>
+                    <td style={{ padding: '10px 6px', maxWidth: '140px' }}>
+                      <div style={{ fontWeight: '700', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ord.profiles?.full_name || 'Cliente'}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ord.profiles?.email || 'N/A'}
+                      </div>
                     </td>
 
                     {/* Product */}
-                    <td style={{ padding: '12px 8px' }}>
+                    <td style={{ padding: '10px 6px', maxWidth: '160px' }}>
                       {ord.order_items && ord.order_items.length > 0 && ord.order_items[0].products?.name ? (
                         ord.order_items.map((item) => (
-                          <div key={item.id} style={{ fontWeight: '600' }}>
-                            {item.products?.name} (x{item.quantity})
+                          <div key={item.id} style={{ fontWeight: '600', fontSize: '0.8rem', lineHeight: '1.2' }}>
+                            {item.products?.name}
                           </div>
                         ))
                       ) : (() => {
                         let noteObj = {};
                         try { noteObj = JSON.parse(ord.customer_notes); } catch (e) {}
                         if (noteObj?.service_type === 'Free Fire Likes') {
-                          return <div style={{ fontWeight: '800', color: 'var(--accent-cyan)' }}>👍 Paquete Likes FF (+{noteObj.likes_to_add || 100})</div>;
+                          return <div style={{ fontWeight: '800', color: 'var(--accent-cyan)' }}>👍 Likes FF (+{noteObj.likes_to_add || 100})</div>;
                         }
                         if (noteObj?.service_type === 'Wallet Deposit (Link Recurrente)') {
-                          return <div style={{ fontWeight: '800', color: '#fbbf24' }}>🔗 Recarga Saldo (Link {noteObj.link_tag || ''})</div>;
+                          return <div style={{ fontWeight: '800', color: '#fbbf24' }}>🔗 Link {noteObj.link_tag || ''}</div>;
                         }
                         if (noteObj?.type === 'wallet_deposit' || noteObj?.service_type === 'wallet_deposit' || noteObj?.deposit_currency) {
                           const curr = noteObj.deposit_currency || 'Manual';
                           return (
-                            <div style={{ fontWeight: '800', color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span>🏦</span>
-                              <span>Recarga Billetera ({curr}{noteObj.converted_text ? ` - ${noteObj.converted_text}` : ''})</span>
+                            <div style={{ fontWeight: '800', color: '#34d399' }}>
+                              🏦 Recarga ({curr})
                             </div>
                           );
                         }
@@ -945,16 +1139,50 @@ export default function AdminOrders() {
                       })()}
                     </td>
 
-                    {/* UID / Notes */}
-                    <td style={{ padding: '12px 8px', maxWidth: '200px', fontSize: '0.8rem' }}>
-                      <span style={{ color: '#a5f3fc', fontWeight: '600' }}>
-                        {parsedNotes || 'Sin datos extra'}
-                      </span>
+                    {/* Jugador / UID (Clean Human-Readable Badge) */}
+                    <td style={{ padding: '10px 6px', maxWidth: '180px' }}>
+                      {(() => {
+                        let noteObj = {};
+                        try {
+                          noteObj = typeof ord.customer_notes === 'string' ? JSON.parse(ord.customer_notes) : ord.customer_notes || {};
+                        } catch (e) {
+                          noteObj = { raw: ord.customer_notes };
+                        }
+
+                        const nick = noteObj.validated_nickname || noteObj.player_nickname || noteObj.nickname;
+                        const uid = noteObj.target_uid || noteObj['ID de Jugador (UID)'] || noteObj.uid || (ord.order_items?.[0]?.fields_data?.['ID de Jugador (UID)']);
+                        const isLikes = noteObj.service_type === 'Free Fire Likes' || noteObj.likes_to_add;
+
+                        if (nick || uid) {
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', lineHeight: '1.2' }}>
+                              {nick && <span style={{ color: '#fff', fontWeight: '700', fontSize: '0.8rem' }}>👤 {nick}</span>}
+                              {uid && <span style={{ color: 'var(--accent-cyan)', fontWeight: '800', fontFamily: 'monospace', fontSize: '0.82rem' }}>🆔 {uid}</span>}
+                              {isLikes && <span style={{ color: '#34d399', fontSize: '0.72rem' }}>❤️ +{Number(noteObj.likes_to_add || 0).toLocaleString()} Likes</span>}
+                            </div>
+                          );
+                        }
+
+                        if (noteObj.type === 'wallet_deposit' || noteObj.service_type === 'wallet_deposit' || noteObj.deposit_currency) {
+                          return (
+                            <div style={{ fontSize: '0.76rem', color: '#cbd5e1', lineHeight: '1.2' }}>
+                              <span style={{ color: '#34d399', fontWeight: 'bold' }}>🏦 Recarga Saldo</span>
+                              {noteObj.reference_id && <div style={{ color: 'var(--text-muted)' }}>Ref: {noteObj.reference_id}</div>}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <span style={{ color: '#cbd5e1', fontSize: '0.78rem' }}>
+                            {noteObj.raw || ord.customer_notes || '—'}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Total */}
-                    <td style={{ padding: '12px 8px', fontWeight: '900', color: 'var(--accent-cyan)' }}>
-                      ${Number(ord.total_usdt).toFixed(2)} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>USDT</span>
+                    <td style={{ padding: '10px 6px', fontWeight: '900', color: 'var(--accent-cyan)', whiteSpace: 'nowrap' }}>
+                      ${Number(ord.total_usdt).toFixed(2)}
                     </td>
 
                     {/* Payment Method */}
@@ -1285,18 +1513,101 @@ export default function AdminOrders() {
                 <div><strong>Estado Actual:</strong> <span style={{ color: statusConfig[selectedOrder.status]?.color }}>{statusConfig[selectedOrder.status]?.label}</span></div>
               </div>
 
-              {/* Customer Notes / UID Info */}
-              <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>
-                <strong style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)' }}>Datos de Entrega / UID:</strong>
-                <div style={{ background: '#070b09', padding: '8px 12px', borderRadius: '6px', fontSize: '0.85rem', marginTop: '4px', color: '#fff', wordBreak: 'break-word' }}>
-                  {selectedOrder.customer_notes || 'Sin notas del cliente'}
-                </div>
+              {/* Customer Notes / UID Info - Human-Readable Format */}
+              <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-glass)', paddingTop: '12px' }}>
+                <strong style={{ fontSize: '0.82rem', color: 'var(--accent-cyan)', display: 'block', marginBottom: '8px' }}>
+                  🎯 Datos de Entrega / Jugador:
+                </strong>
+
+                {(() => {
+                  let notes = {};
+                  try {
+                    notes = typeof selectedOrder.customer_notes === 'string'
+                      ? JSON.parse(selectedOrder.customer_notes)
+                      : selectedOrder.customer_notes || {};
+                  } catch (e) {
+                    notes = { raw: selectedOrder.customer_notes };
+                  }
+
+                  if (typeof notes === 'string' || notes.raw) {
+                    return (
+                      <div style={{ background: '#0d111a', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-glass)', fontSize: '0.85rem', color: '#fff' }}>
+                        {notes.raw || notes || 'Sin datos adicionales'}
+                      </div>
+                    );
+                  }
+
+                  const isLikes = notes.service_type === 'Free Fire Likes' || notes.likes_to_add;
+                  const playerNick = notes.validated_nickname || notes.player_nickname || notes.nickname || notes['Nick / Nombre en Juego'] || null;
+                  const playerUid = notes.target_uid || notes['ID de Jugador (UID)'] || notes.uid || notes['ID'] || null;
+                  const region = notes.region || null;
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0, 0, 0, 0.45)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+                      {/* Player Identity Card */}
+                      {(playerNick || playerUid) && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', background: 'rgba(6, 182, 212, 0.1)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(6, 182, 212, 0.35)' }}>
+                          {playerNick && (
+                            <div>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 'bold' }}>👤 NICKNAME:</span>
+                              <strong style={{ color: '#fff', fontSize: '1.05rem' }}>{playerNick}</strong>
+                            </div>
+                          )}
+                          {playerUid && (
+                            <div>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 'bold' }}>🆔 ID / UID (FREE FIRE):</span>
+                              <span style={{ color: 'var(--accent-cyan)', fontWeight: '900', fontSize: '1.15rem', letterSpacing: '0.05em' }}>{playerUid}</span>
+                            </div>
+                          )}
+                          {region && (
+                            <div>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', fontWeight: 'bold' }}>🌐 REGIÓN:</span>
+                              <strong style={{ color: '#fbbf24', fontSize: '0.9rem' }}>{region}</strong>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Likes Details */}
+                      {isLikes && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', background: 'rgba(255, 255, 255, 0.04)', padding: '10px 12px', borderRadius: '6px' }}>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>Likes Antes:</span>
+                            <strong style={{ color: '#fff', fontSize: '0.9rem' }}>{Number(notes.likes_before || 0).toLocaleString()}</strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: '#34d399', display: 'block', fontWeight: 'bold' }}>Likes a Añadir:</span>
+                            <strong style={{ color: '#34d399', fontSize: '0.95rem' }}>+{Number(notes.likes_to_add || 0).toLocaleString()}</strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: '#fbbf24', display: 'block', fontWeight: 'bold' }}>Meta Final:</span>
+                            <strong style={{ color: '#fbbf24', fontSize: '0.95rem' }}>{Number(notes.target_likes_final || notes.likes_now || 0).toLocaleString()}</strong>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dynamic Key Values */}
+                      {Object.entries(notes)
+                        .filter(([k]) => ![
+                          'target_uid', 'validated_nickname', 'player_nickname', 'nickname', 'ID de Jugador (UID)', 'uid', 'ID', 'Nick / Nombre en Juego',
+                          'likes_before', 'likes_to_add', 'target_likes_final', 'likes_now', 'service_type', 'mode', 'region', 'player_level', 'dispatch_mode',
+                          'payment_gateway', 'method_label', 'payment_method_selected', 'converted_amount_text', 'binance_transaction_id'
+                        ].includes(k))
+                        .map(([key, val]) => (
+                          <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 0', borderBottom: '1px dashed rgba(255,255,255,0.08)' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>{key}:</span>
+                            <strong style={{ color: '#fff' }}>{String(val)}</strong>
+                          </div>
+                        ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Bank Deposit Receipt / Comprobante de Pago */}
               {selectedOrder.bank_receipt_url && (
-                <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>
-                  <strong style={{ fontSize: '0.8rem', color: '#34d399' }}>📸 Comprobante de Pago Adjunto:</strong>
+                <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-glass)', paddingTop: '12px' }}>
+                  <strong style={{ fontSize: '0.82rem', color: '#34d399', display: 'block', marginBottom: '6px' }}>📸 Comprobante de Pago / Estado:</strong>
                   {selectedOrder.bank_receipt_url.startsWith('data:image') || selectedOrder.bank_receipt_url.startsWith('http') ? (
                     <div style={{ marginTop: '8px' }}>
                       <div
@@ -1351,8 +1662,33 @@ export default function AdminOrders() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ background: '#070b09', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginTop: '4px', color: '#fbbf24' }}>
-                      {selectedOrder.bank_receipt_url}
+                    <div style={{
+                      background: 'rgba(251, 191, 36, 0.1)',
+                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      marginTop: '4px',
+                      color: '#fbbf24',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      <span style={{ fontSize: '1.3rem' }}>💳</span>
+                      <div>
+                        <strong style={{ color: '#fff', display: 'block' }}>
+                          {selectedOrder.bank_receipt_url.includes('WALLET_PAY')
+                            ? 'Pago Exitoso con Billetera Interna'
+                            : selectedOrder.bank_receipt_url.includes('BINANCE')
+                            ? 'Pago con Binance Pay / Transferencia'
+                            : 'Verificación de Pago'}
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>
+                          {selectedOrder.bank_receipt_url.includes('MANUAL_DELIVERY_REQUIRED')
+                            ? 'El saldo fue descontado correctamente. Por favor realiza el envío de diamantes manual al ID indicado.'
+                            : selectedOrder.bank_receipt_url}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1580,13 +1916,13 @@ export default function AdminOrders() {
         </div>
       )}
 
-      {/* Delivery Confirmation Modal for Likes */}
+      {/* MODAL COMPROBANTE 2 ADMIN (CONFIRMACIÓN DE ENTREGA DE LIKES) */}
       {deliveryModalOrder && (
         <div style={{
           position: 'fixed',
           inset: 0,
-          zIndex: 150,
-          backgroundColor: 'rgba(0,0,0,0.85)',
+          zIndex: 1100,
+          backgroundColor: 'rgba(0,0,0,0.88)',
           backdropFilter: 'blur(10px)',
           display: 'flex',
           alignItems: 'center',
@@ -1595,102 +1931,388 @@ export default function AdminOrders() {
         }}>
           <div className="glass-panel animate-fade" style={{
             width: '100%',
-            maxWidth: '500px',
+            maxWidth: '480px',
             borderRadius: 'var(--radius-lg)',
-            padding: '24px',
             border: '2px solid #34d399',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            background: 'linear-gradient(145deg, #0f172a 0%, #1e1b4b 100%)',
-            boxShadow: '0 8px 32px rgba(52, 211, 153, 0.2)'
+            padding: '24px',
+            background: 'linear-gradient(145deg, #0f172a 0%, #064e3b 100%)',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.9)'
           }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <div>
-                <h3 style={{ fontSize: '1.2rem', margin: 0, color: '#34d399' }}>✅ CONFIRMAR ENTREGA DE LIKES</h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Pedido #{deliveryModalOrder.id.slice(0, 8)}
+                <div style={{ fontSize: '0.75rem', color: '#34d399', fontWeight: 'bold' }}>
+                  GESTIÓN LIKES ADMIN ✏️
                 </div>
+                <h3 style={{ margin: '2px 0 0 0', color: '#fff', fontSize: '1.2rem' }}>
+                  Comprobante 2 Admin
+                </h3>
               </div>
-              <button onClick={() => setDeliveryModalOrder(null)} style={{ background: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => setDeliveryModalOrder(null)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
             </div>
 
             {(() => {
               let parsedNotes = {};
               try { parsedNotes = JSON.parse(deliveryModalOrder.customer_notes || '{}'); } catch(e){}
-              const likesBefore = Number(parsedNotes.likes_before) || 0;
+              const nick = livePlayerInfo?.nick || parsedNotes.validated_nickname || parsedNotes.player_nickname || 'Jugador1';
+              const uid = parsedNotes.target_uid || parsedNotes['ID de Jugador (UID)'] || 'N/A';
+              const totalMeta = Number(parsedNotes.likes_to_add || 2000);
+              const dailyDeliveries = Array.isArray(parsedNotes.daily_deliveries) ? parsedNotes.daily_deliveries : [];
+              const delivered = Number(parsedNotes.total_likes_delivered || (dailyDeliveries.length > 0 ? dailyDeliveries.reduce((s, d) => s + Number(d.likes_sent || 0), 0) : Number(parsedNotes.likes_sent || 0)));
+              const remaining = Math.max(0, totalMeta - delivered);
+              const progressPct = Math.min(100, Math.round((delivered / (totalMeta || 1)) * 100));
+
+              const currentStartLikes = reverifiedLikes !== null ? reverifiedLikes : (Number(parsedNotes.likes_before || 0) + delivered);
               const likesAdded = Number(likesAddedInput) || 0;
-              const likesNow = likesBefore + likesAdded;
+              const likesNow = currentStartLikes + likesAdded;
 
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Ficha Jugador */}
-                  <div style={{ background: 'rgba(255,255,255,0.05)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Jugador:</span>
-                      <strong style={{ color: '#fff' }}>{parsedNotes.validated_nickname || 'N/A'}</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Progressive Delivery Status & Progress Bar */}
+                  <div style={{
+                    background: 'rgba(6, 182, 212, 0.08)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Meta Total del Pedido:</span>
+                      <strong style={{ color: '#fff', fontSize: '1rem' }}>{totalMeta.toLocaleString()} Likes</strong>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>ID (UID):</span>
-                      <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{parsedNotes.target_uid || 'N/A'}</span>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Acreditado hasta Hoy:</span>
+                      <strong style={{ color: delivered >= totalMeta ? '#34d399' : '#06b6d4' }}>
+                        {delivered.toLocaleString()} / {totalMeta.toLocaleString()} ({progressPct}%)
+                      </strong>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Región:</span>
-                      <span style={{ color: '#fff' }}>{parsedNotes.region || 'N/A'}</span>
+
+                    {/* Progress Bar */}
+                    <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${progressPct}%`,
+                        height: '100%',
+                        background: progressPct >= 100 ? '#34d399' : 'linear-gradient(90deg, #06b6d4, #3b82f6)',
+                        transition: 'width 0.4s ease'
+                      }} />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <span>Restante por acreditar: <strong style={{ color: '#fbbf24' }}>{remaining.toLocaleString()} Likes</strong></span>
+                      <span>Envíos registrados: <strong style={{ color: 'var(--accent-cyan)' }}>{dailyDeliveries.length}</strong></span>
                     </div>
                   </div>
 
-                  {/* Likes Calc */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Likes Antes:</span>
-                      <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{likesBefore.toLocaleString()} ❤️</span>
+                  {/* Visual Receipt 2 Card */}
+                  <div style={{
+                    background: '#0d111a',
+                    border: '1px solid #34d399',
+                    borderRadius: '10px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.88rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Nick:</span>
+                      <strong style={{ color: '#fff', letterSpacing: '0.04em' }}>{nick}</strong>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Likes Añadidos:</span>
-                      <input 
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.88rem', flexWrap: 'wrap', gap: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>ID:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: 'var(--accent-cyan)', fontWeight: '900', fontFamily: 'monospace', fontSize: '1rem', letterSpacing: '0.04em' }}>
+                          {uid}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(uid);
+                            setCopiedUid(true);
+                            setTimeout(() => setCopiedUid(false), 2000);
+                          }}
+                          className="btn-glass"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            border: '1px solid rgba(6, 182, 212, 0.4)',
+                            color: copiedUid ? '#34d399' : 'var(--accent-cyan)'
+                          }}
+                          title="Copiar ID al portapapeles"
+                        >
+                          {copiedUid ? '✓ ¡Copiado!' : '📋 Copiar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReverifyLiveLikesOrder(uid, parsedNotes.region || 'US')}
+                          disabled={isReverifying}
+                          className="btn-cyan"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Consultar likes en vivo desde Free Fire"
+                        >
+                          {isReverifying ? '⌛...' : '🔍 Validar Likes'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {livePlayerInfo && (
+                      <div style={{
+                        background: 'rgba(52, 211, 153, 0.12)',
+                        border: '1px solid rgba(52, 211, 153, 0.35)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        color: '#34d399'
+                      }}>
+                        <span>✅ <strong>En Vivo:</strong> {livePlayerInfo.nick} {livePlayerInfo.level ? `(Nv. ${livePlayerInfo.level})` : ''}</span>
+                        <span style={{ fontWeight: '900' }}>❤️ {livePlayerInfo.likes.toLocaleString()} Likes</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Región:</span>
+                      <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{livePlayerInfo?.region || parsedNotes.region || 'US'}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Likes antes del envío de hoy:</span>
+                      <strong style={{ color: '#fff' }}>{currentStartLikes.toLocaleString()}</strong>
+                    </div>
+
+                    {/* EDITABLE LIKES ADDED INPUT */}
+                    <div style={{ background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.4)', padding: '10px', borderRadius: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '0.78rem', color: '#34d399', fontWeight: '800', marginBottom: '4px' }}>
+                        LIKES A ENVIAR HOY ✏️ (Editable):
+                      </label>
+                      <input
                         type="number"
                         value={likesAddedInput}
                         onChange={(e) => setLikesAddedInput(e.target.value)}
+                        placeholder="Ej. 2000"
                         style={{
-                          width: '100px',
-                          background: 'rgba(52, 211, 153, 0.1)',
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          background: '#0d111a',
                           border: '1px solid #34d399',
                           color: '#34d399',
-                          padding: '6px',
-                          borderRadius: '6px',
-                          textAlign: 'right',
-                          fontWeight: 'bold'
+                          fontSize: '1.2rem',
+                          fontWeight: '900',
+                          outline: 'none'
                         }}
                       />
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        * Edita la cantidad exacta de likes enviados hoy antes de registrar el comprobante.
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed rgba(255,255,255,0.2)', paddingTop: '10px' }}>
-                      <span style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 'bold' }}>Likes Ahora:</span>
-                      <span style={{ color: '#34d399', fontSize: '1.2rem', fontWeight: 'bold' }}>{likesNow.toLocaleString()} 🎯</span>
+
+                    {/* LIVE AUTO-COMPUTED LIKES NOW */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(251, 191, 36, 0.1)', padding: '8px 10px', borderRadius: '4px', fontSize: '0.88rem' }}>
+                      <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>Likes Ahora:</span>
+                      <strong style={{ color: '#fbbf24', fontSize: '1.15rem' }}>{likesNow.toLocaleString()}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Estado:</span>
+                      <span style={{ color: deliveryModalOrder.status === 'Completed' ? '#34d399' : '#06b6d4', fontWeight: 'bold' }}>
+                        {deliveryModalOrder.status === 'Completed' ? '✅ COMPLETADO' : `⏳ EN PROCESO (${progressPct}%)`}
+                      </span>
                     </div>
                   </div>
-                  
-                  {/* Feed Toggle */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', cursor: 'pointer', fontSize: '0.85rem', color: '#fff' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={publishToFeed} 
-                      onChange={(e) => setPublishToFeed(e.target.checked)} 
+
+                  {/* Actions Area */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Botón Guardar Acreditación de Hoy */}
+                    <button
+                      type="button"
+                      disabled={updatingStatus}
+                      onClick={() => handleRecordDailyDeliveryOrder(deliveryModalOrder, likesAddedInput)}
+                      className="btn-cyan"
+                      style={{ padding: '12px', fontWeight: '900', fontSize: '0.95rem', background: 'linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)', color: '#fff' }}
+                    >
+                      {updatingStatus ? 'Guardando...' : `➕ REGISTRAR ENVÍO DIARIO (+${likesAdded.toLocaleString()} Likes)`}
+                    </button>
+
+                    {dailyDeliveries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeliveriesHistoryModal(true)}
+                        className="btn-glass"
+                        style={{ padding: '10px', fontSize: '0.85rem', fontWeight: '800', color: '#fbbf24', border: '1px solid #fbbf24' }}
+                      >
+                        📜 Ver Historial de Acreditaciones ({dailyDeliveries.length} Envíos Realizados)
+                      </button>
+                    )}
+
+                    {/* MODAL HISTORIAL DE ACREDITACIONES EN ADMIN ORDERS */}
+                    {showDeliveriesHistoryModal && (
+                      <div style={{
+                        position: 'fixed',
+                        inset: 0,
+                        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                        backdropFilter: 'blur(10px)',
+                        zIndex: 1200,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '20px'
+                      }}>
+                        <div className="glass-panel animate-fade" style={{
+                          width: '100%',
+                          maxWidth: '520px',
+                          borderRadius: 'var(--radius-lg)',
+                          border: '2px solid #fbbf24',
+                          padding: '24px',
+                          position: 'relative',
+                          background: '#0d111a',
+                          maxHeight: '85vh',
+                          overflowY: 'auto'
+                        }}>
+                          <button
+                            onClick={() => setShowDeliveriesHistoryModal(false)}
+                            style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}
+                          >
+                            ✕
+                          </button>
+
+                          <div style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: '900', marginBottom: '4px' }}>
+                            📜 REGISTRO DE ACREDITACIONES DIARIAS
+                          </div>
+                          <h3 style={{ margin: '0 0 14px 0', color: '#fff', fontSize: '1.15rem' }}>
+                            Historial de Envíos: {nick} ({uid})
+                          </h3>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {dailyDeliveries.map((del, idx) => (
+                              <div key={del.id || idx} style={{
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(251, 191, 36, 0.3)',
+                                borderRadius: '8px',
+                                padding: '12px 14px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px'
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontWeight: '900', color: '#fbbf24', fontSize: '0.85rem' }}>
+                                    🗓️ Día #{del.day_number || idx + 1}
+                                  </span>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {new Date(del.date).toLocaleString()}
+                                  </span>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                  <span style={{ color: 'var(--text-muted)' }}>Likes antes:</span>
+                                  <strong style={{ color: '#fff' }}>{del.likes_before?.toLocaleString()}</strong>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                  <span style={{ color: '#34d399', fontWeight: 'bold' }}>Likes acreditados hoy:</span>
+                                  <strong style={{ color: '#34d399', fontSize: '0.95rem' }}>+{del.likes_sent?.toLocaleString()} ❤️</strong>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                  <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>Likes tras acreditación:</span>
+                                  <strong style={{ color: 'var(--accent-cyan)' }}>{del.likes_now?.toLocaleString()}</strong>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <button
+                            onClick={() => setShowDeliveriesHistoryModal(false)}
+                            className="btn-cyan"
+                            style={{ width: '100%', marginTop: '16px', padding: '10px' }}
+                          >
+                            Volver
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Re-verify live likes with API */}
+                  <button
+                    type="button"
+                    disabled={isReverifying}
+                    onClick={async () => {
+                      setIsReverifying(true);
+                      try {
+                        const res = await validatePlayerUid(uid, 'Free Fire', parsedNotes.region || 'US');
+                        if (res && (res.playerLikes !== undefined || res.likes !== undefined)) {
+                          const liveCount = Number(res.playerLikes ?? res.likes ?? 0);
+                          alert(`✅ Likes actuales en vivo en Free Fire: ${liveCount.toLocaleString()} ❤️`);
+                        } else {
+                          alert('No se pudo obtener el conteo de likes en vivo.');
+                        }
+                      } catch (e) {
+                        alert('Error consultando API de Free Fire: ' + e.message);
+                      } finally {
+                        setIsReverifying(false);
+                      }
+                    }}
+                    className="btn-glass"
+                    style={{ width: '100%', padding: '8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    <span>🔍</span> {isReverifying ? 'Consultando Free Fire...' : 'Re-verificar ID con Likes Acreditados'}
+                  </button>
+
+                  {/* Toggle Publish to Feed */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: '#fff' }}>
+                    <input
+                      type="checkbox"
+                      checked={publishToFeed}
+                      onChange={(e) => setPublishToFeed(e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--accent-cyan)' }}
                     />
-                    📢 Publicar éxito en el feed de la comunidad
+                    <span>📢 Publicar entrega de likes en el Feed Comunitario</span>
                   </label>
 
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                    <button onClick={() => setDeliveryModalOrder(null)} className="btn-glass" style={{ flex: 1, padding: '10px' }}>
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryModalOrder(null)}
+                      className="btn-glass"
+                      style={{ flex: 1, padding: '12px', fontSize: '0.85rem' }}
+                    >
                       Cancelar
                     </button>
-                    <button 
-                      onClick={handleConfirmLikesDelivery} 
+                    <button
+                      type="button"
+                      onClick={handleConfirmLikesDelivery}
                       disabled={updatingStatus}
-                      className="btn-cyan" 
-                      style={{ flex: 2, padding: '10px', fontWeight: 'bold', background: '#34d399', color: '#000' }}
+                      className="btn-cyan"
+                      style={{
+                        flex: 2,
+                        padding: '12px',
+                        fontWeight: 'bold',
+                        fontSize: '0.9rem',
+                        background: '#34d399',
+                        color: '#000'
+                      }}
                     >
-                      {updatingStatus ? 'Procesando...' : 'GUARDAR Y COMPLETAR ✅'}
+                      {updatingStatus ? 'Guardando...' : '✅ CONFIRMAR ENVÍO Y GUARDAR'}
                     </button>
                   </div>
                 </div>

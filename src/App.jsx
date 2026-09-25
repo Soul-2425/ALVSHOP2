@@ -15,6 +15,7 @@ import Likes from './pages/Likes';
 import Feed from './pages/Feed';
 import Support from './pages/Support';
 import Profile from './pages/Profile';
+import Auth from './pages/Auth'; // Add this line
 import { About, Contact, Terms, Privacy } from './pages/StaticPages';
 
 // Admin Backoffice Subpages
@@ -35,15 +36,17 @@ import AdminPaymentLinks from './pages/admin/AdminPaymentLinks';
 // Real-time Push & Toast Components
 import NotificationToastContainer from './components/NotificationToastContainer';
 import PushPermissionBanner from './components/PushPermissionBanner';
+import PasswordResetModal from './components/PasswordResetModal';
+import { AlertProvider } from './components/CustomAlertModal';
 
 import Maintenance from './pages/Maintenance';
 
 function AppRoutes() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { config, role } = useApp(); // Need to import useApp from context
+  const { config, role, user } = useApp(); // Need to import useApp from context
 
-  const isStoreActive = config?.store_active !== false;
-  const isAdmin = role === 'Administrador';
+  const isStoreActive = config?.store_active !== false && config?.social_links?.store_active !== false;
+  const isAdmin = role?.toLowerCase()?.includes('admin') || role?.toLowerCase()?.includes('asesor');
 
   if (!isStoreActive && !isAdmin) {
     return <Maintenance />;
@@ -51,9 +54,6 @@ function AppRoutes() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Push Permission Prompt Banner */}
-      <PushPermissionBanner />
-
       {/* Top Header */}
       <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
@@ -72,6 +72,8 @@ function AppRoutes() {
           <Route path="/feed" element={<Feed />} />
           <Route path="/support" element={<Support />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/login" element={<Auth />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/terms" element={<Terms />} />
@@ -103,18 +105,23 @@ function AppRoutes() {
 
       {/* Global Real-time Notification Toast System */}
       <NotificationToastContainer />
+
+      {/* Global Password Reset Modal (triggers from recovery email links anywhere) */}
+      <PasswordResetModal />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <AppProvider>
-      <Router>
-        {/* Automatic Scroll To Top on every route & navigation click */}
-        <ScrollToTop />
-        <AppRoutes />
-      </Router>
-    </AppProvider>
+    <AlertProvider>
+      <AppProvider>
+        <Router>
+          {/* Automatic Scroll To Top on every route & navigation click */}
+          <ScrollToTop />
+          <AppRoutes />
+        </Router>
+      </AppProvider>
+    </AlertProvider>
   );
 }

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useApp } from '../../context/AppContext';
+import { validatePlayerUid } from '../../../notificaciones y apis/apis/index';
+import { compressImage } from '../../services/imageService';
 import {
   getLikesPackages,
   saveLikesPackage,
-  deleteLikesPackage,
-  DEFAULT_LIKES_PACKAGES
+  deleteLikesPackage
 } from '../../services/likesPackagesService';
 
 export default function AdminLikes() {
@@ -15,11 +16,54 @@ export default function AdminLikes() {
   // Active Tab: 'orders' | 'packages' | 'api_config' | 'history'
   const [activeTab, setActiveTab] = useState('orders');
 
-  // Orders State
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Helper to determine if an order is for Free Fire Likes
+  const isLikesOrder = (o) => {
+    if (!o) return false;
+    if (o.id && String(o.id).toLowerCase().includes('like')) return true;
+    let notes = {};
+    try {
+      notes = typeof o.customer_notes === 'string' ? JSON.parse(o.customer_notes) : (o.customer_notes || {});
+    } catch (e) {}
+
+    if (notes.service_type === 'Free Fire Likes' || String(notes.service_type || '').toLowerCase().includes('like')) return true;
+    if (notes.likes_to_add || notes.likes_before || notes.likes_sent || notes.likes_added_actual) return true;
+    if (notes.target_uid || notes['ID de Jugador (UID)']) return true;
+
+    if (o.order_items && Array.isArray(o.order_items)) {
+      if (o.order_items.some(item => (item.products?.name || item.name || '').toLowerCase().includes('like'))) return true;
+    }
+    return false;
+  };
+
+  // Orders State (Instant cache-first load)
+  const [orders, setOrders] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_all_orders');
+      if (cached) {
+        const arr = JSON.parse(cached);
+        if (Array.isArray(arr)) {
+          return arr.filter(isLikesOrder);
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('alv_all_orders');
+      if (cached && JSON.parse(cached).length > 0) return false;
+    } catch (e) {}
+    return true;
+  });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updatingOrder, setUpdatingOrder] = useState(false);
+  const [editableLikesAdded, setEditableLikesAdded] = useState(2000);
+  const [reverifiedLikes, setReverifiedLikes] = useState(null);
+  const [isReverifying, setIsReverifying] = useState(false);
+  const [copiedUid, setCopiedUid] = useState(false);
+  const [livePlayerInfo, setLivePlayerInfo] = useState(null);
+  const [showDeliveriesHistoryModal, setShowDeliveriesHistoryModal] = useState(false);
+  const receiptDeliveryRef = useRef(null);
 
   // Filters State
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'Pending' | 'Completed'
@@ -27,8 +71,9 @@ export default function AdminLikes() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Packages Management State
-  const [packages, setPackages] = useState(DEFAULT_LIKES_PACKAGES);
+  const [packages, setPackages] = useState([]);
   const [editingPkg, setEditingPkg] = useState(null);
+  const [isCreatingPkg, setIsCreatingPkg] = useState(false);
   const [pkgTitle, setPkgTitle] = useState('');
   const [pkgQuantity, setPkgQuantity] = useState(2000);
   const [pkgDeliveryDays, setPkgDeliveryDays] = useState('1 DÍA');
@@ -53,61 +98,214 @@ export default function AdminLikes() {
   const [testingApi, setTestingApi] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-  // Load Orders
+  // Load Orders (Supabase + LocalStorage Fallback Pool with 2s timeout)
   const loadOrders = async () => {
+    let supabaseOrders = [];
     try {
-      const fetchPromise = Promise.all([
-        supabase.from('orders').select('*').order('created_at', { ascending: false }),
-        supabase.from('profiles').select('id, email, full_name, phone, role')
-      ]);
+      const fetchPromise = (async () => {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*, profiles(id, email, full_name, phone, role), order_items(*, products(id, name, image_url))')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (data && !error) return data;
+
+        const [ordersRes, profsRes] = await Promise.allSettled([
+          supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(60),
+          supabase.from('profiles').select('id, email, full_name, phone, role')
+        ]);
+
+        const profMap = new Map((profsRes.status === 'fulfilled' ? profsRes.value?.data || [] : []).map(p => [p.id, p]));
+        const rawOrders = ordersRes.status === 'fulfilled' ? ordersRes.value?.data || [] : [];
+
+        return rawOrders.map(o => ({
+          ...o,
+          profiles: profMap.get(o.user_id) || o.profiles
+        }));
+      })();
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), 4000)
+        setTimeout(() => reject(new Error('Timeout')), 2000)
       );
 
-      const [ordersRes, profsRes] = await Promise.race([fetchPromise, timeoutPromise]);
-
-      const profMap = new Map((profsRes?.data || []).map(p => [p.id, p]));
-      const rawOrders = ordersRes?.data || [];
-
-      const joinedOrders = rawOrders.map(o => ({
-        ...o,
-        profiles: profMap.get(o.user_id) || o.profiles
-      }));
-
-      // Filter orders that are for Likes service
-      const likesOnly = joinedOrders.filter(o => {
-        if (!o.customer_notes) return false;
-        try {
-          const parsed = typeof o.customer_notes === 'string' ? JSON.parse(o.customer_notes) : o.customer_notes;
-          return parsed.service_type === 'Free Fire Likes' || parsed.likes_to_add || o.id?.includes('LIKE');
-        } catch (e) {
-          return false;
-        }
-      });
-
-      setOrders(likesOnly);
+      supabaseOrders = await Promise.race([fetchPromise, timeoutPromise]);
     } catch (err) {
-      console.warn('Cargando pedidos de likes con fallback o memoria:', err);
-    } finally {
-      setLoading(false);
+      console.warn('Cargando pedidos de likes con fallback:', err);
     }
+
+    // Merge with Local Storage orders pool
+    let localOrders = [];
+    try {
+      const allStored = localStorage.getItem('alv_all_orders');
+      if (allStored) localOrders = [...localOrders, ...JSON.parse(allStored)];
+    } catch (e) {}
+
+    const mergedMap = new Map();
+    localOrders.forEach(o => {
+      if (o?.id) mergedMap.set(o.id, o);
+    });
+    (supabaseOrders || []).forEach(o => {
+      if (o?.id) mergedMap.set(o.id, { ...(mergedMap.get(o.id) || {}), ...o });
+    });
+
+    const allMerged = Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+    );
+
+    // Filter orders that are for Likes service (robusto y completo)
+    const likesOnly = allMerged.filter(o => {
+      if (o.id && String(o.id).toLowerCase().includes('like')) return true;
+      let notes = {};
+      try {
+        notes = typeof o.customer_notes === 'string' ? JSON.parse(o.customer_notes) : (o.customer_notes || {});
+      } catch (e) {}
+
+      if (notes.service_type === 'Free Fire Likes' || String(notes.service_type).toLowerCase().includes('like')) return true;
+      if (notes.likes_to_add || notes.likes_before || notes.likes_sent || notes.likes_added_actual) return true;
+      if (notes.target_uid || notes['ID de Jugador (UID)']) return true;
+
+      if (o.order_items && Array.isArray(o.order_items)) {
+        if (o.order_items.some(item => (item.products?.name || item.name || '').toLowerCase().includes('like'))) return true;
+      }
+      return false;
+    });
+
+    setOrders(likesOnly);
+    setLoading(false);
   };
 
   // Load Packages
   const loadPackages = async () => {
     try {
-      const list = await getLikesPackages();
-      setPackages(list || DEFAULT_LIKES_PACKAGES);
+      const list = await getLikesPackages(true); // Pasar true para ver los inactivos
+      setPackages(list || []);
     } catch (e) {
-      setPackages(DEFAULT_LIKES_PACKAGES);
+      setPackages([]);
     }
   };
 
-  // Load API Config from Protected Backend
+  const handleOpenAddPackage = () => {
+    setEditingPkg(null);
+    setIsCreatingPkg(true);
+    setPkgTitle('');
+    setPkgQuantity(2000);
+    setPkgDeliveryDays('1 DÍA');
+    setPkgPriceUsdt('7.09');
+    setPkgBadge('POPULAR 🔥');
+    setPkgImageUrl('/likes-badge.jpg');
+    setPkgIsActive(true);
+    setPkgWhatsappBtnEnabled(false);
+  };
+
+  const handleOpenEditPackage = (pkg) => {
+    setEditingPkg(pkg);
+    setIsCreatingPkg(true); // <-- This was false in old code! Changing to true so the modal actually opens!
+    setPkgTitle(pkg.title || '');
+    setPkgQuantity(pkg.quantity || 2000);
+    setPkgDeliveryDays(pkg.deliveryDays || '1 DÍA');
+    setPkgPriceUsdt(String(pkg.priceUsdt !== undefined ? pkg.priceUsdt : '7.09'));
+    setPkgBadge(pkg.badge || '');
+    setPkgImageUrl(pkg.imageUrl || '/likes-badge.jpg');
+    setPkgIsActive(pkg.isActive !== false);
+    setPkgWhatsappBtnEnabled(Boolean(pkg.whatsappBtnEnabled));
+  };
+
+  const handleSavePackage = async (e) => {
+    e.preventDefault();
+    setSavingPkg(true);
+    try {
+      const parsedPrice = Number(pkgPriceUsdt);
+      const isFreeOrQuote = isNaN(parsedPrice) || parsedPrice === 0;
+
+      if (isFreeOrQuote && !pkgWhatsappBtnEnabled) {
+        alert('Debes habilitar el botón de WhatsApp si el precio es 0 o está vacío, de lo contrario los usuarios no podrán comprar.');
+        setSavingPkg(false);
+        return;
+      }
+
+      const pkgToSave = {
+        id: editingPkg ? editingPkg.id : `pkg-${Date.now()}`,
+        title: pkgTitle.trim() || `${(Number(pkgQuantity) / 1000).toFixed(0)}K LIKES`,
+        quantity: Number(pkgQuantity) || 2000,
+        deliveryDays: pkgDeliveryDays.trim() || '1 DÍA',
+        priceUsdt: isFreeOrQuote ? 0 : parsedPrice,
+        badge: pkgBadge.trim(),
+        imageUrl: pkgImageUrl.trim() || '/likes-badge.jpg',
+        isActive: pkgIsActive,
+        whatsappBtnEnabled: pkgWhatsappBtnEnabled
+      };
+
+      const updated = await saveLikesPackage(pkgToSave, true); // Pasar true
+      setPackages(updated);
+      setEditingPkg(null);
+      setIsCreatingPkg(false);
+      alert('✅ Paquete de likes guardado con éxito.');
+    } catch (err) {
+      alert('Error guardando paquete: ' + err.message);
+    } finally {
+      setSavingPkg(false);
+    }
+  };
+
+  const handleDeletePackage = async (pkgId) => {
+    if (!confirm('¿Seguro de eliminar este paquete de likes?')) return;
+    try {
+      const updated = await deleteLikesPackage(pkgId, true); // Pasar true
+      setPackages(updated);
+    } catch (err) {
+      alert('Error eliminando paquete: ' + err.message);
+    }
+  };
+
+  const handleTogglePackageActive = async (pkg) => {
+    try {
+      const updated = await saveLikesPackage({ ...pkg, isActive: pkg.isActive === false });
+      setPackages(updated);
+    } catch (err) {
+      alert('Error actualizando estado: ' + err.message);
+    }
+  };
+
+  const handleTogglePackageWhatsapp = async (pkg) => {
+    try {
+      const updated = await saveLikesPackage({ ...pkg, whatsappBtnEnabled: !pkg.whatsappBtnEnabled });
+      setPackages(updated);
+    } catch (err) {
+      alert('Error actualizando botón WhatsApp: ' + err.message);
+    }
+  };
+
+  const handleUploadPackageImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPkgImg(true);
+    try {
+      const { dataUrl } = await compressImage(file, {
+        maxWidth: 300,
+        maxHeight: 300,
+        quality: 0.75,
+        mimeType: 'image/webp'
+      });
+      setPkgImageUrl(dataUrl);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = () => setPkgImageUrl(reader.result);
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingPkgImg(false);
+    }
+  };
+
+  // Load API Config from Protected Backend (with 500ms timeout)
   const loadApiConfig = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/v1/likes/config');
+      const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
+      if (host !== 'localhost' && host !== '127.0.0.1') return;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 500);
+      const res = await fetch(`http://${host}:5000/api/v1/likes/config`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const json = await res.json();
         setApiConfig(prev => ({
@@ -180,131 +378,130 @@ export default function AdminLikes() {
     }
   };
 
-  // Complete Manual Dispatch & Generate Audit Card
-  const handleCompleteManualDispatch = async (ord) => {
+  // Live Re-verification of Player Likes from Free Fire API
+  const handleReverifyLiveLikes = async (uid, region) => {
+    setIsReverifying(true);
+    try {
+      const res = await validatePlayerUid(uid, 'Free Fire', region || 'US');
+      if (res && res.success) {
+        const liveLikes = Number(res.playerLikes ?? res.likes ?? 0);
+        const liveNick = res.playerName || res.nickname || res.player_nickname || '';
+        const liveLvl = res.playerLevel || res.level || '';
+        const liveReg = res.region || region || 'US';
+
+        setReverifiedLikes(liveLikes);
+        setLivePlayerInfo({
+          nick: liveNick,
+          likes: liveLikes,
+          level: liveLvl,
+          region: liveReg
+        });
+        alert(`✅ ¡Jugador Validado con Éxito desde Free Fire!\n👤 Nick: ${liveNick}\n❤️ Likes Actuales en Free Fire: ${liveLikes.toLocaleString()}\n⭐ Nivel: ${liveLvl}\n🌎 Región: ${liveReg}`);
+      } else if (res && (res.playerLikes !== undefined || res.likes !== undefined)) {
+        const currentRealLikes = Number(res.playerLikes ?? res.likes ?? 0);
+        setReverifiedLikes(currentRealLikes);
+        setLivePlayerInfo({
+          nick: res.playerName || res.nickname || '',
+          likes: currentRealLikes,
+          level: res.playerLevel || '',
+          region: res.region || region || 'US'
+        });
+        alert(`✅ Likes Re-verificados en vivo: ${currentRealLikes.toLocaleString()} ❤️`);
+      } else {
+        alert('⚠️ No se pudo obtener el conteo de likes en vivo. ' + (res?.error || 'Verifica el ID y la región.'));
+      }
+    } catch (e) {
+      alert('Error consultando API de Free Fire: ' + e.message);
+    } finally {
+      setIsReverifying(false);
+    }
+  };
+
+  // Complete Manual Dispatch & Generate Final Delivery Receipt
+  const handleSaveAndCompleteDelivery = async (ord) => {
     setUpdatingOrder(true);
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'Completed' })
-        .eq('id', ord.id);
+      const audit = parsedAudit(ord);
+      const finalAdded = Number(editableLikesAdded) || 2000;
+      const baseLikes = reverifiedLikes !== null ? reverifiedLikes : audit.likes_before;
+      const finalLikesNow = baseLikes + finalAdded;
 
-      if (error) throw error;
+      const updatedNotes = {
+        ...audit,
+        likes_before: baseLikes,
+        likes_to_add: finalAdded,
+        target_likes_final: finalLikesNow,
+        likes_now: finalLikesNow,
+        completed_at: new Date().toISOString(),
+        verified_live: reverifiedLikes !== null
+      };
 
-      setOrders(prev => prev.map(o => o.id === ord.id ? { ...o, status: 'Completed' } : o));
-      if (selectedOrder?.id === ord.id) {
-        setSelectedOrder(prev => ({ ...prev, status: 'Completed' }));
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            status: 'Completed',
+            customer_notes: JSON.stringify(updatedNotes)
+          })
+          .eq('id', ord.id);
+      } catch (e) {
+        console.warn('Supabase update notice:', e);
       }
 
-      alert(`✅ Pedido #${ord.id.slice(0, 8)} marcado como COMPLETADO. Likes registrados con éxito.`);
+      // Update in local state and cache
+      const updatedOrderObj = {
+        ...ord,
+        status: 'Completed',
+        customer_notes: JSON.stringify(updatedNotes)
+      };
+
+      setOrders(prev => prev.map(o => o.id === ord.id ? updatedOrderObj : o));
+      setSelectedOrder(updatedOrderObj);
+
+      try {
+        const allStored = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        const updatedAll = allStored.map(o => o.id === ord.id ? updatedOrderObj : o);
+        localStorage.setItem('alv_all_orders', JSON.stringify(updatedAll));
+      } catch (e) {}
+
+      alert(`✅ ¡Pedido #${ord.id.slice(0, 8)} completado exitosamente! Entregados: +${finalAdded.toLocaleString()} Likes.`);
     } catch (err) {
-      alert('Error actualizando pedido: ' + err.message);
+      alert('Error completando entrega: ' + err.message);
     } finally {
       setUpdatingOrder(false);
     }
   };
 
-  // Package Form Helpers
-  const handleOpenAddPackage = () => {
-    setEditingPkg(null);
-    setPkgTitle('');
-    setPkgQuantity(2000);
-    setPkgDeliveryDays('1 DÍA');
-    setPkgPriceUsdt('7.09');
-    setPkgBadge('POPULAR 🔥');
-    setPkgImageUrl('/likes-badge.jpg');
-    setPkgIsActive(true);
-    setPkgWhatsappBtnEnabled(false);
-  };
 
-  const handleOpenEditPackage = (pkg) => {
-    setEditingPkg(pkg);
-    setPkgTitle(pkg.title);
-    setPkgQuantity(pkg.quantity);
-    setPkgDeliveryDays(pkg.deliveryDays);
-    setPkgPriceUsdt(String(pkg.priceUsdt));
-    setPkgBadge(pkg.badge || '');
-    setPkgImageUrl(pkg.imageUrl || '/likes-badge.jpg');
-    setPkgIsActive(pkg.isActive !== false);
-    setPkgWhatsappBtnEnabled(Boolean(pkg.whatsappBtnEnabled || pkg.whatsapp_quote_enabled));
-  };
 
-  const handleTogglePackageActive = async (pkg) => {
-    const updatedPkg = { ...pkg, isActive: !pkg.isActive };
-    const updated = await saveLikesPackage(updatedPkg);
-    setPackages(updated);
-  };
-
-  const handleTogglePackageWhatsapp = async (pkg) => {
-    const updatedPkg = { ...pkg, whatsappBtnEnabled: !pkg.whatsappBtnEnabled };
-    const updated = await saveLikesPackage(updatedPkg);
-    setPackages(updated);
-  };
-
-  const handleSavePackage = async (e) => {
-    e.preventDefault();
-    setSavingPkg(true);
-
-    const payload = {
-      id: editingPkg ? editingPkg.id : `pkg-${Date.now()}`,
-      title: pkgTitle.trim() || `${(Number(pkgQuantity) / 1000).toFixed(0)}K LIKES`,
-      quantity: Number(pkgQuantity),
-      deliveryDays: pkgDeliveryDays.trim() || '1 DÍA',
-      priceUsdt: Number(pkgPriceUsdt),
-      badge: pkgBadge.trim(),
-      imageUrl: pkgImageUrl.trim() || '/likes-badge.jpg',
-      isActive: pkgIsActive,
-      whatsappBtnEnabled: pkgWhatsappBtnEnabled,
-      sortOrder: editingPkg ? editingPkg.sortOrder : packages.length + 1
-    };
-
-    try {
-      const updated = await saveLikesPackage(payload);
-      setPackages(updated);
-      setEditingPkg(null);
-      setPkgTitle('');
-      alert('¡Paquete de Likes guardado exitosamente!');
-    } catch (err) {
-      alert('Error guardando paquete: ' + err.message);
-    } finally {
-      setSavingPkg(false);
-    }
-  };
-
-  const handleDeletePackage = async (pkgId) => {
-    if (!confirm('¿Estás seguro de eliminar este paquete de likes?')) return;
-    const updated = await deleteLikesPackage(pkgId);
-    setPackages(updated);
-  };
-
-  const handleUploadPackageImage = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingPkgImg(true);
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      setPkgImageUrl(reader.result);
-      setUploadingPkgImg(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Parse notes helper
+  // Parse notes helper (robusto con soporte de entregas progresivas/diarias)
   const parsedAudit = (ord) => {
     try {
       const obj = typeof ord.customer_notes === 'string' ? JSON.parse(ord.customer_notes) : (ord.customer_notes || {});
+      const targetUid = obj.target_uid || obj['ID de Jugador (UID)'] || obj['ID de Jugador'] || obj.uid || 'N/A';
+      const playerNick = obj.validated_nickname || obj.player_nickname || obj['Nombre de Jugador'] || ord.profiles?.full_name || 'Jugador';
+      const likesBefore = Number(obj.likes_before || 0);
+      const metaLikesToAdd = Number(obj.likes_to_add || (ord.order_items?.[0]?.products?.name?.match(/\d+/)?.[0] ? Number(ord.order_items[0].products.name.match(/\d+/)[0]) * (ord.order_items[0].products.name.toLowerCase().includes('k') ? 1000 : 1) : 2000));
+      const targetLikes = Number(obj.target_likes_final || obj.likes_after || obj.likes_now || (likesBefore + metaLikesToAdd));
+      const dailyDeliveries = Array.isArray(obj.daily_deliveries) ? obj.daily_deliveries : [];
+      const totalDelivered = Number(obj.total_likes_delivered || (dailyDeliveries.length > 0 ? dailyDeliveries.reduce((sum, d) => sum + Number(d.likes_sent || 0), 0) : Number(obj.likes_sent || obj.likes_added_actual || 0)));
+      const remainingLikes = Math.max(0, metaLikesToAdd - totalDelivered);
+
       return {
-        target_uid: obj.target_uid || 'N/A',
-        player_nickname: obj.player_nickname || ord.profiles?.full_name || 'Jugador',
+        target_uid: targetUid,
+        player_nickname: playerNick,
         player_level: obj.player_level || 70,
-        likes_before: Number(obj.likes_before || 0),
-        likes_to_add: Number(obj.likes_to_add || 2000),
-        target_likes_final: Number(obj.target_likes_final || (Number(obj.likes_before || 0) + Number(obj.likes_to_add || 2000))),
-        region: obj.region || 'LATAM',
+        likes_before: likesBefore,
+        likes_to_add: metaLikesToAdd,
+        target_likes_final: targetLikes,
+        daily_deliveries: dailyDeliveries,
+        total_likes_delivered: totalDelivered,
+        remaining_likes: remainingLikes,
+        region: obj.region || 'US',
         delivery_estimated: obj.delivery_estimated || '1 DÍA',
         dispatch_mode: obj.dispatch_mode || (ord.status === 'Completed' ? 'API' : 'MANUAL'),
-        mode: obj.mode || 'fixed'
+        mode: obj.mode || 'fixed',
+        last_updated: obj.last_updated || ord.updated_at || ord.created_at
       };
     } catch (e) {
       return {
@@ -314,11 +511,89 @@ export default function AdminLikes() {
         likes_before: 0,
         likes_to_add: 2000,
         target_likes_final: 2000,
-        region: 'LATAM',
+        daily_deliveries: [],
+        total_likes_delivered: 0,
+        remaining_likes: 2000,
+        region: 'US',
         delivery_estimated: '1 DÍA',
         dispatch_mode: 'MANUAL',
         mode: 'fixed'
       };
+    }
+  };
+
+  // Registrar Envío / Acreditación Diaria Progresiva
+  const handleRecordDailyDelivery = async (ord, likesSentAmount) => {
+    setUpdatingOrder(true);
+    try {
+      const audit = parsedAudit(ord);
+      const amountToAdd = Number(likesSentAmount) || 2000;
+      const dayNum = audit.daily_deliveries.length + 1;
+      const currentStartLikes = reverifiedLikes !== null ? reverifiedLikes : (audit.likes_before + audit.total_likes_delivered);
+      const currentFinalLikes = currentStartLikes + amountToAdd;
+
+      const newDeliveryEntry = {
+        id: `del-${Date.now()}`,
+        day_number: dayNum,
+        date: new Date().toISOString(),
+        likes_before: currentStartLikes,
+        likes_sent: amountToAdd,
+        likes_now: currentFinalLikes,
+        admin_name: 'Admin',
+        note: `Acreditación Día #${dayNum}`
+      };
+
+      const updatedDeliveries = [...audit.daily_deliveries, newDeliveryEntry];
+      const newTotalDelivered = audit.total_likes_delivered + amountToAdd;
+      const isOrderFullyComplete = newTotalDelivered >= audit.likes_to_add;
+
+      const rawNotes = typeof ord.customer_notes === 'string' ? JSON.parse(ord.customer_notes || '{}') : (ord.customer_notes || {});
+      const updatedNotes = {
+        ...rawNotes,
+        ...audit,
+        likes_before: audit.likes_before,
+        likes_sent: newTotalDelivered,
+        total_likes_delivered: newTotalDelivered,
+        likes_now: currentFinalLikes,
+        daily_deliveries: updatedDeliveries,
+        last_updated: new Date().toISOString(),
+        completed_at: isOrderFullyComplete ? new Date().toISOString() : rawNotes.completed_at
+      };
+
+      const newStatus = isOrderFullyComplete ? 'Completed' : ord.status;
+
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            status: newStatus,
+            customer_notes: JSON.stringify(updatedNotes)
+          })
+          .eq('id', ord.id);
+      } catch (e) {
+        console.warn('Supabase update notice:', e);
+      }
+
+      const updatedOrderObj = {
+        ...ord,
+        status: newStatus,
+        customer_notes: JSON.stringify(updatedNotes)
+      };
+
+      setOrders(prev => prev.map(o => o.id === ord.id ? updatedOrderObj : o));
+      setSelectedOrder(updatedOrderObj);
+
+      try {
+        const allStored = JSON.parse(localStorage.getItem('alv_all_orders') || '[]');
+        const updatedAll = allStored.map(o => o.id === ord.id ? updatedOrderObj : o);
+        localStorage.setItem('alv_all_orders', JSON.stringify(updatedAll));
+      } catch (e) {}
+
+      alert(`✅ ¡Acreditación del Día #${dayNum} guardada con éxito!\n❤️ Likes Enviados Hoy: +${amountToAdd.toLocaleString()}\n📊 Total Acreditado: ${newTotalDelivered.toLocaleString()} / ${audit.likes_to_add.toLocaleString()} Likes${isOrderFullyComplete ? '\n🎉 ¡PEDIDO COMPLETADO AL 100%!' : ''}`);
+    } catch (err) {
+      alert('Error registrando entrega diaria: ' + err.message);
+    } finally {
+      setUpdatingOrder(false);
     }
   };
 
@@ -608,13 +883,13 @@ export default function AdminLikes() {
           </div>
 
           {/* Form Modal / Panel for Creating or Editing Package */}
-          {(editingPkg || pkgTitle !== '') && (
+          {(isCreatingPkg || editingPkg) && (
             <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '24px', border: '1px solid var(--border-cyan)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>
                   {editingPkg ? `✏️ Editar Paquete: ${editingPkg.title}` : '➕ Nuevo Paquete de Likes'}
                 </h4>
-                <button onClick={() => { setEditingPkg(null); setPkgTitle(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+                <button onClick={() => { setEditingPkg(null); setIsCreatingPkg(false); setPkgTitle(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
               </div>
 
               <form onSubmit={handleSavePackage} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -670,9 +945,8 @@ export default function AdminLikes() {
                     <input
                       type="number"
                       step="0.01"
-                      min="0.5"
-                      required
-                      placeholder="Ej. 7.09"
+                      min="0"
+                      placeholder="Ej. 7.09 (0 = Solo WhatsApp)"
                       value={pkgPriceUsdt}
                       onChange={(e) => setPkgPriceUsdt(e.target.value)}
                       style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
@@ -783,7 +1057,7 @@ export default function AdminLikes() {
                   <button type="submit" disabled={savingPkg} className="btn-cyan" style={{ padding: '10px 24px', fontSize: '0.88rem' }}>
                     {savingPkg ? 'Guardando...' : '💾 Guardar Paquete'}
                   </button>
-                  <button type="button" onClick={() => { setEditingPkg(null); setPkgTitle(''); }} className="btn-glass" style={{ padding: '10px 16px', fontSize: '0.88rem' }}>
+                  <button type="button" onClick={() => { setEditingPkg(null); setIsCreatingPkg(false); setPkgTitle(''); }} className="btn-glass" style={{ padding: '10px 16px', fontSize: '0.88rem' }}>
                     Cancelar
                   </button>
                 </div>
@@ -1117,7 +1391,7 @@ export default function AdminLikes() {
         </div>
       )}
 
-      {/* MODAL: TARJETA DE AUDITORÍA DE USUARIO PARA ENVÍO MANUAL */}
+      {/* MODAL: 2do COMPROBANTE EDITABLE - CONFIRMAR ENTREGA DE LIKES */}
       {selectedOrder && (
         <div style={{
           position: 'fixed',
@@ -1128,16 +1402,18 @@ export default function AdminLikes() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px'
+          padding: '20px',
+          overflowY: 'auto'
         }}>
           <div className="glass-panel" style={{
             width: '100%',
-            maxWidth: '520px',
+            maxWidth: '540px',
             borderRadius: 'var(--radius-lg)',
             border: '2px solid var(--border-cyan)',
             boxShadow: '0 0 40px rgba(6, 182, 212, 0.3)',
-            padding: '26px',
-            position: 'relative'
+            padding: '24px',
+            position: 'relative',
+            background: 'linear-gradient(135deg, rgba(13, 17, 26, 0.98) 0%, rgba(30, 58, 138, 0.3) 100%)'
           }}>
             {/* Close Button */}
             <button
@@ -1147,90 +1423,385 @@ export default function AdminLikes() {
               ✕
             </button>
 
-            <div style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)', fontWeight: '900', letterSpacing: '0.05em', marginBottom: '4px' }}>
-              TARJETA OFICIAL DE AUDITORÍA Y ENVÍO MANUAL
+            <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: '900', letterSpacing: '0.05em', marginBottom: '4px' }}>
+              ⚡ REGISTRO DE ENTREGAS Y COMPROBANTES DE LIKES
             </div>
-            <h2 style={{ fontSize: '1.3rem', margin: '0 0 16px 0', color: '#fff' }}>
-              Pedido #{selectedOrder.id.slice(0, 8)}
+            <h2 style={{ fontSize: '1.25rem', margin: '0 0 16px 0', color: '#fff' }}>
+              CONFIRMAR / ACREDITAR #{selectedOrder.id.slice(0, 8)}
             </h2>
 
-            {/* Glowing Gamer Player Card */}
             {(() => {
               const audit = parsedAudit(selectedOrder);
+              const totalMeta = audit.likes_to_add || 2000;
+              const delivered = audit.total_likes_delivered || 0;
+              const remaining = Math.max(0, totalMeta - delivered);
+              const progressPct = Math.min(100, Math.round((delivered / (totalMeta || 1)) * 100));
+
+              const currentStartLikes = reverifiedLikes !== null ? reverifiedLikes : (audit.likes_before + delivered);
+              const likesAddedNum = Number(editableLikesAdded) || 0;
+              const likesNow = currentStartLikes + likesAddedNum;
+
               return (
-                <div style={{
-                  background: '#0d111a',
-                  border: '1px solid var(--border-glass)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '20px',
-                  marginBottom: '20px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>👤 Nombre del Jugador:</span>
-                    <strong style={{ color: '#fff', fontSize: '1.05rem' }}>{audit.player_nickname}</strong>
+                <div>
+                  {/* Progressive Delivery Status & Progress Bar */}
+                  <div style={{
+                    background: 'rgba(6, 182, 212, 0.08)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    marginBottom: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Meta Total del Pedido:</span>
+                      <strong style={{ color: '#fff', fontSize: '1rem' }}>{totalMeta.toLocaleString()} Likes</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Acreditado hasta Hoy:</span>
+                      <strong style={{ color: delivered >= totalMeta ? '#34d399' : '#06b6d4' }}>
+                        {delivered.toLocaleString()} / {totalMeta.toLocaleString()} ({progressPct}%)
+                      </strong>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${progressPct}%`,
+                        height: '100%',
+                        background: progressPct >= 100 ? '#34d399' : 'linear-gradient(90deg, #06b6d4, #3b82f6)',
+                        transition: 'width 0.4s ease'
+                      }} />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <span>Restante por acreditar: <strong style={{ color: '#fbbf24' }}>{remaining.toLocaleString()} Likes</strong></span>
+                      <span>Envíos registrados: <strong style={{ color: 'var(--accent-cyan)' }}>{audit.daily_deliveries.length}</strong></span>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>🆔 ID del Objetivo (UID):</span>
-                    <span style={{ color: 'var(--accent-cyan)', fontSize: '1.05rem', fontWeight: '900' }}>{audit.target_uid}</span>
+                  {/* Comprobante Visual Container (Capturable with html2canvas) */}
+                  <div
+                    id="comprobante-entrega-admin"
+                    ref={receiptDeliveryRef}
+                    style={{
+                      background: '#0d111a',
+                      border: '1px solid var(--border-cyan)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '18px',
+                      marginBottom: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      position: 'relative',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                    }}
+                  >
+                    <div style={{ textAlign: 'center', borderBottom: '1px dashed rgba(255,255,255,0.2)', paddingBottom: '10px', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: '900' }}>
+                        {audit.daily_deliveries.length > 0 ? `COMPROBANTE DÍA #${audit.daily_deliveries.length + 1} ADMIN ✅` : 'COMPROBANTE 2 ADMIN ✅'}
+                      </div>
+                      <h3 style={{ margin: '4px 0 0 0', color: '#fff', fontSize: '1.15rem' }}>CONFIRMAR ENTREGA #{selectedOrder.id.slice(0, 8)}</h3>
+                      <div style={{ fontSize: '0.75rem', color: selectedOrder.status === 'Completed' ? '#34d399' : '#06b6d4', marginTop: '4px', fontWeight: 'bold' }}>
+                        Estado: {selectedOrder.status === 'Completed' ? '✅ COMPLETADO' : `⏳ EN PROCESO (${progressPct}%)`}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.88rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Nick:</span>
+                      <strong style={{ color: '#fff', letterSpacing: '0.04em' }}>{livePlayerInfo?.nick || audit.player_nickname}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.88rem', flexWrap: 'wrap', gap: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>ID:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: 'var(--accent-cyan)', fontWeight: '900', fontFamily: 'monospace', fontSize: '1rem', letterSpacing: '0.04em' }}>
+                          {audit.target_uid}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(audit.target_uid);
+                            setCopiedUid(true);
+                            setTimeout(() => setCopiedUid(false), 2000);
+                          }}
+                          className="btn-glass"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            border: '1px solid rgba(6, 182, 212, 0.4)',
+                            color: copiedUid ? '#34d399' : 'var(--accent-cyan)'
+                          }}
+                          title="Copiar ID al portapapeles"
+                        >
+                          {copiedUid ? '✓ ¡Copiado!' : '📋 Copiar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReverifyLiveLikes(audit.target_uid, audit.region)}
+                          disabled={isReverifying}
+                          className="btn-cyan"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Consultar likes en vivo desde Free Fire"
+                        >
+                          {isReverifying ? '⌛...' : '🔍 Validar Likes'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {livePlayerInfo && (
+                      <div style={{
+                        background: 'rgba(52, 211, 153, 0.12)',
+                        border: '1px solid rgba(52, 211, 153, 0.35)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '0.78rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        color: '#34d399'
+                      }}>
+                        <span>✅ <strong>En Vivo:</strong> {livePlayerInfo.nick} {livePlayerInfo.level ? `(Nv. ${livePlayerInfo.level})` : ''}</span>
+                        <span style={{ fontWeight: '900' }}>❤️ {livePlayerInfo.likes.toLocaleString()} Likes</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Región:</span>
+                      <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{livePlayerInfo?.region || audit.region}</span>
+                    </div>
+
+                    <div style={{ borderTop: '1px dashed rgba(255,255,255,0.1)', margin: '4px 0' }} />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>│ Likes antes del envío de hoy:</span>
+                      <span style={{ color: '#fff', fontWeight: 'bold' }}>{currentStartLikes.toLocaleString()}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(6, 182, 212, 0.1)', padding: '6px 10px', borderRadius: '4px' }}>
+                      <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold', fontSize: '0.82rem' }}>│ LIKES A ENVIAR HOY:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input
+                          type="number"
+                          value={editableLikesAdded}
+                          onChange={(e) => setEditableLikesAdded(e.target.value)}
+                          style={{
+                            width: '100px',
+                            padding: '4px 8px',
+                            background: '#000',
+                            border: '1px solid var(--accent-cyan)',
+                            color: '#34d399',
+                            fontWeight: '900',
+                            fontSize: '0.95rem',
+                            borderRadius: '4px',
+                            textAlign: 'right'
+                          }}
+                        />
+                        <span style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 'bold' }}>✏️ (Editable)</span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(52, 211, 153, 0.15)', padding: '8px 10px', borderRadius: '4px', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                      <span style={{ color: '#34d399', fontWeight: '900', fontSize: '0.85rem' }}>│ Likes Ahora (Tras acreditación):</span>
+                      <span style={{ color: '#34d399', fontWeight: '900', fontSize: '1.1rem' }}>
+                        {likesNow.toLocaleString()} <span style={{ fontSize: '0.68rem', color: '#fbbf24', fontWeight: 'normal' }}>(AUTO CALCULA)</span>
+                      </span>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>⚡ Nivel & Región:</span>
-                    <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>Nv. {audit.player_level} ({audit.region})</span>
+                  {/* Actions Area */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {/* Botón Principal: Registrar Envío Diario */}
+                    <button
+                      type="button"
+                      onClick={() => handleRecordDailyDelivery(selectedOrder, editableLikesAdded)}
+                      disabled={updatingOrder}
+                      className="btn-cyan"
+                      style={{
+                        padding: '12px',
+                        fontWeight: '900',
+                        fontSize: '0.95rem',
+                        background: 'linear-gradient(135deg, #0284c7 0%, #06b6d4 100%)',
+                        color: '#fff',
+                        boxShadow: '0 0 15px rgba(6, 182, 212, 0.4)'
+                      }}
+                    >
+                      {updatingOrder ? 'Guardando...' : `➕ REGISTRAR ENVÍO DIARIO (+${likesAddedNum.toLocaleString()} Likes)`}
+                    </button>
+
+                    {/* Botón Ver Historial de Acreditaciones */}
+                    {audit.daily_deliveries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeliveriesHistoryModal(true)}
+                        className="btn-glass"
+                        style={{
+                          padding: '10px',
+                          fontSize: '0.85rem',
+                          fontWeight: '800',
+                          color: '#fbbf24',
+                          border: '1px solid #fbbf24'
+                        }}
+                      >
+                        📜 Ver Historial de Acreditaciones ({audit.daily_deliveries.length} Envíos Realizados)
+                      </button>
+                    )}
+
+                    {/* Marcar Completado Todo */}
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAndCompleteDelivery(selectedOrder)}
+                      disabled={updatingOrder}
+                      className="btn-glass"
+                      style={{
+                        padding: '10px',
+                        fontWeight: '800',
+                        fontSize: '0.85rem',
+                        color: '#34d399',
+                        borderColor: '#34d399'
+                      }}
+                    >
+                      ✅ Guardar y Marcar Pedido Completo
+                    </button>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const html2canvas = (await import('html2canvas')).default;
+                            const element = document.getElementById('comprobante-entrega-admin');
+                            const canvas = await html2canvas(element, { backgroundColor: '#0f172a' });
+                            const dataUrl = canvas.toDataURL('image/png');
+                            const link = document.createElement('a');
+                            link.download = `Comprobante_Likes_${audit.target_uid}_ALVSHOP.png`;
+                            link.href = dataUrl;
+                            link.click();
+                          } catch (e) {
+                            alert('Error descargando comprobante: ' + e.message);
+                          }
+                        }}
+                        className="btn-glass"
+                        style={{ flex: 1, padding: '10px', fontSize: '0.8rem', fontWeight: 'bold' }}
+                      >
+                        📥 Descargar Comprobante Actual
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrder(null)}
+                        className="btn-glass"
+                        style={{ padding: '10px 16px', fontSize: '0.8rem' }}
+                      >
+                        Cerrar
+                      </button>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>❤️ Likes Antes de la Compra:</span>
-                    <span style={{ color: '#fff', fontWeight: 'bold' }}>{audit.likes_before.toLocaleString()} Likes</span>
-                  </div>
+                  {/* MODAL HISTORIAL DE ACREDITACIONES DIARIAS */}
+                  {showDeliveriesHistoryModal && (
+                    <div style={{
+                      position: 'fixed',
+                      inset: 0,
+                      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                      backdropFilter: 'blur(10px)',
+                      zIndex: 105,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '20px'
+                    }}>
+                      <div className="glass-panel animate-fade" style={{
+                        width: '100%',
+                        maxWidth: '520px',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '2px solid #fbbf24',
+                        padding: '24px',
+                        position: 'relative',
+                        background: '#0d111a',
+                        maxHeight: '85vh',
+                        overflowY: 'auto'
+                      }}>
+                        <button
+                          onClick={() => setShowDeliveriesHistoryModal(false)}
+                          style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(6, 182, 212, 0.1)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>➕ Likes a Despachar:</span>
-                    <strong style={{ color: '#34d399', fontSize: '1.2rem' }}>+{audit.likes_to_add.toLocaleString()} LIKES</strong>
-                  </div>
+                        <div style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: '900', marginBottom: '4px' }}>
+                          📜 REGISTRO DE ACREDITACIONES DIARIAS
+                        </div>
+                        <h3 style={{ margin: '0 0 14px 0', color: '#fff', fontSize: '1.15rem' }}>
+                          Historial de Envíos: {audit.player_nickname} ({audit.target_uid})
+                        </h3>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>🎯 Meta de Likes Final:</span>
-                    <strong style={{ color: '#fbbf24', fontSize: '1.1rem' }}>{audit.target_likes_final.toLocaleString()} LIKES</strong>
-                  </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {audit.daily_deliveries.map((del, idx) => (
+                            <div key={del.id || idx} style={{
+                              background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid rgba(251, 191, 36, 0.3)',
+                              borderRadius: '8px',
+                              padding: '12px 14px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px'
+                            }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontWeight: '900', color: '#fbbf24', fontSize: '0.85rem' }}>
+                                  🗓️ Día #{del.day_number || idx + 1}
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                  {new Date(del.date).toLocaleString()}
+                                </span>
+                              </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>🚚 Tiempo de Entrega:</span>
-                    <span style={{ color: '#fff', fontWeight: 'bold' }}>{audit.delivery_estimated}</span>
-                  </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Likes antes:</span>
+                                <strong style={{ color: '#fff' }}>{del.likes_before?.toLocaleString()}</strong>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                <span style={{ color: '#34d399', fontWeight: 'bold' }}>Likes acreditados hoy:</span>
+                                <strong style={{ color: '#34d399', fontSize: '0.95rem' }}>+{del.likes_sent?.toLocaleString()} ❤️</strong>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>Likes tras acreditación:</span>
+                                <strong style={{ color: 'var(--accent-cyan)' }}>{del.likes_now?.toLocaleString()}</strong>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          onClick={() => setShowDeliveriesHistoryModal(false)}
+                          className="btn-cyan"
+                          style={{ width: '100%', marginTop: '16px', padding: '10px' }}
+                        >
+                          Volver
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
-
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {selectedOrder.status === 'Pending' ? (
-                <button
-                  onClick={() => handleCompleteManualDispatch(selectedOrder)}
-                  disabled={updatingOrder}
-                  className="btn-cyan"
-                  style={{ flex: 1, padding: '12px', fontSize: '0.9rem' }}
-                >
-                  {updatingOrder ? 'Guardando...' : '✅ Marcar Likes Enviados / Completado'}
-                </button>
-              ) : (
-                <div style={{ flex: 1, textAlign: 'center', color: '#34d399', fontWeight: 'bold', padding: '10px', background: 'rgba(52, 211, 153, 0.1)', borderRadius: 'var(--radius-sm)' }}>
-                  ✅ Este pedido ya fue despachado y completado.
-                </div>
-              )}
-
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="btn-glass"
-                style={{ padding: '12px 18px', fontSize: '0.9rem' }}
-              >
-                Cerrar
-              </button>
-            </div>
           </div>
         </div>
       )}

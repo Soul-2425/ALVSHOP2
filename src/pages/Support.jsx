@@ -24,26 +24,41 @@ export default function Support() {
       }
 
       // Check or create support conversation for this user and selected type
-      let { data: conv } = await supabase
-        .from('support_conversations')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+      let conv = null;
+      try {
+        const { data: convList } = await supabase
+          .from('support_conversations')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (convList && convList.length > 0) {
+          conv = convList[0];
+        }
+      } catch (e) {}
 
       if (!conv) {
-        const { data: newConv } = await supabase
-          .from('support_conversations')
-          .insert({
-            user_id: user.id,
-            user_name: profile?.full_name || user.email,
-            user_email: user.email,
-            type: consultationType
-          })
-          .select()
-          .single();
-        conv = newConv;
+        try {
+          const { data: newConv } = await supabase
+            .from('support_conversations')
+            .insert({
+              user_id: user.id,
+              user_name: profile?.full_name || user.email,
+              user_email: user.email,
+              type: consultationType
+            })
+            .select();
+          if (newConv && newConv.length > 0) conv = newConv[0];
+        } catch (e) {}
+      }
+
+      if (!conv) {
+        conv = {
+          id: `conv-usr-${user.id}`,
+          user_id: user.id,
+          type: consultationType
+        };
       }
 
       if (conv) {

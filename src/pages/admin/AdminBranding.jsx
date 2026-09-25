@@ -18,14 +18,17 @@ export default function AdminBranding() {
   const [logoUrl, setLogoUrl] = useState('');
   const [faviconUrl, setFaviconUrl] = useState('');
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
   const [storeActive, setStoreActive] = useState(true);
+  const [announcementTicker, setAnnouncementTicker] = useState('🔥 Cliente compró 2,000 Likes ❤️ • Cliente compró 6,000 💎 Free Fire • Promociones activas hoy ⚡');
 
-  // Social Links
   const [socials, setSocials] = useState({
     instagram: '',
     tiktok: '',
     whatsapp: '50243130763',
-    facebook: ''
+    facebook: '',
+    grid_columns_mobile: '2'
   });
 
   // SEO & Head Scripts Injection (Meta Pixel, Google Ads)
@@ -57,6 +60,9 @@ export default function AdminBranding() {
       if (config.social_links) setSocials(config.social_links);
       if (config.custom_head_scripts) setCustomHeadScripts(config.custom_head_scripts);
       if (config.store_active !== undefined) setStoreActive(config.store_active);
+      if (config.announcement_ticker || config.social_links?.announcement_ticker) {
+        setAnnouncementTicker(config.announcement_ticker || config.social_links?.announcement_ticker);
+      }
     }
 
     async function loadIntegrations() {
@@ -115,6 +121,70 @@ export default function AdminBranding() {
     }
   };
 
+  const handleUploadLogoFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    try {
+      let uploadedUrl = null;
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `logo_${Date.now()}.${fileExt}`;
+        const { data, error } = await supabase.storage.from('payment-receipts').upload(`branding/${fileName}`, file);
+        if (!error && data) {
+          const { data: { publicUrl } } = supabase.storage.from('payment-receipts').getPublicUrl(`branding/${fileName}`);
+          uploadedUrl = publicUrl;
+        }
+      } catch (err) {}
+
+      if (!uploadedUrl) {
+        uploadedUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      setLogoUrl(uploadedUrl);
+    } catch (err) {
+      alert('Error subiendo logo: ' + err.message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleUploadFaviconFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFavicon(true);
+    try {
+      let uploadedUrl = null;
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `favicon_${Date.now()}.${fileExt}`;
+        const { data, error } = await supabase.storage.from('payment-receipts').upload(`branding/${fileName}`, file);
+        if (!error && data) {
+          const { data: { publicUrl } } = supabase.storage.from('payment-receipts').getPublicUrl(`branding/${fileName}`);
+          uploadedUrl = publicUrl;
+        }
+      } catch (err) {}
+
+      if (!uploadedUrl) {
+        uploadedUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      setFaviconUrl(uploadedUrl);
+    } catch (err) {
+      alert('Error subiendo favicon: ' + err.message);
+    } finally {
+      setUploadingFavicon(false);
+    }
+  };
+
   const handleSaveBranding = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -125,7 +195,9 @@ export default function AdminBranding() {
         banner_url: bannerUrl,
         category_button_text: categoryButtonText,
         site_title: siteTitle,
-        site_tagline: siteTagline
+        site_tagline: siteTagline,
+        store_active: storeActive,
+        announcement_ticker: announcementTicker
       };
 
       const updateData = {
@@ -140,7 +212,8 @@ export default function AdminBranding() {
         favicon_url: faviconUrl,
         social_links: updatedSocials,
         custom_head_scripts: customHeadScripts,
-        store_active: storeActive
+        store_active: storeActive,
+        announcement_ticker: announcementTicker
       };
 
       try {
@@ -298,6 +371,25 @@ export default function AdminBranding() {
           </div>
         </div>
 
+        {/* 1.5. Live Announcement Ticker */}
+        <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-cyan)' }}>
+          <h4 style={{ fontSize: '1.05rem', marginBottom: '8px', color: 'var(--accent-cyan)' }}>
+            📢 Barra de Anuncios y Ticker de Compras en Vivo
+          </h4>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+            Texto marquesina que se desplaza en la parte superior de la tienda anunciando compras recientes y promociones:
+          </p>
+          <div>
+            <input
+              type="text"
+              value={announcementTicker}
+              onChange={(e) => setAnnouncementTicker(e.target.value)}
+              placeholder="🔥 Cliente compró 2,000 Likes ❤️ • Cliente compró 6,000 💎 • ¡Aprovecha las ofertas hoy!"
+              style={{ width: '100%', padding: '12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.9rem' }}
+            />
+          </div>
+        </div>
+
         {/* 2. Banner Principal & Textos de Catálogo */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
           <h4 style={{ fontSize: '1.05rem', marginBottom: '8px', color: 'var(--accent-cyan)' }}>
@@ -430,28 +522,175 @@ export default function AdminBranding() {
 
         {/* 3. Logo & Favicon Management */}
         <div className="glass-panel" style={{ padding: '24px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-glass)' }}>
-          <h4 style={{ fontSize: '1.05rem', marginBottom: '14px' }}>🖼️ Gestión de Logotipo y Favicon</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <h4 style={{ fontSize: '1.05rem', margin: 0 }}>🖼️ Gestión de Logotipo y Favicon (Ícono de Pestaña)</h4>
+            <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
+              Sube tus imágenes directamente desde tu dispositivo o pega un enlace
+            </span>
+          </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>URL del Logo Principal</label>
-              <input
-                type="text"
-                placeholder="https://misitio.com/logo.png"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
-              />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '18px' }}>
+            {/* Logo Principal Card */}
+            <div style={{ background: '#0d111a', border: '1px solid var(--border-glass)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: '700' }}>
+                  Logotipo Principal de la Tienda
+                </label>
+                {logoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setLogoUrl('')}
+                    style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '0.72rem', cursor: 'pointer' }}
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+
+              {/* Logo Preview */}
+              <div style={{
+                height: '70px',
+                borderRadius: '6px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px dashed var(--border-glass)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                padding: '6px'
+              }}>
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Sin logotipo personalizado</span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <label style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '9px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(6, 182, 212, 0.15)',
+                  border: '1px solid var(--border-cyan)',
+                  color: 'var(--accent-cyan)',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  cursor: uploadingLogo ? 'not-allowed' : 'pointer'
+                }}>
+                  <span>📁</span>
+                  <span>{uploadingLogo ? 'Subiendo...' : 'Subir Logo desde tu PC / Celular'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingLogo}
+                    onChange={handleUploadLogoFile}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '3px' }}>O pega URL externa:</label>
+                <input
+                  type="text"
+                  placeholder="https://misitio.com/logo.png"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  style={{ width: '100%', padding: '8px', borderRadius: 'var(--radius-sm)', background: '#0a0d14', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                />
+              </div>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>URL del Favicon (Ícono Pestaña)</label>
-              <input
-                type="text"
-                placeholder="https://misitio.com/favicon.ico"
-                value={faviconUrl}
-                onChange={(e) => setFaviconUrl(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
-              />
+
+            {/* Favicon Card */}
+            <div style={{ background: '#0d111a', border: '1px solid var(--border-glass)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.8rem', color: '#fff', fontWeight: '700' }}>
+                  Favicon (Ícono de la Pestaña del Navegador)
+                </label>
+                {faviconUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setFaviconUrl('/favicon.svg')}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', fontSize: '0.72rem', cursor: 'pointer' }}
+                  >
+                    Restablecer
+                  </button>
+                )}
+              </div>
+
+              {/* Favicon Preview */}
+              <div style={{
+                height: '70px',
+                borderRadius: '6px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px dashed var(--border-glass)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                padding: '6px'
+              }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '6px',
+                  background: '#0a0d14',
+                  border: '1px solid var(--border-glass)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
+                }}>
+                  <img src={faviconUrl || '/favicon.svg'} alt="Favicon" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Vista previa en pestaña (32x32 px)
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <label style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '9px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(52, 211, 153, 0.15)',
+                  border: '1px solid rgba(52, 211, 153, 0.4)',
+                  color: '#34d399',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  cursor: uploadingFavicon ? 'not-allowed' : 'pointer'
+                }}>
+                  <span>📁</span>
+                  <span>{uploadingFavicon ? 'Subiendo...' : 'Subir Favicon desde tu PC / Celular'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,image/x-icon,image/svg+xml,.ico,.png,.svg,.jpg"
+                    disabled={uploadingFavicon}
+                    onChange={handleUploadFaviconFile}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '3px' }}>O pega URL externa:</label>
+                <input
+                  type="text"
+                  placeholder="/favicon.svg o https://misitio.com/favicon.ico"
+                  value={faviconUrl}
+                  onChange={(e) => setFaviconUrl(e.target.value)}
+                  style={{ width: '100%', padding: '8px', borderRadius: 'var(--radius-sm)', background: '#0a0d14', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.8rem' }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -499,6 +738,17 @@ export default function AdminBranding() {
                 onChange={(e) => setSocials({ ...socials, facebook: e.target.value })}
                 style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
               />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>📱 Columnas en Móviles (Productos)</label>
+              <select
+                value={socials.grid_columns_mobile || '2'}
+                onChange={(e) => setSocials({ ...socials, grid_columns_mobile: e.target.value })}
+                style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.85rem' }}
+              >
+                <option value="2">2 Columnas (Recomendado)</option>
+                <option value="3">3 Columnas (Compacto)</option>
+              </select>
             </div>
           </div>
         </div>

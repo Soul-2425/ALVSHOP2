@@ -34,8 +34,17 @@ export default function Profile() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
+  // Password Recovery Mode State
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
+
   // Orders State
   const [orders, setOrders] = useState([]);
+  const productOrders = orders.filter(o => o.type !== 'wallet_deposit');
+  const depositOrders = orders.filter(o => o.type === 'wallet_deposit');
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   // Wallet Top-up State (Manual & Binance)
@@ -55,6 +64,10 @@ export default function Profile() {
   const [linkReceiptFile, setLinkReceiptFile] = useState(null);
   const [linkReceiptPreview, setLinkReceiptPreview] = useState('');
   const [linkSubmitting, setLinkSubmitting] = useState(false);
+  const [selectedOrderReceipt, setSelectedOrderReceipt] = useState(null);
+
+  // Wallet Accordion State
+  const [expandedMethod, setExpandedMethod] = useState(null);
 
   const normalizedRole = role ? String(role).trim().toLowerCase() : '';
   const isAdminOrAdvisor = normalizedRole === 'admin' || normalizedRole === 'asesor';
@@ -167,6 +180,21 @@ export default function Profile() {
     }
   }, [user?.id]);
 
+  // Check for Password Recovery URL hash or event
+  useEffect(() => {
+    if (window.location.hash && (window.location.hash.includes('type=recovery') || window.location.hash.includes('access_token'))) {
+      setIsRecoveryMode(true);
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+      }
+    });
+
+    return () => subscription?.unsubscribe?.();
+  }, []);
+
   useEffect(() => {
     if (user?.id) {
       loadOrders();
@@ -235,6 +263,40 @@ export default function Profile() {
       else setAuthError('Error al solicitar recuperación: ' + err.message);
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setAuthError('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setAuthError('Las contraseñas no coinciden. Por favor verifica.');
+      return;
+    }
+
+    setRecoveryLoading(true);
+    setAuthError('');
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) throw error;
+
+      setRecoverySuccess(true);
+      setTimeout(() => {
+        setIsRecoveryMode(false);
+        setRecoverySuccess(false);
+        window.location.hash = '';
+      }, 2500);
+    } catch (err) {
+      setAuthError('Error actualizando contraseña: ' + err.message);
+    } finally {
+      setRecoveryLoading(false);
     }
   };
 
@@ -628,6 +690,88 @@ export default function Profile() {
     }
   };
 
+  // Recovery Mode View
+  if (isRecoveryMode) {
+    return (
+      <div className="container" style={{ paddingTop: '40px', maxWidth: '440px' }}>
+        <div className="glass-panel" style={{
+          borderRadius: 'var(--radius-lg)',
+          padding: '30px',
+          border: '1px solid var(--border-cyan)',
+          boxShadow: '0 8px 32px rgba(6, 182, 212, 0.15)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🔐</div>
+            <h2 style={{ fontSize: '1.4rem', margin: 0, color: 'var(--accent-cyan)' }}>Establecer Nueva Contraseña</h2>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Ingresa tu nueva contraseña para acceder a tu cuenta ALVSHOP.
+            </p>
+          </div>
+
+          {recoverySuccess ? (
+            <div style={{
+              background: 'rgba(52, 211, 153, 0.15)',
+              border: '1px solid #34d399',
+              color: '#34d399',
+              padding: '16px',
+              borderRadius: 'var(--radius-sm)',
+              textAlign: 'center',
+              fontWeight: '700'
+            }}>
+              ✅ ¡Contraseña actualizada con éxito! Redirigiendo a tu perfil...
+            </div>
+          ) : (
+            <>
+              {authError && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#f87171',
+                  padding: '10px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.85rem',
+                  marginBottom: '16px'
+                }}>
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleUpdatePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Nueva Contraseña</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Mínimo 6 caracteres"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Confirmar Nueva Contraseña</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Repite tu nueva contraseña"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff' }}
+                  />
+                </div>
+
+                <button type="submit" disabled={recoveryLoading} className="btn-cyan" style={{ marginTop: '8px', padding: '12px' }}>
+                  {recoveryLoading ? 'Guardando...' : 'Guardar Nueva Contraseña ➔'}
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // If NOT Logged In: Show Auth Screen
   if (!user) {
     return (
@@ -769,15 +913,15 @@ export default function Profile() {
             color: '#fff',
             fontWeight: '900'
           }}>
-            {(profile?.full_name || user.email)[0]}
+            {(profile?.full_name || user?.email || 'Usuario')[0]?.toUpperCase() || 'U'}
           </div>
 
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>{profile?.full_name || user.email}</h2>
-              <span className="badge-cyan">{role}</span>
+              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>{profile?.full_name || user?.email || 'Usuario'}</h2>
+              <span className="badge-cyan">{role || 'Cliente'}</span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{user.email}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{user?.email || ''}</div>
           </div>
         </div>
 
@@ -842,30 +986,7 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Referral Code Box */}
-      {profile?.referral_code && (
-        <div className="glass-panel" style={{
-          borderRadius: 'var(--radius-md)',
-          padding: '16px 20px',
-          marginBottom: '20px',
-          border: '1px solid var(--border-glass)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Tu Código de Referido:</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--accent-cyan)' }}>
-              {profile.referral_code}
-            </div>
-          </div>
-          <button onClick={copyReferralCode} className="btn-glass" style={{ fontSize: '0.8rem' }}>
-            {copiedReferral ? '✅ ¡Copiado!' : '📋 Copiar Código'}
-          </button>
-        </div>
-      )}
+
 
       {/* Profile Subtabs Navigation Bar */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -883,37 +1004,6 @@ export default function Profile() {
           }}
         >
           📦 Mis Pedidos ({orders.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('notifications')}
-          style={{
-            padding: '10px 18px',
-            borderRadius: 'var(--radius-md)',
-            fontWeight: '700',
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: activeTab === 'notifications' ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.05)',
-            color: activeTab === 'notifications' ? '#000' : 'var(--text-main)',
-            border: activeTab === 'notifications' ? 'none' : '1px solid var(--border-glass)'
-          }}
-        >
-          <span>🔔</span> Mis Notificaciones
-          {unreadCount > 0 && (
-            <span style={{
-              background: '#f87171',
-              color: '#fff',
-              borderRadius: '50%',
-              fontSize: '0.7rem',
-              padding: '2px 6px',
-              fontWeight: '900'
-            }}>
-              {unreadCount}
-            </span>
-          )}
         </button>
 
         <button
@@ -960,7 +1050,7 @@ export default function Profile() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {loadingOrders ? (
             <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>Cargando pedidos...</div>
-          ) : orders.length === 0 ? (
+          ) : productOrders.length === 0 ? (
             <div className="glass-panel" style={{ padding: '30px', textAlign: 'center', borderRadius: 'var(--radius-md)' }}>
               <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🛒</div>
               <p style={{ color: 'var(--text-muted)' }}>Aún no has realizado ninguna compra.</p>
@@ -969,7 +1059,7 @@ export default function Profile() {
               </Link>
             </div>
           ) : (
-            orders.map((ord) => {
+            productOrders.map((ord) => {
               const statusColors = {
                 Completed: '#34d399',
                 Verification: '#fbbf24',
@@ -1002,37 +1092,111 @@ export default function Profile() {
                       </span>
                     </div>
 
-                    <span style={{
-                      padding: '4px 10px',
-                      borderRadius: 'var(--radius-full)',
-                      fontSize: '0.75rem',
-                      fontWeight: '700',
-                      background: `${statusColors[ord.status] || '#60a5fa'}22`,
-                      color: statusColors[ord.status] || '#60a5fa',
-                      border: `1px solid ${statusColors[ord.status] || '#60a5fa'}55`
-                    }}>
-                      {statusLabels[ord.status] || ord.status}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {(() => {
+                        const parsedNotes = (() => {
+                          if (!ord.customer_notes) return {};
+                          if (typeof ord.customer_notes === 'object') return ord.customer_notes;
+                          try { return JSON.parse(ord.customer_notes); } catch (e) { return {}; }
+                        })();
+                        const isLikes = parsedNotes.service_type === 'Free Fire Likes' || parsedNotes.likes_to_add || parsedNotes.likes_before || parsedNotes.likes_sent || (ord.id && String(ord.id).includes('LIKE')) || ord.order_items?.some(i => i.products?.name?.toLowerCase().includes('like'));
+
+                        if (isLikes || parsedNotes.target_uid) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderReceipt({ ...ord, parsedNotes })}
+                              className="btn-cyan"
+                              style={{
+                                padding: '5px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: '800',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <span>🧾</span> Comprobante
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      <span style={{
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '0.75rem',
+                        fontWeight: '700',
+                        background: `${statusColors[ord.status] || '#60a5fa'}22`,
+                        color: statusColors[ord.status] || '#60a5fa',
+                        border: `1px solid ${statusColors[ord.status] || '#60a5fa'}55`
+                      }}>
+                        {statusLabels[ord.status] || ord.status}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Order Items */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {ord.order_items?.map((item) => (
-                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                        <div>
-                          <strong>{item.products?.name || 'Recarga Digital'}</strong>
-                          {item.fields_data && Object.keys(item.fields_data).length > 0 && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              {Object.entries(item.fields_data).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                  {/* Order Items & Shipment History */}
+                  {(() => {
+                    const notes = (() => {
+                      if (!ord.customer_notes) return {};
+                      if (typeof ord.customer_notes === 'object') return ord.customer_notes;
+                      try { return JSON.parse(ord.customer_notes); } catch (e) { return {}; }
+                    })();
+
+                    const isLikesOrder = notes.service_type === 'Free Fire Likes' || notes.likes_to_add || (ord.id && String(ord.id).includes('LIKE'));
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {isLikesOrder && (
+                          <div style={{ background: 'rgba(0,0,0,0.35)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(6, 182, 212, 0.25)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <strong style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem' }}>
+                                ⚡ Paquete de {Number(notes.likes_to_add || 2000).toLocaleString()} Likes Free Fire
+                              </strong>
+                              <button
+                                onClick={() => setSelectedOrderReceipt({ ...ord, parsedNotes: notes })}
+                                className="btn-cyan"
+                                style={{ padding: '4px 10px', fontSize: '0.72rem', fontWeight: '800' }}
+                              >
+                                📄 Ver Comprobante
+                              </button>
                             </div>
-                          )}
-                        </div>
-                        <div style={{ fontWeight: '700', color: 'var(--accent-cyan)' }}>
-                          ${Number(item.price_usdt).toFixed(2)} USDT
-                        </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px', fontSize: '0.78rem', color: '#cbd5e1' }}>
+                              <div>👤 Nick: <strong style={{ color: '#fff' }}>{notes.player_nickname || 'Jugador'}</strong></div>
+                              <div>🆔 ID: <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>{notes.target_uid || 'N/A'}</span></div>
+                              <div>❤️ Antes: <strong>{Number(notes.likes_before || 0).toLocaleString()}</strong></div>
+                              <div>➕ Añadidos: <strong style={{ color: '#34d399' }}>+{Number(notes.likes_to_add || 2000).toLocaleString()}</strong></div>
+                              <div>🎯 {ord.status === 'Completed' ? 'Likes Ahora' : 'Meta'}: <strong style={{ color: '#fbbf24' }}>{Number(notes.likes_now || notes.target_likes_final || ((Number(notes.likes_before || 0)) + (Number(notes.likes_to_add || 2000)))).toLocaleString()}</strong></div>
+                            </div>
+                          </div>
+                        )}
+
+                        {ord.order_items?.map((item) => (
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', background: 'rgba(0,0,0,0.2)', padding: '8px 10px', borderRadius: '6px' }}>
+                            <div>
+                              <strong>{item.products?.name || 'Recarga Digital'}</strong>
+                              {item.credentials_delivered && (
+                                <div style={{ color: '#34d399', fontSize: '0.78rem', marginTop: '2px', fontWeight: 'bold' }}>
+                                  🔑 Entrega: {item.credentials_delivered}
+                                </div>
+                              )}
+                              {item.fields_data && Object.keys(item.fields_data).length > 0 && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  {Object.entries(item.fields_data).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                              ${Number(item.price_usdt).toFixed(2)} USDT
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
 
                   {/* Total & Payment Method */}
                   <div style={{
@@ -1046,6 +1210,15 @@ export default function Profile() {
                     <span style={{ color: 'var(--text-muted)' }}>Método: {ord.payment_method}</span>
                     <div>Total: <strong>${Number(ord.total_usdt).toFixed(2)} USDT</strong> (Q{Number(ord.total_gtq).toFixed(2)} GTQ)</div>
                   </div>
+
+                  {/* Feed Interaction Button for Completed Orders */}
+                  {ord.status === 'Completed' && (
+                    <div style={{ marginTop: '8px', borderTop: '1px dashed var(--border-glass)', paddingTop: '10px', textAlign: 'center' }}>
+                      <Link to="/feed" className="btn-glass" style={{ fontSize: '0.8rem', padding: '6px 14px', color: 'var(--accent-cyan)' }}>
+                        💬 Ver y comentar en la Comunidad
+                      </Link>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -1053,62 +1226,7 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Tab 2: Notifications History */}
-      {activeTab === 'notifications' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '1.05rem', margin: 0 }}>Historial de Alertas & Notificaciones</h3>
-            {notifications.length > 0 && (
-              <button onClick={clearAllNotifications} className="btn-glass" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-                🧹 Limpiar
-              </button>
-            )}
-          </div>
 
-          {notifications.length === 0 ? (
-            <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🔔</div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No tienes notificaciones pendientes.</p>
-            </div>
-          ) : (
-            notifications.map((notif) => (
-              <div key={notif.id} className="glass-panel" style={{
-                padding: '16px',
-                borderRadius: 'var(--radius-md)',
-                border: notif.is_read ? '1px solid var(--border-glass)' : '1px solid var(--border-cyan)',
-                background: notif.is_read ? 'rgba(255,255,255,0.02)' : 'rgba(6, 182, 212, 0.05)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '1.4rem' }}>
-                    {notif.type === 'order_completed' ? '🎉' : notif.type === 'order_created' ? '🛒' : notif.type === 'support_reply' ? '💬' : '🔔'}
-                  </span>
-                  <div>
-                    <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#fff' }}>{notif.title}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{notif.body}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', marginTop: '4px' }}>
-                      {new Date(notif.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-
-                {notif.metadata?.url && (
-                  <Link
-                    to={notif.metadata.url}
-                    className="btn-glass"
-                    style={{ fontSize: '0.75rem', padding: '6px 12px', whiteSpace: 'nowrap' }}
-                  >
-                    Ver ➔
-                  </Link>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
 
       {/* Tab 3: Wallet Recharge */}
       {activeTab === 'wallet' && (
@@ -1118,11 +1236,44 @@ export default function Profile() {
           {(config?.payment_methods_visibility?.payment_links !== false) && (
             <div className="glass-panel" style={{
               borderRadius: 'var(--radius-lg)',
-              padding: '24px',
               border: '2px solid var(--border-cyan)',
               background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(13, 17, 26, 0.95) 100%)',
-              boxShadow: '0 0 25px rgba(6, 182, 212, 0.15)'
+              boxShadow: '0 0 25px rgba(6, 182, 212, 0.15)',
+              overflow: 'hidden'
             }}>
+              <button
+                type="button"
+                onClick={() => setExpandedMethod(expandedMethod === 'card' ? null : 'card')}
+                style={{
+                  width: '100%',
+                  padding: '16px 24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '1.8rem' }}>💳</span>
+                  <div>
+                    <h3 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '900' }}>
+                      Visa / Mastercard (Enlace Seguro)
+                    </h3>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)' }}>
+                      Tarjetas de Crédito y Débito
+                    </div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '1.5rem' }}>{expandedMethod === 'card' ? '▲' : '▼'}</span>
+              </button>
+              
+              {expandedMethod === 'card' && (
+                <div style={{ padding: '0 24px 24px 24px' }}>
+                  <hr style={{ borderColor: 'rgba(255,255,255,0.1)', marginBottom: '16px' }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
                 <span style={{ fontSize: '1.8rem' }}>💳</span>
                 <div>
@@ -1345,126 +1496,187 @@ export default function Profile() {
                   </button>
                 </div>
               )}
+                </div>
+              )}
             </div>
           )}
 
           {/* MÉTODO 2: Binance Pay Manual USDT Recharge */}
           {(config?.payment_methods_visibility?.binance !== false) && (
             <div className="glass-panel" style={{
-              borderRadius: 'var(--radius-md)',
-              padding: '24px',
+              borderRadius: 'var(--radius-lg)',
               border: '1px solid #f0b90b',
-              background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.08) 0%, rgba(13, 17, 26, 0.8) 100%)'
+              background: 'linear-gradient(135deg, rgba(240, 185, 11, 0.08) 0%, rgba(13, 17, 26, 0.95) 100%)',
+              boxShadow: '0 0 25px rgba(240, 185, 11, 0.15)',
+              overflow: 'hidden'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                <span style={{ fontSize: '1.5rem' }}>🟡</span>
-                <div>
-                  <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Manual con Binance Pay (USDT)</h3>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Transfiere a nuestro Pay ID o QR y sube tu comprobante</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '16px', background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: 'var(--radius-md)' }}>
-                {(config?.binance_qr_url || '/binance-qr.jpg') && (
-                  <div style={{ width: '90px', height: '90px', borderRadius: '8px', background: '#000', border: '1px solid #f0b90b', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <img src={config?.binance_qr_url || '/binance-qr.jpg'} alt="Binance QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  </div>
-                )}
-                <div>
-                  <div><strong>Binance Pay ID:</strong> <span style={{ color: '#f0b90b', fontWeight: '800', fontSize: '1rem' }}>{config?.binance_pay_id || '527653920'}</span></div>
-                  <div><strong>Titular:</strong> {config?.binance_name || 'AlvJona'}</div>
-                  {config?.binance_deeplink_url && (
-                    <a
-                      href={config.binance_deeplink_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ display: 'inline-block', marginTop: '6px', padding: '4px 10px', background: '#f0b90b', color: '#000', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '800', textDecoration: 'none' }}
-                    >
-                      ⚡ Abrir en Binance App ➔
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <form onSubmit={(e) => {
-                setDepositCurrency('Binance');
-                handleRequestDeposit(e, 'Binance');
-              }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Monto en USDT a Recargar:
-                  </label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="5"
-                    required
-                    placeholder="Mínimo 5.00 USDT"
-                    value={depositCurrency === 'Binance' ? depositAmount : ''}
-                    onChange={(e) => {
-                      setDepositCurrency('Binance');
-                      setDepositAmount(e.target.value);
-                    }}
-                    style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#f0b90b', fontSize: '1rem', fontWeight: '800' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    ID de Transacción / Orden Binance (Opcional):
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej. 12938475"
-                    value={receiptRef}
-                    onChange={(e) => setReceiptRef(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
-                  />
-                </div>
-
-                {/* Upload Receipt */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    📸 Captura del Pago en Binance:
-                  </label>
-                  {receiptPreview ? (
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
-                      <img src={receiptPreview} alt="Comprobante" style={{ maxWidth: '200px', maxHeight: '140px', borderRadius: '6px', border: '1px solid #f0b90b' }} />
-                      <button type="button" onClick={() => { setReceiptPreview(''); setReceiptFile(null); }} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f87171', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontWeight: '900' }}>✕</button>
+              <button
+                type="button"
+                onClick={() => setExpandedMethod(expandedMethod === 'binance' ? null : 'binance')}
+                style={{
+                  width: '100%',
+                  padding: '16px 24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'none',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '1.8rem' }}>🟨</span>
+                  <div>
+                    <h3 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '900', color: '#f0b90b' }}>
+                      Binance Pay / USDT
+                    </h3>
+                    <div style={{ fontSize: '0.78rem', color: '#f0b90b' }}>
+                      Transferencias Cripto sin comisiones
                     </div>
-                  ) : (
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(240, 185, 11, 0.15)', border: '1px solid #f0b90b', color: '#f0b90b', fontSize: '0.8rem', fontWeight: '800', cursor: 'pointer' }}>
-                      <span>📸</span> Subir Captura
-                      <input type="file" accept="image/*" onChange={handleReceiptChange} style={{ display: 'none' }} />
-                    </label>
-                  )}
+                  </div>
                 </div>
+                <span style={{ fontSize: '1.5rem', color: '#f0b90b' }}>{expandedMethod === 'binance' ? '▲' : '▼'}</span>
+              </button>
 
-                <button
-                  type="submit"
-                  disabled={depositLoading}
-                  className="btn-cyan"
-                  style={{ background: '#f0b90b', color: '#000', fontWeight: '900', padding: '12px', boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)' }}
-                >
-                  {depositLoading ? 'Enviando Solicitud...' : '📤 Enviar Comprobante Binance y Acreditar Saldo ➔'}
-                </button>
-              </form>
+              {expandedMethod === 'binance' && (
+                <div style={{ padding: '0 24px 24px 24px' }}>
+                  <hr style={{ borderColor: 'rgba(240,185,11,0.2)', marginBottom: '16px' }} />
+                  <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#f0b90b' }}>Recarga Manual con Binance Pay (USDT)</h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '16px' }}>Transfiere a nuestro Pay ID o QR y sube tu comprobante</div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '16px', background: 'rgba(0,0,0,0.3)', padding: '14px', borderRadius: 'var(--radius-md)' }}>
+                    {(config?.binance_qr_url || '/binance-qr.jpg') && (
+                      <div style={{ width: '90px', height: '90px', borderRadius: '8px', background: '#000', border: '1px solid #f0b90b', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <img src={config?.binance_qr_url || '/binance-qr.jpg'} alt="Binance QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      </div>
+                    )}
+                    <div>
+                      <div><strong>Binance Pay ID:</strong> <span style={{ color: '#f0b90b', fontWeight: '800', fontSize: '1rem' }}>{config?.binance_pay_id || '527653920'}</span></div>
+                      <div><strong>Titular:</strong> {config?.binance_name || 'AlvJona'}</div>
+                      {config?.binance_deeplink_url && (
+                        <a
+                          href={config.binance_deeplink_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ display: 'inline-block', marginTop: '6px', padding: '4px 10px', background: '#f0b90b', color: '#000', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '800', textDecoration: 'none' }}
+                        >
+                          ⚡ Abrir en Binance App ➔
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <form onSubmit={(e) => {
+                    setDepositCurrency('Binance');
+                    handleRequestDeposit(e, 'Binance');
+                  }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        Monto en USDT a Recargar:
+                      </label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="5"
+                        required
+                        placeholder="Mínimo 5.00 USDT"
+                        value={depositCurrency === 'Binance' ? depositAmount : ''}
+                        onChange={(e) => {
+                          setDepositCurrency('Binance');
+                          setDepositAmount(e.target.value);
+                        }}
+                        style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#f0b90b', fontSize: '1rem', fontWeight: '800' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        ID de Transacción / Orden Binance (Opcional):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej. 12938475"
+                        value={receiptRef}
+                        onChange={(e) => setReceiptRef(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: '#0d111a', border: '1px solid var(--border-glass)', color: '#fff', fontSize: '0.82rem' }}
+                      />
+                    </div>
+
+                    {/* Upload Receipt */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                        📸 Captura del Pago en Binance:
+                      </label>
+                      {receiptPreview ? (
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                          <img src={receiptPreview} alt="Comprobante" style={{ maxWidth: '200px', maxHeight: '140px', borderRadius: '6px', border: '1px solid #f0b90b' }} />
+                          <button type="button" onClick={() => { setReceiptPreview(''); setReceiptFile(null); }} style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#f87171', color: '#fff', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontWeight: '900' }}>✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(240, 185, 11, 0.15)', border: '1px solid #f0b90b', color: '#f0b90b', fontSize: '0.8rem', fontWeight: '800', cursor: 'pointer' }}>
+                          <span>📸</span> Subir Captura
+                          <input type="file" accept="image/*" onChange={handleReceiptChange} style={{ display: 'none' }} />
+                        </label>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={depositLoading}
+                      className="btn-cyan"
+                      style={{ background: '#f0b90b', color: '#000', fontWeight: '900', padding: '12px', boxShadow: '0 0 15px rgba(240, 185, 11, 0.3)' }}
+                    >
+                      {depositLoading ? 'Enviando Solicitud...' : '📤 Enviar Comprobante Binance y Acreditar Saldo ➔'}
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
           )}
 
           {/* MÉTODO 3: Multi-Currency Bank Transfers (GTQ, MXN, COP) */}
           <div className="glass-panel" style={{
-            borderRadius: 'var(--radius-md)',
-            padding: '24px',
-            border: '1px solid var(--border-cyan)'
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(13, 17, 26, 0.95) 100%)',
+            overflow: 'hidden'
           }}>
-            <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>Recarga con Transferencia Bancaria Directa</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Transfiere en tu moneda local y un asesor validará tu comprobante para acreditar tu saldo de inmediato.
-            </p>
+            <button
+              type="button"
+              onClick={() => setExpandedMethod(expandedMethod === 'bank' ? null : 'bank')}
+              style={{
+                width: '100%',
+                padding: '16px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '1.8rem' }}>🏦</span>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '900' }}>
+                    Transferencia Bancaria Local
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Guatemala, México, Colombia
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: '1.5rem' }}>{expandedMethod === 'bank' ? '▲' : '▼'}</span>
+            </button>
 
-            {/* Currency Selector Pills for Recharge */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            {expandedMethod === 'bank' && (
+              <div style={{ padding: '0 24px 24px 24px' }}>
+                <hr style={{ borderColor: 'rgba(255,255,255,0.1)', marginBottom: '16px' }} />
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
               {(config?.payment_methods_visibility?.gtq !== false) && (
                 <button
                   type="button"
@@ -1542,7 +1754,7 @@ export default function Profile() {
                 </span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
                 {depositCurrency === 'GTQ' && (
                   (config?.bank_accounts && config.bank_accounts.length > 0
                     ? config.bank_accounts
@@ -1860,7 +2072,356 @@ export default function Profile() {
               <button type="submit" disabled={depositLoading} className="btn-cyan" style={{ padding: '12px', fontWeight: '800' }}>
                 {depositLoading ? 'Enviando Solicitud...' : 'Solicitar Recarga Manual ➔'}
               </button>
-            </form>
+                </form>
+              </div>
+            )}
+          </div>
+
+          {/* Historial de Recargas */}
+          <div style={{ marginTop: '30px' }}>
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '16px', color: 'var(--accent-cyan)' }}>
+              Historial de Recargas
+            </h3>
+            {depositOrders.length === 0 ? (
+              <div className="glass-panel" style={{ padding: '20px', textAlign: 'center', borderRadius: 'var(--radius-md)' }}>
+                <span style={{ fontSize: '1.5rem', display: 'block', marginBottom: '8px' }}>💳</span>
+                <span style={{ color: 'var(--text-muted)' }}>Aún no tienes recargas de saldo registradas.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {depositOrders.map((dep) => {
+                  const statusColors = {
+                    Completed: '#34d399',
+                    Verification: '#fbbf24',
+                    Pending: '#60a5fa',
+                    Rejected: '#f87171'
+                  };
+                  const statusLabels = {
+                    Completed: 'Acreditado',
+                    Verification: 'En Revisión',
+                    Pending: 'Pendiente',
+                    Rejected: 'Rechazado'
+                  };
+
+                  let parsedNotes = {};
+                  try {
+                    parsedNotes = typeof dep.customer_notes === 'string' ? JSON.parse(dep.customer_notes) : (dep.customer_notes || {});
+                  } catch(e) {}
+
+                  return (
+                    <div key={dep.id} className="glass-panel" style={{
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '12px 16px',
+                      border: '1px solid var(--border-glass)',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#fff' }}>
+                          Recarga #{dep.id.slice(0, 6)}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {new Date(dep.created_at).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', marginTop: '4px' }}>
+                          Método: {dep.payment_method || 'N/A'}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: statusColors[dep.status] || '#fff' }}>
+                          ${Number(dep.total_price || 0).toFixed(2)} USD
+                        </div>
+                        <div style={{ 
+                          fontSize: '0.75rem', 
+                          fontWeight: '700', 
+                          color: statusColors[dep.status] || '#fff',
+                          background: `${statusColors[dep.status] || '#fff'}22`,
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          display: 'inline-block',
+                          marginTop: '4px'
+                        }}>
+                          {statusLabels[dep.status] || dep.status}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COMPROBANTE OFICIAL CLIENTE (Comprobante 1 & 2) */}
+      {selectedOrderReceipt && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.88)',
+          backdropFilter: 'blur(10px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div className="glass-panel animate-fade" style={{
+            width: '100%',
+            maxWidth: '440px',
+            borderRadius: '16px',
+            border: selectedOrderReceipt.status === 'Completed' ? '2px solid #34d399' : '2px solid #06b6d4',
+            padding: '24px',
+            position: 'relative',
+            background: 'linear-gradient(160deg, #0b1120 0%, #061e2d 100%)',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.9)'
+          }}>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderReceipt(null)}
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#fff', fontSize: '1.4rem', cursor: 'pointer', zIndex: 10 }}
+            >
+              ✕
+            </button>
+
+            {(() => {
+              const notes = selectedOrderReceipt.parsedNotes || (typeof selectedOrderReceipt.customer_notes === 'string' ? JSON.parse(selectedOrderReceipt.customer_notes || '{}') : selectedOrderReceipt.customer_notes) || {};
+              const isCompleted = selectedOrderReceipt.status === 'Completed';
+              const nick = notes.validated_nickname || notes.player_nickname || 'Jugador';
+              const uid = notes.target_uid || notes['ID de Jugador (UID)'] || 'N/A';
+              const region = notes.region || 'US';
+              const likesBefore = Number(notes.likes_before || 0);
+              const metaTotal = Number(notes.likes_to_add || 2000);
+              const dailyDeliveries = Array.isArray(notes.daily_deliveries) ? notes.daily_deliveries : [];
+              const totalDelivered = Number(notes.total_likes_delivered || (dailyDeliveries.length > 0 ? dailyDeliveries.reduce((sum, d) => sum + Number(d.likes_sent || 0), 0) : Number(notes.likes_sent || notes.likes_added_actual || (isCompleted ? metaTotal : 0))));
+              const progressPct = Math.min(100, Math.round((totalDelivered / (metaTotal || 1)) * 100));
+              const likesNowOrMeta = Number(notes.likes_now || notes.likes_after || notes.target_likes_final || (likesBefore + (isCompleted ? totalDelivered : metaTotal)));
+
+              const isLikesOrder = notes.service_type === 'Free Fire Likes' || notes.likes_to_add || (selectedOrderReceipt.id && String(selectedOrderReceipt.id).includes('LIKE')) || selectedOrderReceipt.order_items?.some(i => i.products?.name?.toLowerCase().includes('like'));
+              
+              const productName = selectedOrderReceipt.order_items?.[0]?.products?.name || (isLikesOrder ? 'Paquete de Likes' : 'Recarga Digital');
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '82vh', overflowY: 'auto' }}>
+                  {/* Comprobante Visual Container (Capturable with html2canvas) */}
+                  <div
+                    id="comprobante-cliente-view"
+                    style={{
+                      background: '#0a0e1a',
+                      border: isCompleted ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(6, 182, 212, 0.4)',
+                      borderRadius: '14px',
+                      padding: '18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
+                    {/* Header */}
+                    <div style={{ textAlign: 'center', borderBottom: '1px dashed rgba(255,255,255,0.15)', paddingBottom: '10px' }}>
+                      <div style={{ fontSize: '0.82rem', color: isCompleted ? '#34d399' : 'var(--accent-cyan)', fontWeight: '900', letterSpacing: '0.05em' }}>
+                        {isCompleted ? 'COMPROBANTE 2, CLIENTE ✅' : (isLikesOrder && dailyDeliveries.length > 0 ? `COMPROBANTE EN CURSO (${dailyDeliveries.length} ENVÍOS) ⏳` : 'COMPROBANTE 1, CLIENTE ✅')}
+                      </div>
+                      <h2 style={{ color: '#fff', fontSize: '1.3rem', margin: '4px 0 0 0', fontWeight: '900', letterSpacing: '0.04em' }}>
+                        {isCompleted ? 'PEDIDO COMPLETADO' : (isLikesOrder && dailyDeliveries.length > 0 ? 'EN PROCESO DE ENTREGA' : 'PEDIDO RECIBIDO')}
+                      </h2>
+                      <div style={{ fontSize: '0.8rem', color: isCompleted ? '#34d399' : '#fbbf24', marginTop: '4px', fontWeight: 'bold' }}>
+                        Estado: {isCompleted ? '✅ COMPLETADO AL 100%' : (isLikesOrder ? `⏳ RECIBIDO, EN PROCESO (${progressPct}%)` : '⏳ RECIBIDO Y VERIFICADO')}
+                      </div>
+                    </div>
+
+                    {/* Product Name */}
+                    <div style={{ textAlign: 'center', margin: '4px 0' }}>
+                      <strong style={{ color: '#fff', fontSize: '1.1rem' }}>{productName}</strong>
+                    </div>
+
+                    {/* Progress Bar if multi-day LIKES */}
+                    {isLikesOrder && (dailyDeliveries.length > 0 || metaTotal > 2000) && (
+                      <div style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Progreso de Acreditaciones:</span>
+                          <strong style={{ color: isCompleted ? '#34d399' : '#06b6d4' }}>
+                            {totalDelivered.toLocaleString()} / {metaTotal.toLocaleString()} Likes ({progressPct}%)
+                          </strong>
+                        </div>
+                        <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${progressPct}%`, height: '100%', background: isCompleted ? '#34d399' : '#06b6d4', transition: 'width 0.4s ease' }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Nick and ID */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.92rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Nick:</span>
+                      <strong style={{ color: '#fff', letterSpacing: '0.05em' }}>{nick}</strong>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.92rem' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>ID:</span>
+                      <span style={{ color: 'var(--accent-cyan)', fontWeight: '900', fontFamily: 'monospace' }}>{uid}</span>
+                    </div>
+
+                    {region && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Región:</span>
+                        <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{region}</span>
+                      </div>
+                    )}
+
+                    {/* Likes Actuales / Antes (Solo para Likes) */}
+                    {isLikesOrder && (
+                      <>
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                            {isCompleted ? 'Likes Antes de Iniciar:' : 'Likes Iniciales:'}
+                          </span>
+                          <strong style={{ color: '#fff', fontSize: '1.1rem' }}>{likesBefore.toLocaleString()}</strong>
+                        </div>
+
+                        {/* Likes Añadir / Enviados */}
+                        <div style={{
+                          background: 'rgba(52, 211, 153, 0.1)',
+                          border: '1px solid rgba(52, 211, 153, 0.25)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <span style={{ color: '#34d399', fontWeight: '900', fontSize: '0.85rem' }}>
+                            {isCompleted ? 'TOTAL LIKES ENVIADOS:' : 'LIKES CONTRATADOS:'}
+                          </span>
+                          <strong style={{ color: '#34d399', fontSize: '1.15rem', fontWeight: '900' }}>
+                            +{metaTotal.toLocaleString()}
+                          </strong>
+                        </div>
+
+                        {/* Meta / Likes Ahora */}
+                        <div style={{
+                          background: 'rgba(251, 191, 36, 0.1)',
+                          border: '1px solid rgba(251, 191, 36, 0.25)',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <span style={{ color: '#fbbf24', fontWeight: '900', fontSize: '0.85rem' }}>
+                            {isCompleted ? 'LIKES ACTUALES (FINAL):' : 'META FINAL DE LIKES:'}
+                          </span>
+                          <strong style={{ color: '#fbbf24', fontSize: '1.15rem', fontWeight: '900' }}>
+                            {likesNowOrMeta.toLocaleString()}
+                          </strong>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Progressive Deliveries Log (Envíos Diarios Registrados) */}
+                  {dailyDeliveries.length > 0 && (
+                    <div style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      <div style={{ fontSize: '0.78rem', color: '#fbbf24', fontWeight: '900' }}>
+                        📜 ENVÍOS DIARIOS REGISTRADOS ({dailyDeliveries.length} ACREDITACIONES)
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '150px', overflowY: 'auto' }}>
+                        {dailyDeliveries.map((del, idx) => (
+                          <div key={del.id || idx} style={{
+                            background: 'rgba(0,0,0,0.3)',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(251, 191, 36, 0.2)',
+                            fontSize: '0.75rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}>
+                            <div>
+                              <strong style={{ color: '#fbbf24' }}>Día #{del.day_number || idx + 1}</strong>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>{new Date(del.date).toLocaleDateString()}</div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ color: '#34d399', fontWeight: '900' }}>+{del.likes_sent?.toLocaleString()} Likes</span>
+                              <div style={{ color: 'var(--accent-cyan)', fontSize: '0.68rem' }}>Total: {del.likes_now?.toLocaleString()}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const html2canvas = (await import('html2canvas')).default;
+                          const element = document.getElementById('comprobante-cliente-view');
+                          const canvas = await html2canvas(element, { backgroundColor: '#0a0e1a' });
+                          const dataUrl = canvas.toDataURL('image/png');
+                          const link = document.createElement('a');
+                          link.download = `Comprobante_${isCompleted ? 'Completado' : (isLikesOrder ? 'Likes' : 'Recarga')}_ALVSHOP_${uid}.png`;
+                          link.href = dataUrl;
+                          link.click();
+                        } catch (e) {
+                          alert('Error descargando comprobante: ' + e.message);
+                        }
+                      }}
+                      className="btn-cyan"
+                      style={{
+                        flex: 2,
+                        padding: '12px',
+                        fontWeight: '900',
+                        fontSize: '0.88rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      📥 Descargar Comprobante PNG
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOrderReceipt(null)}
+                      className="btn-glass"
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

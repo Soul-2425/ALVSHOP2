@@ -6,7 +6,13 @@ import {
   executeSupplierApi,
   getSupplierWalletBalance,
   getSupplierPinsCatalog,
+  getSupplierGamesCatalog,
+  getSupplierStreamingCatalog,
+  getSupplierVouchersCatalog,
+  getSupplierUnifiedCatalog,
   processGameRecharge,
+  formatSupplierError,
+  showSupplierAlert,
   RECARGAS_AMERICA_CONFIG,
   getActiveRecargasAmericaKey,
   setActiveRecargasAmericaKey,
@@ -39,7 +45,15 @@ export default function AdminIntegrations() {
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [walletBalance, setWalletBalance] = useState(null);
   const [loadingWallet, setLoadingWallet] = useState(false);
+
+  // V1 Catalogs
   const [catalogPins, setCatalogPins] = useState([]);
+  const [catalogGames, setCatalogGames] = useState([]);
+  const [catalogStreaming, setCatalogStreaming] = useState([]);
+  const [catalogVouchers, setCatalogVouchers] = useState([]);
+  const [catalogUnified, setCatalogUnified] = useState([]);
+  const [activeCatalogType, setActiveCatalogType] = useState('pins'); // 'pins', 'streaming', 'games', 'vouchers', 'catalog'
+  const [catalogSearch, setCatalogSearch] = useState('');
   const [loadingCatalog, setLoadingCatalog] = useState(false);
 
   const isSandbox = apiKeyInput.startsWith('ra_test_');
@@ -138,11 +152,33 @@ export default function AdminIntegrations() {
       const balRes = await getSupplierWalletBalance();
       if (balRes?.success) {
         setWalletBalance(balRes.data);
+      } else if (balRes?.status === 401) {
+        showSupplierAlert(balRes);
       }
 
-      const catRes = await getSupplierPinsCatalog();
-      if (catRes?.success && catRes.data) {
-        setCatalogPins(catRes.data);
+      // Consulta en paralelo de todos los catálogos de Recargas América V1
+      const [pinsRes, gamesRes, streamRes, vouchersRes, unifiedRes] = await Promise.allSettled([
+        getSupplierPinsCatalog(),
+        getSupplierGamesCatalog(),
+        getSupplierStreamingCatalog(),
+        getSupplierVouchersCatalog(),
+        getSupplierUnifiedCatalog()
+      ]);
+
+      if (pinsRes.status === 'fulfilled' && pinsRes.value?.success && pinsRes.value.data) {
+        setCatalogPins(pinsRes.value.data);
+      }
+      if (gamesRes.status === 'fulfilled' && gamesRes.value?.success && gamesRes.value.data) {
+        setCatalogGames(gamesRes.value.data);
+      }
+      if (streamRes.status === 'fulfilled' && streamRes.value?.success && streamRes.value.data) {
+        setCatalogStreaming(streamRes.value.data);
+      }
+      if (vouchersRes.status === 'fulfilled' && vouchersRes.value?.success && vouchersRes.value.data) {
+        setCatalogVouchers(vouchersRes.value.data);
+      }
+      if (unifiedRes.status === 'fulfilled' && unifiedRes.value?.success && unifiedRes.value.data) {
+        setCatalogUnified(unifiedRes.value.data);
       }
     } catch (err) {
       console.warn('Error Recargas America data:', err);
@@ -220,9 +256,12 @@ export default function AdminIntegrations() {
       setRechargeTestResult({ ...res, latencyMs: latency, package: selectedPkg });
       if (res.success) {
         soundEffects.playOrderSuccessSound();
+      } else {
+        showSupplierAlert(res);
       }
     } catch (err) {
       setRechargeTestResult({ success: false, error: err.message });
+      showSupplierAlert({ code: 'NETWORK_ERROR', error: err.message });
     } finally {
       setExecutingTestRecharge(false);
     }
@@ -595,60 +634,236 @@ export default function AdminIntegrations() {
             </form>
           </div>
 
-          {/* Live Free Fire Packages Table */}
-          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '20px', border: '1px solid var(--border-glass)' }}>
-            <h3 style={{ fontSize: '1rem', margin: '0 0 8px 0' }}>
-              📦 Paquetes de Diamantes & Costos del Proveedor (API en Vivo)
-            </h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Lista de paquetes sincronizados directamente desde `https://panel.recargasamerica.com/api/v1/products/pins`
-            </p>
+          {/* Live Recargas América V1 Multi-Catalog Browser */}
+          <div className="glass-panel" style={{ borderRadius: 'var(--radius-lg)', padding: '22px', border: '1px solid var(--border-glass)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <h3 style={{ fontSize: '1.05rem', margin: 0, color: '#fff', fontWeight: '800' }}>
+                    📦 Catálogos Recargas América V1 (API en Vivo)
+                  </h3>
+                  <span style={{
+                    fontSize: '0.68rem',
+                    fontWeight: '800',
+                    background: 'rgba(251, 191, 36, 0.15)',
+                    border: '1px solid rgba(251, 191, 36, 0.4)',
+                    color: '#fbbf24',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)'
+                  }}>
+                    🔒 Solo en Panel Admin (Pendiente de Publicación)
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Explora y audita en vivo los productos disponibles en los 5 endpoints oficiales del proveedor.
+                </p>
+              </div>
 
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={loadRecargasAmericaData}
+                  disabled={loadingCatalog}
+                  className="btn-cyan"
+                  style={{ padding: '7px 14px', fontSize: '0.78rem', fontWeight: '800' }}
+                >
+                  {loadingCatalog ? '🔄 Sincronizando...' : '🔄 Sincronizar Todos'}
+                </button>
+              </div>
+            </div>
+
+            {/* Catalog Sub-Tabs */}
+            <div style={{
+              display: 'flex',
+              gap: '6px',
+              borderBottom: '1px solid var(--border-glass)',
+              paddingBottom: '10px',
+              marginBottom: '16px',
+              overflowX: 'auto'
+            }}>
+              {[
+                { id: 'pins', label: '🎟️ PINs & Recargas', count: catalogPins.length },
+                { id: 'streaming', label: '🎬 Streaming', count: catalogStreaming.length },
+                { id: 'games', label: '🎮 Paquetes de Juegos', count: catalogGames.length },
+                { id: 'vouchers', label: '🎫 Vales Alternativos', count: catalogVouchers.length },
+                { id: 'catalog', label: '🌐 Catálogo Unificado', count: catalogUnified.length }
+              ].map(tab => {
+                const isActive = activeCatalogType === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveCatalogType(tab.id)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: isActive ? 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(30, 58, 138, 0.45) 100%)' : 'rgba(255, 255, 255, 0.03)',
+                      border: isActive ? '1px solid var(--border-cyan)' : '1px solid var(--border-glass)',
+                      color: isActive ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                      fontSize: '0.78rem',
+                      fontWeight: isActive ? '800' : '600',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <span>{tab.label}</span>
+                    <span style={{
+                      background: isActive ? 'var(--accent-cyan)' : 'rgba(255, 255, 255, 0.08)',
+                      color: isActive ? '#0d111a' : '#cbd5e1',
+                      fontSize: '0.68rem',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      fontWeight: '800'
+                    }}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Filter Search */}
+            <div style={{ marginBottom: '14px', maxWidth: '320px' }}>
+              <input
+                type="text"
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                placeholder="Filtrar por nombre, SKU o ID..."
+                style={{
+                  width: '100%',
+                  padding: '7px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: '#0d111a',
+                  border: '1px solid var(--border-glass)',
+                  color: '#fff',
+                  fontSize: '0.78rem'
+                }}
+              />
+            </div>
+
+            {/* Catalog Table */}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-glass)', textAlign: 'left', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '8px' }}>ID</th>
-                    <th style={{ padding: '8px' }}>SKU</th>
-                    <th style={{ padding: '8px' }}>Nombre del Paquete</th>
-                    <th style={{ padding: '8px' }}>Tipo</th>
-                    <th style={{ padding: '8px' }}>Costo Proveedor ($)</th>
+                    {activeCatalogType === 'pins' && <th style={{ padding: '8px' }}>SKU</th>}
+                    {activeCatalogType === 'vouchers' && <th style={{ padding: '8px' }}>SKU</th>}
+                    {activeCatalogType === 'catalog' && <th style={{ padding: '8px' }}>SKU</th>}
+                    {activeCatalogType === 'games' && <th style={{ padding: '8px' }}>Juego</th>}
+                    <th style={{ padding: '8px' }}>
+                      {activeCatalogType === 'games' ? 'Paquete / Ítem' : (activeCatalogType === 'streaming' ? 'Cuenta / Servicio' : 'Nombre del Producto')}
+                    </th>
+                    {activeCatalogType === 'pins' && <th style={{ padding: '8px' }}>Tipo</th>}
+                    {activeCatalogType === 'vouchers' && <th style={{ padding: '8px' }}>Tipo / Requisitos</th>}
+                    {activeCatalogType === 'catalog' && <th style={{ padding: '8px' }}>Tipo / Requisitos</th>}
+                    {activeCatalogType === 'games' && <th style={{ padding: '8px' }}>Campos del Jugador</th>}
+                    {activeCatalogType === 'streaming' && <th style={{ padding: '8px' }}>Stock</th>}
+                    <th style={{ padding: '8px' }}>Precio Proveedor</th>
                     <th style={{ padding: '8px', textAlign: 'center' }}>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingCatalog ? (
-                    <tr><td colSpan="6" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>Cargando catálogo del proveedor...</td></tr>
-                  ) : catalogPins.length === 0 ? (
-                    [
-                      { id: 340, sku: 'FFCH100R', name: 'Recarga Free Fire - 100 Diamantes + 10% Bono', type: 'recharge', price: 0.712 },
-                      { id: 343, sku: 'FFCH310R', name: 'Recarga Free Fire - 310 Diamantes + 10% Bono', type: 'recharge', price: 2.1374 },
-                      { id: 345, sku: 'FFCH520R', name: 'Recarga Free Fire - 520 Diamantes + 10% Bono', type: 'recharge', price: 3.6164 },
-                      { id: 341, sku: 'FFCH1060R', name: 'Recarga Free Fire - 1060 Diamantes + 10% Bono', type: 'recharge', price: 6.706 },
-                      { id: 342, sku: 'FFCH2180R', name: 'Recarga Free Fire - 2.180 Diamantes + 10% Bono', type: 'recharge', price: 13.3209 },
-                      { id: 344, sku: 'FFCH5600R', name: 'Recarga Free Fire - 5.600 Diamantes + 10% Bono', type: 'recharge', price: 33.8848 }
-                    ].map(p => (
+                    <tr>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                        ⏳ Consultando endpoint /{activeCatalogType === 'pins' ? 'products/pins' : (activeCatalogType === 'streaming' ? 'products/streaming' : (activeCatalogType === 'games' ? 'products/games' : (activeCatalogType === 'vouchers' ? 'products/vouchers' : 'products/catalog')))}...
+                      </td>
+                    </tr>
+                  ) : (() => {
+                    let items = [];
+                    if (activeCatalogType === 'pins') items = catalogPins;
+                    else if (activeCatalogType === 'streaming') items = catalogStreaming;
+                    else if (activeCatalogType === 'games') items = catalogGames;
+                    else if (activeCatalogType === 'vouchers') items = catalogVouchers;
+                    else if (activeCatalogType === 'catalog') items = catalogUnified;
+
+                    // Apply filter
+                    if (catalogSearch.trim()) {
+                      const q = catalogSearch.toLowerCase().trim();
+                      items = items.filter(it => 
+                        String(it.id).includes(q) ||
+                        (it.name && it.name.toLowerCase().includes(q)) ||
+                        (it.package && it.package.toLowerCase().includes(q)) ||
+                        (it.game && it.game.toLowerCase().includes(q)) ||
+                        (it.sku && it.sku.toLowerCase().includes(q))
+                      );
+                    }
+
+                    if (items.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                            No hay productos disponibles o sincronizados para este endpoint en este momento.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return items.map(p => (
                       <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
                         <td style={{ padding: '8px', color: 'var(--accent-cyan)', fontWeight: '700' }}>#{p.id}</td>
-                        <td style={{ padding: '8px', fontFamily: 'monospace' }}>{p.sku}</td>
-                        <td style={{ padding: '8px', fontWeight: '700', color: '#fff' }}>{p.name}</td>
-                        <td style={{ padding: '8px' }}><span className="badge-cyan" style={{ fontSize: '0.7rem' }}>{p.type}</span></td>
-                        <td style={{ padding: '8px', color: '#34d399', fontWeight: '800' }}>${Number(p.price).toFixed(2)} USD</td>
-                        <td style={{ padding: '8px', textAlign: 'center' }}><span style={{ color: '#34d399' }}>🟢 Activo</span></td>
+
+                        {(activeCatalogType === 'pins' || activeCatalogType === 'vouchers' || activeCatalogType === 'catalog') && (
+                          <td style={{ padding: '8px', fontFamily: 'monospace', color: '#94a3b8' }}>{p.sku || '-'}</td>
+                        )}
+
+                        {activeCatalogType === 'games' && (
+                          <td style={{ padding: '8px', color: 'var(--accent-cyan)', fontWeight: '700' }}>{p.game || 'Free Fire'}</td>
+                        )}
+
+                        <td style={{ padding: '8px', fontWeight: '700', color: '#fff' }}>
+                          {p.name || p.package || 'Producto'}
+                        </td>
+
+                        {activeCatalogType === 'pins' && (
+                          <td style={{ padding: '8px' }}>
+                            <span className="badge-cyan" style={{ fontSize: '0.7rem' }}>{p.type || 'pin'}</span>
+                          </td>
+                        )}
+
+                        {activeCatalogType === 'streaming' && (
+                          <td style={{ padding: '8px' }}>
+                            <span style={{ color: p.stock > 0 ? '#34d399' : '#f87171', fontWeight: '700' }}>
+                              {p.stock !== undefined ? `${p.stock} pantallas` : 'Disponible'}
+                            </span>
+                          </td>
+                        )}
+
+                        {activeCatalogType === 'games' && (
+                          <td style={{ padding: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            {Array.isArray(p.input_fields) && p.input_fields.length > 0
+                              ? p.input_fields.map(f => f.label || f.name).join(', ')
+                              : 'Player ID'}
+                          </td>
+                        )}
+
+                        {(activeCatalogType === 'vouchers' || activeCatalogType === 'catalog') && (
+                          <td style={{ padding: '8px', fontSize: '0.75rem' }}>
+                            <span className="badge-cyan" style={{ fontSize: '0.68rem', marginRight: '6px' }}>{p.type || 'recharge'}</span>
+                            <span style={{ color: 'var(--text-muted)' }}>
+                              {Array.isArray(p.required_fields) && p.required_fields.length > 0
+                                ? `Req: ${p.required_fields.join(', ')}`
+                                : 'Req: player_id'}
+                            </span>
+                          </td>
+                        )}
+
+                        <td style={{ padding: '8px', color: '#34d399', fontWeight: '800' }}>
+                          ${Number(p.price || 0).toFixed(2)} USD
+                        </td>
+
+                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                          <span style={{ color: (p.available === false || p.stock === 0) ? '#f87171' : '#34d399', fontSize: '0.75rem', fontWeight: '700' }}>
+                            {(p.available === false || p.stock === 0) ? '🔴 Agotado' : '🟢 Activo'}
+                          </span>
+                        </td>
                       </tr>
-                    ))
-                  ) : (
-                    catalogPins.map(p => (
-                      <tr key={p.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
-                        <td style={{ padding: '8px', color: 'var(--accent-cyan)', fontWeight: '700' }}>#{p.id}</td>
-                        <td style={{ padding: '8px', fontFamily: 'monospace' }}>{p.sku}</td>
-                        <td style={{ padding: '8px', fontWeight: '700', color: '#fff' }}>{p.name}</td>
-                        <td style={{ padding: '8px' }}><span className="badge-cyan" style={{ fontSize: '0.7rem' }}>{p.type}</span></td>
-                        <td style={{ padding: '8px', color: '#34d399', fontWeight: '800' }}>${Number(p.price).toFixed(2)} USD</td>
-                        <td style={{ padding: '8px', textAlign: 'center' }}><span style={{ color: '#34d399' }}>🟢 Activo</span></td>
-                      </tr>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>

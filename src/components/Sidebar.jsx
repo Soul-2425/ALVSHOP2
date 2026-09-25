@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 
 export default function Sidebar({ isOpen, onClose }) {
-  const { user, profile, role, isMuted, toggleMute } = useApp();
+  const { user, profile, role, isMuted, toggleMute, config } = useApp();
   const location = useLocation();
 
   const handleLogout = async () => {
@@ -205,6 +205,30 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {/* Footer Login/Logout */}
         <div style={{ padding: '16px', borderTop: '1px solid var(--border-glass)' }}>
+          {/* TikTok / Community Button */}
+          <a
+            href={config?.social_links?.tiktok || 'https://tiktok.com/@alvshop'}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              width: '100%',
+              padding: '10px',
+              background: 'linear-gradient(90deg, #ff0050 0%, #00f2fe 100%)',
+              color: '#fff',
+              borderRadius: 'var(--radius-md)',
+              fontWeight: '800',
+              textDecoration: 'none',
+              marginBottom: '12px',
+              fontSize: '0.9rem'
+            }}
+          >
+            <span>🎵</span> Síguenos en TikTok
+          </a>
+
           {user ? (
             <button
               onClick={handleLogout}

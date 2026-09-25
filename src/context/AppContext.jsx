@@ -8,10 +8,17 @@ const AppContext = createContext();
 export async function fetchServerBalances() {
   try {
     const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
-    const endpoints = [`/api/v1/balances`, `http://${host}:5000/api/v1/balances`];
+    const endpoints = [`/api/v1/balances`];
+    if (host === 'localhost' || host === '127.0.0.1') {
+      endpoints.push(`http://${host}:5000/api/v1/balances`);
+    }
+
     for (const url of endpoints) {
       try {
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 600);
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: controller.signal });
+        clearTimeout(timeoutId);
         if (res.ok) {
           const data = await res.json();
           if (data.balances) {
@@ -124,15 +131,23 @@ export function AppProvider({ children }) {
 
   const [isLoading, setIsLoading] = useState(true);
 
-  // Add Notification to floating Toast queue with Sound
+  // Add Notification to floating Toast queue with Sound & Anti-Duplication
   const addNotification = useCallback((notif) => {
-    const id = notif.id || 'notif-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
-    const newNotif = { ...notif, id, created_at: notif.created_at || new Date().toISOString() };
+    const orderId = notif.metadata?.orderId || notif.orderId;
+    const notifBody = notif.body || '';
 
     setNotifications((prev) => {
-      const exists = prev.some((n) => n.id === id);
-      if (exists) return prev;
-      return [newNotif, ...prev];
+      // Prevent duplicate notifications for the same order within the queue
+      if (orderId && prev.some(n => (n.metadata?.orderId === orderId || n.orderId === orderId))) {
+        return prev;
+      }
+      if (prev.some(n => n.body === notifBody)) {
+        return prev;
+      }
+
+      const id = notif.id || 'notif-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+      const newNotif = { ...notif, id, created_at: notif.created_at || new Date().toISOString() };
+      return [newNotif, ...prev.slice(0, 7)]; // Keep max 8 toasts
     });
     setUnreadCount((prev) => prev + 1);
 
@@ -142,6 +157,33 @@ export function AppProvider({ children }) {
       else if (notif.type === 'admin_new_order' || notif.type === 'order_created') soundEffects.playNewOrderAdminSound();
       else if (notif.type === 'support_reply' || notif.type === 'admin_support_message') soundEffects.playChatMessageSound();
       else if (notif.type === 'feed_interaction') soundEffects.playFeedInteractionSound();
+    }
+
+    // Disparar Notificación Nativa del Sistema Operativo (Windows / Android) si está fuera de la ventana
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(notif.title || 'ALVSHOP Notificación', {
+              body: notif.body || 'Tienes una nueva actualización en tu cuenta.',
+              icon: '/favicon.svg',
+              badge: '/favicon.svg',
+              vibrate: [200, 100, 200],
+              tag: notif.id || `alv-${Date.now()}`,
+              data: { url: notif.metadata?.url || '/' }
+            });
+          });
+        } else {
+          new Notification(notif.title || 'ALVSHOP Notificación', {
+            body: notif.body || 'Tienes una nueva actualización en tu cuenta.',
+            icon: '/favicon.svg',
+            badge: '/favicon.svg',
+            tag: notif.id || `alv-${Date.now()}`
+          });
+        }
+      } catch (nativeErr) {
+        console.warn('Native notification notice:', nativeErr);
+      }
     }
   }, [isMuted]);
 
@@ -367,17 +409,25 @@ export function AppProvider({ children }) {
       setProfile(prev => prev ? { ...prev, wallet_balance: finalBal } : prev);
     }
 
-    // Send to backend microservice to persist across all devices
+    // Send to backend microservice to persist across all devices (with 600ms timeout)
     try {
       const host = typeof window !== 'undefined' ? (window.location.hostname || 'localhost') : 'localhost';
-      const endpoints = [`/api/v1/balance/update`, `http://${host}:5000/api/v1/balance/update`];
+      const endpoints = [`/api/v1/balance/update`];
+      if (host === 'localhost' || host === '127.0.0.1') {
+        endpoints.push(`http://${host}:5000/api/v1/balance/update`);
+      }
+
       for (const ep of endpoints) {
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 600);
           await fetch(ep, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, email: userEmail, balance: finalBal })
+            body: JSON.stringify({ userId, email: userEmail, balance: finalBal }),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
           break;
         } catch (e) {}
       }
@@ -588,6 +638,27 @@ export function AppProvider({ children }) {
     });
   };
 
+  const requestNativePushPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return false;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        if ('serviceWorker' in navigator) {
+          try {
+            await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          } catch (e) {}
+        }
+        addNotification({
+          type: 'general',
+          title: '🔔 ¡Notificaciones de Escritorio Activas!',
+          body: 'Ahora recibirás alertas de pedidos y compras en la barra de Windows y tu teléfono.'
+        });
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -603,6 +674,7 @@ export function AppProvider({ children }) {
         exchangeRate,
         setExchangeRate,
         rateMxn,
+        requestNativePushPermission,
         setRateMxn,
         rateCop,
         setRateCop,

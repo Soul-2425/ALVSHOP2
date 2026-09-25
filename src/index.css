@@ -242,3 +242,33 @@ button, input, select, textarea {
     padding-bottom: 40px;
   }
 }
+
+@keyframes marqueeScroll {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.marquee-ticker {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marqueeScroll 25s linear infinite;
+}
+.marquee-ticker:hover {
+  animation-play-state: paused;
+}
+
+
+@media (max-width: 800px) {
+  .admin-support-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .admin-support-grid > div:first-child {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .store-grid-mobile-3 { grid-template-columns: repeat(3, 1fr) !important; gap: 8px !important; }
+  .store-grid-mobile-2 { grid-template-columns: repeat(2, 1fr) !important; }
+}

@@ -32,7 +32,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES = {
   },
   admin_new_order: {
     title: '🛒 ¡Nuevo Pedido en Tienda!',
-    body: 'Orden #{{order_id}} por ${{amount}} USDT ({{payment_method}}) de {{customer_name}}.'
+    body: 'Orden #{{order_id}} • ${{amount}} USDT • {{customer_name}} ({{payment_method}})'
   },
   support_reply: {
     title: '💬 Mensaje de Soporte Técnico',

@@ -16,13 +16,24 @@ export default function Header({ onToggleSidebar }) {
     role,
     notifications,
     unreadCount,
-    clearAllNotifications
+    clearAllNotifications,
+    requestNativePushPermission
   } = useApp();
 
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [pushStatus, setPushStatus] = useState(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+  });
   const navigate = useNavigate();
+
+  const handleEnablePush = async () => {
+    if (requestNativePushPermission) {
+      const res = await requestNativePushPermission();
+      if (res) setPushStatus('granted');
+    }
+  };
 
   // Helper to get notification type label & badge styling
   const getTypeBadge = (type) => {
@@ -45,6 +56,24 @@ export default function Header({ onToggleSidebar }) {
 
   return (
     <>
+      {/* Live Announcement / Purchase Ticker */}
+      <div style={{
+        backgroundColor: 'rgba(6, 182, 212, 0.12)',
+        borderBottom: '1px solid rgba(6, 182, 212, 0.25)',
+        padding: '4px 0',
+        overflow: 'hidden',
+        fontSize: '0.75rem',
+        fontWeight: '800',
+        color: '#e2e8f0',
+        letterSpacing: '0.03em',
+        display: 'flex',
+        alignItems: 'center'
+      }}>
+        <div className="marquee-ticker">
+          {config?.announcement_ticker || config?.social_links?.announcement_ticker || '🔥 Cliente compró 2,000 Likes ❤️ • Cliente compró 6,000 💎 Free Fire • Descuentos especiales activos hoy ⚡'}
+        </div>
+      </div>
+
       <header style={{
         position: 'sticky',
         top: 0,
@@ -208,6 +237,35 @@ export default function Header({ onToggleSidebar }) {
                         </button>
                       </div>
                     </div>
+
+                    {/* Enable Desktop Notification Banner if not granted */}
+                    {pushStatus !== 'granted' && pushStatus !== 'unsupported' && (
+                      <div style={{
+                        background: 'rgba(6, 182, 212, 0.12)',
+                        border: '1px solid var(--border-cyan)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '10px',
+                        marginBottom: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        <div style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>💻</span> Notificaciones en Windows / Celular
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          Recibe avisos de pedidos y recargas aunque tengas la ventana minimizada.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleEnablePush}
+                          className="btn-cyan"
+                          style={{ padding: '6px 10px', fontSize: '0.75rem', fontWeight: 'bold' }}
+                        >
+                          🔔 Activar Notificaciones de Escritorio
+                        </button>
+                      </div>
+                    )}
 
                     <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, paddingRight: '4px' }}>
                       {notifications.length === 0 ? (

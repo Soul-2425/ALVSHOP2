@@ -115,15 +115,15 @@ export default function AdminUsers() {
   const handleRoleChange = async (userId, newRole) => {
     setUpdatingId(userId);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ role: newRole })
-        .eq('id', userId);
+      const { data, error } = await supabase.rpc('admin_set_user_role', {
+        target_user_id: userId,
+        new_role: newRole
+      });
 
-      if (!error) {
+      if (!error && data?.success) {
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
       } else {
-        alert('Error actualizando rol: ' + error.message);
+        alert('Error actualizando rol: ' + (error?.message || 'Acceso denegado'));
       }
     } catch (err) {
       alert('Error: ' + err.message);

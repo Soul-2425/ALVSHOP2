@@ -25,3 +25,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary and test files
+scratch/
+test.jsx
+test1.jsx
+updatePurchase.cjs
+run_sql.js
+orders.json

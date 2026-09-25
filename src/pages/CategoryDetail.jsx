@@ -46,169 +46,12 @@ const DEFAULT_FALLBACK_CATEGORIES = [
   }
 ];
 
-const DEFAULT_SEED_PRODUCTS = [
-  {
-    id: 'ef5c0946-de86-428e-97f1-2222b5913184',
-    name: '100 + 10 Diamantes Free Fire (Recarga Directa)',
-    price_public: 1.09,
-    price_reseller: 0.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '86b169a9-65a8-4248-97c2-e9c0f2a4a832',
-    name: '310 + 31 Diamantes Free Fire (Recarga Directa)',
-    price_public: 3.29,
-    price_reseller: 3.09,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '4f7bb6b9-c17f-4bcb-84c2-a2b88d11d369',
-    name: '520 + 52 Diamantes Free Fire (Recarga Directa)',
-    price_public: 5.39,
-    price_reseller: 4.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '8f8537eb-98a2-4fef-a632-acf010cb3c85',
-    name: '1060 + 106 Diamantes Free Fire (Recarga Directa)',
-    price_public: 10.79,
-    price_reseller: 9.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '923c52eb-07af-4725-9f0a-bec1f705fddc',
-    name: '2180 + 218 Diamantes Free Fire (Recarga Directa)',
-    price_public: 21.49,
-    price_reseller: 19.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '17b06f94-9608-40e2-96a5-d24e207ddbb9',
-    name: '5600 + 560 Diamantes Free Fire (Recarga Directa)',
-    price_public: 52.99,
-    price_reseller: 49.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: 'ac987ed2-e023-473a-9297-68ec32fc7d6b',
-    name: 'Pin Digital Free Fire 100 Diamantes',
-    price_public: 1.15,
-    price_reseller: 1.05,
-    stock: 999,
-    is_active: true,
-    validation_type: 'PIN',
-    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
-  },
-  {
-    id: '9d7b55d3-f25e-411a-bc53-3894a79b9a70',
-    name: 'Pin Digital Free Fire 310 Diamantes',
-    price_public: 3.35,
-    price_reseller: 3.15,
-    stock: 999,
-    is_active: true,
-    validation_type: 'PIN',
-    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
-  },
-  {
-    id: '773f16aa-1944-48cd-b511-395042d656ad',
-    name: 'Pin Digital Free Fire 520 Diamantes',
-    price_public: 5.45,
-    price_reseller: 5.15,
-    stock: 999,
-    is_active: true,
-    validation_type: 'PIN',
-    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
-  },
-  {
-    id: '7ab4da9e-df66-4711-a77a-7e8d0b4365f7',
-    name: '99 CAJAS EVO',
-    price_public: 4.00,
-    price_reseller: 3.50,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: 'e2bacb18-3220-4c13-b134-04a87e8cf034',
-    name: '99 Cajas de Fragmentos',
-    price_public: 3.00,
-    price_reseller: 2.50,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: '672c5c36-414d-4e1e-a050-523a2809fadc',
-    name: 'Skin - 6k 💎',
-    price_public: 6.00,
-    price_reseller: 5.50,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: 'f33d04f0-643d-4511-a72a-d40cf7f64960',
-    name: 'Pase FF',
-    price_public: 2.00,
-    price_reseller: 1.80,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: '9f4137b0-70af-449c-97e9-520d7a105bbf',
-    name: 'Bio Larga FF',
-    price_public: 2.50,
-    price_reseller: 2.00,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Bio Larga', category_id: 'bio-larga-id' }
-  }
-];
-
 export default function CategoryDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { formatPrice, currency } = useApp();
+  const { formatPrice, currency, config } = useApp();
 
-  // Instant In-Memory Cache Initialization
+  // Instant In-Memory Cache Initialization (Safe against dummy seed data)
   const [allCategories, setAllCategories] = useState(() => {
     try {
       const cached = localStorage.getItem(CACHE_KEY_CATS);
@@ -234,17 +77,40 @@ export default function CategoryDetail() {
       const cached = localStorage.getItem(CACHE_KEY_PRODS);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed) && parsed.length > 0 && !parsed.some(p => p.id === 'ef5c0946-de86-428e-97f1-2222b5913184')) {
+          return parsed;
+        }
       }
     } catch (e) {}
-    return DEFAULT_SEED_PRODUCTS;
+    return [];
   });
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_PRODS);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0 && !parsed.some(p => p.id === 'ef5c0946-de86-428e-97f1-2222b5913184')) {
+          return false;
+        }
+      }
+    } catch (e) {}
+    return true;
+  });
 
   // Filters inside category
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Clear any corrupted or seed dummy cache on mount
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_PRODS);
+      if (cached && cached.includes('ef5c0946-de86-428e-97f1-2222b5913184')) {
+        localStorage.removeItem(CACHE_KEY_PRODS);
+      }
+    } catch (e) {}
+  }, []);
 
   // Fast Flat Parallel Fetch (No slow nested joins)
   useEffect(() => {
@@ -262,7 +128,7 @@ export default function CategoryDetail() {
 
         const cats = (catsRes.data && catsRes.data.length > 0) ? catsRes.data : DEFAULT_FALLBACK_CATEGORIES;
         const subs = subsRes.data || [];
-        const rawProds = (prodsRes.data && prodsRes.data.length > 0) ? prodsRes.data : DEFAULT_SEED_PRODUCTS;
+        const rawProds = prodsRes.data || [];
 
         // In-Memory Fast Join (0.1ms)
         const catMap = new Map(cats.map(c => [c.id, c]));
@@ -285,6 +151,8 @@ export default function CategoryDetail() {
 
       } catch (err) {
         console.warn('Error cargando datos de categoría:', err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
     }
 
@@ -464,13 +332,18 @@ export default function CategoryDetail() {
 
           {currentCategory.image_url && (
             <div style={{
-              width: '120px',
-              height: '120px',
-              borderRadius: 'var(--radius-md)',
+              position: 'absolute',
+              right: '-10px',
+              top: '-10px',
+              width: '150px',
+              height: '150px',
+              opacity: 0.15,
+              pointerEvents: 'none',
+              borderRadius: '50%',
               overflow: 'hidden',
-              border: '2px solid var(--border-cyan)',
-              boxShadow: '0 0 20px rgba(6, 182, 212, 0.3)',
-              background: '#000'
+              filter: 'grayscale(100%)',
+              maskImage: 'linear-gradient(to bottom, black, transparent)',
+              WebkitMaskImage: 'linear-gradient(to bottom, black, transparent)'
             }}>
               <img
                 src={currentCategory.image_url}
@@ -562,9 +435,43 @@ export default function CategoryDetail() {
 
           {/* Products Grid */}
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⏳</div>
-              <p>Cargando productos...</p>
+            <div
+              className="products-grid-responsive"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '16px'
+              }}
+            >
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div
+                  key={i}
+                  className="glass-panel"
+                  style={{
+                    borderRadius: 'var(--radius-lg)',
+                    overflow: 'hidden',
+                    minHeight: '260px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    border: '1px solid var(--border-glass)',
+                    background: 'linear-gradient(180deg, rgba(20, 26, 40, 0.6) 0%, rgba(10, 14, 22, 0.9) 100%)',
+                    animation: 'pulse 1.5s infinite ease-in-out'
+                  }}
+                >
+                  <div style={{ paddingTop: '65%', background: 'rgba(255, 255, 255, 0.03)', position: 'relative' }}>
+                    <div style={{ position: 'absolute', top: '8px', right: '8px', width: '70px', height: '14px', borderRadius: 'var(--radius-full)', background: 'rgba(255, 255, 255, 0.06)' }} />
+                  </div>
+                  <div style={{ padding: '12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ width: '40%', height: '10px', background: 'rgba(6, 182, 212, 0.25)', borderRadius: '4px' }} />
+                    <div style={{ width: '85%', height: '14px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px' }} />
+                    <div style={{ width: '60%', height: '14px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '4px' }} />
+                    <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ width: '50px', height: '18px', background: 'rgba(6, 182, 212, 0.2)', borderRadius: '4px' }} />
+                      <div style={{ width: '70px', height: '28px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '6px' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="glass-panel" style={{
@@ -609,11 +516,11 @@ export default function CategoryDetail() {
         </>
       )}
 
-      {/* Responsive 2-column styling for Mobile */}
+      {/* Responsive columns styling for Mobile */}
       <style>{`
         @media (max-width: 640px) {
           .products-grid-responsive {
-            grid-template-columns: repeat(2, 1fr) !important;
+            grid-template-columns: repeat(${config?.social_links?.grid_columns_mobile === '3' ? '3' : '2'}, 1fr) !important;
             gap: 10px !important;
           }
         }

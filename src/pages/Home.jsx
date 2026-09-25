@@ -47,169 +47,12 @@ const DEFAULT_FALLBACK_CATEGORIES = [
   }
 ];
 
-const DEFAULT_SEED_PRODUCTS = [
-  {
-    id: 'ef5c0946-de86-428e-97f1-2222b5913184',
-    name: '100 + 10 Diamantes Free Fire (Recarga Directa)',
-    price_public: 1.09,
-    price_reseller: 0.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '86b169a9-65a8-4248-97c2-e9c0f2a4a832',
-    name: '310 + 31 Diamantes Free Fire (Recarga Directa)',
-    price_public: 3.29,
-    price_reseller: 3.09,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '4f7bb6b9-c17f-4bcb-84c2-a2b88d11d369',
-    name: '520 + 52 Diamantes Free Fire (Recarga Directa)',
-    price_public: 5.39,
-    price_reseller: 4.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '8f8537eb-98a2-4fef-a632-acf010cb3c85',
-    name: '1060 + 106 Diamantes Free Fire (Recarga Directa)',
-    price_public: 10.79,
-    price_reseller: 9.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '923c52eb-07af-4725-9f0a-bec1f705fddc',
-    name: '2180 + 218 Diamantes Free Fire (Recarga Directa)',
-    price_public: 21.49,
-    price_reseller: 19.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: '17b06f94-9608-40e2-96a5-d24e207ddbb9',
-    name: '5600 + 560 Diamantes Free Fire (Recarga Directa)',
-    price_public: 52.99,
-    price_reseller: 49.99,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Recarga Directa', category_id: 'c4e3fbcf-e74f-4d64-912c-569df4be476b' }
-  },
-  {
-    id: 'ac987ed2-e023-473a-9297-68ec32fc7d6b',
-    name: 'Pin Digital Free Fire 100 Diamantes',
-    price_public: 1.15,
-    price_reseller: 1.05,
-    stock: 999,
-    is_active: true,
-    validation_type: 'PIN',
-    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
-  },
-  {
-    id: '9d7b55d3-f25e-411a-bc53-3894a79b9a70',
-    name: 'Pin Digital Free Fire 310 Diamantes',
-    price_public: 3.35,
-    price_reseller: 3.15,
-    stock: 999,
-    is_active: true,
-    validation_type: 'PIN',
-    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
-  },
-  {
-    id: '773f16aa-1944-48cd-b511-395042d656ad',
-    name: 'Pin Digital Free Fire 520 Diamantes',
-    price_public: 5.45,
-    price_reseller: 5.15,
-    stock: 999,
-    is_active: true,
-    validation_type: 'PIN',
-    image_url: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Pines Digitales', category_id: 'pines-ff-id' }
-  },
-  {
-    id: '7ab4da9e-df66-4711-a77a-7e8d0b4365f7',
-    name: '99 CAJAS EVO',
-    price_public: 4.00,
-    price_reseller: 3.50,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: 'e2bacb18-3220-4c13-b134-04a87e8cf034',
-    name: '99 Cajas de Fragmentos',
-    price_public: 3.00,
-    price_reseller: 2.50,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: '672c5c36-414d-4e1e-a050-523a2809fadc',
-    name: 'Skin - 6k 💎',
-    price_public: 6.00,
-    price_reseller: 5.50,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: 'f33d04f0-643d-4511-a72a-d40cf7f64960',
-    name: 'Pase FF',
-    price_public: 2.00,
-    price_reseller: 1.80,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Regalos FF', category_id: 'regalos-ff-id' }
-  },
-  {
-    id: '9f4137b0-70af-449c-97e9-520d7a105bbf',
-    name: 'Bio Larga FF',
-    price_public: 2.50,
-    price_reseller: 2.00,
-    stock: 999,
-    is_active: true,
-    validation_type: 'Free Fire',
-    image_url: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=400&q=80',
-    subcategories: { name: 'Bio Larga', category_id: 'bio-larga-id' }
-  }
-];
-
 export default function Home() {
   const { config, profile } = useApp();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Initialize state with cache or default seed
+  // Initialize state with cache or default fallback categories
   const [allCategories, setAllCategories] = useState(() => {
     try {
       const cached = localStorage.getItem(CACHE_KEY_CATS);
@@ -235,13 +78,34 @@ export default function Home() {
       const cached = localStorage.getItem(CACHE_KEY_PRODS);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed) && parsed.length > 0 && !parsed.some(p => p.id === 'ef5c0946-de86-428e-97f1-2222b5913184')) {
+          return parsed;
+        }
       }
     } catch (e) {}
-    return DEFAULT_SEED_PRODUCTS;
+    return [];
   });
 
-  const [initialLoading, setInitialLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_CATS);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) return false;
+      }
+    } catch (e) {}
+    return true;
+  });
+
+  // Clear any corrupted or seed dummy cache on mount
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_PRODS);
+      if (cached && cached.includes('ef5c0946-de86-428e-97f1-2222b5913184')) {
+        localStorage.removeItem(CACHE_KEY_PRODS);
+      }
+    } catch (e) {}
+  }, []);
 
   // Active Category & Subcategory Selection
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'categories');
@@ -265,7 +129,7 @@ export default function Home() {
 
         const cats = (catsRes.data && catsRes.data.length > 0) ? catsRes.data : DEFAULT_FALLBACK_CATEGORIES;
         const subs = subsRes.data || [];
-        const rawProds = (prodsRes.data && prodsRes.data.length > 0) ? prodsRes.data : DEFAULT_SEED_PRODUCTS;
+        const rawProds = prodsRes.data || [];
 
         // Fast In-Memory Join
         const catMap = new Map(cats.map(c => [c.id, c]));
@@ -432,6 +296,44 @@ export default function Home() {
         </div>
       </div>
 
+
+      {/* Primary Section: Diamond Packages */}
+      {(() => {
+        const diamondCategory = allCategories.find(c => c.name?.toLowerCase().includes('diamante'));
+        const diamondProducts = diamondCategory ? allProducts.filter(p => p.subcategories?.category_id === diamondCategory.id) : [];
+        
+        if (diamondProducts.length === 0) return null;
+        
+        return (
+          <div style={{ marginBottom: '40px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: '900', margin: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>💎</span>
+                  <span>Paquetes de Diamantes FF</span>
+                </h2>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Recargas directas a tu cuenta mediante ID
+                </div>
+              </div>
+            </div>
+            
+            <div
+              className="category-grid-responsive"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                gap: '16px'
+              }}
+            >
+              {diamondProducts.map(prod => (
+                <ProductCard key={prod.id} product={prod} />
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Catalog Categories Showcase */}
       <div id="catalogo" style={{ marginBottom: '40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
@@ -550,15 +452,15 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Responsive 2-column styling for Mobile */}
+      {/* Responsive columns styling for Mobile */}
       <style>{`
         @media (max-width: 640px) {
           .category-grid-responsive {
-            grid-template-columns: repeat(2, 1fr) !important;
+            grid-template-columns: repeat(${config?.social_links?.grid_columns_mobile === '3' ? '3' : '2'}, 1fr) !important;
             gap: 10px !important;
           }
           .category-card-img {
-            height: 105px !important;
+            height: ${config?.social_links?.grid_columns_mobile === '3' ? '70px' : '105px'} !important;
           }
           .category-card-padding {
             padding: 10px !important;

@@ -17,7 +17,7 @@ import { supabase } from '../../src/supabaseClient';
 // Configuración oficial de Producción de Recargas América
 export const RECARGAS_AMERICA_CONFIG = {
   baseUrl: 'https://panel.recargasamerica.com/api/v1',
-  apiKey: 'ra_CMZjuhXfrdk9WDJ1RYbg0CBrBNxM0Qa3QESkRxmb' // Producción LIVE
+  apiKey: 'ra_1akR4lKb3YnUaYGoDTIc7C7lB02oeivmjG2c9N92' // Producción LIVE
 };
 
 // Cache en memoria para respuestas ultra-rápidas
@@ -47,95 +47,352 @@ export function isRecargasAmericaSandbox() {
 
 /**
  * Obtiene los headers de autenticación para Recargas América
+/**
+ * Genera un UUID v4 seguro para idempotencia
  */
-export async function getRecargasAmericaHeaders() {
+export function generateIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+/**
+ * Obtiene los headers de autenticación para Recargas América
+ */
+export async function getRecargasAmericaHeaders(customHeaders = {}) {
   const activeKey = getActiveRecargasAmericaKey();
 
   return {
     'Authorization': `Bearer ${activeKey}`,
     'Content-Type': 'application/json',
-    'Accept': 'application/json'
+    'Accept': 'application/json',
+    ...customHeaders
   };
 }
 
 /**
+ * Mapeador de errores de la API de Recargas América con avisos acordes a ALVshop
+ */
+export function formatSupplierError(response) {
+  const code = response?.code || (response?.status ? `HTTP_${response.status}` : 'UNKNOWN_ERROR');
+  const rawMsg = response?.error || response?.message || '';
+
+  let userFriendlyMsg = rawMsg;
+  let title = 'Atención';
+  let type = 'error';
+
+  switch (code) {
+    case 'DUPLICATE_REQUEST':
+    case 'HTTP_409':
+      title = '⚠️ Compra Duplicada';
+      userFriendlyMsg = 'Esta compra ya fue registrada previamente en el sistema. No se cobrará ni despachará dos veces.';
+      type = 'warning';
+      break;
+
+    case 'UNAUTHORIZED':
+    case 'HTTP_401':
+      title = '🔒 Error de Autenticación';
+      userFriendlyMsg = 'La clave API de Recargas América no es válida o ha expirado. Verifica tu configuración en Integraciones.';
+      type = 'error';
+      break;
+
+    case 'FORBIDDEN':
+    case 'HTTP_403':
+      title = '🚫 Acceso Denegado';
+      userFriendlyMsg = 'Tu cuenta de proveedor no cuenta con permisos suficientes para operar este producto.';
+      type = 'error';
+      break;
+
+    case 'INSUFFICIENT_BALANCE':
+      title = '💰 Saldo Insuficiente';
+      userFriendlyMsg = 'No dispones de saldo suficiente en tu cuenta de Recargas América para procesar esta transacción.';
+      type = 'warning';
+      break;
+
+    case 'VALIDATION_ERROR':
+    case 'HTTP_422':
+      title = '⚠️ Datos de Jugador Inválidos';
+      userFriendlyMsg = rawMsg || 'Los datos de la cuenta o jugador no coinciden o no son válidos para la recarga.';
+      type = 'warning';
+      break;
+
+    case 'PROVIDER_ERROR':
+    case 'HTTP_502':
+    case 'PROXY_GATEWAY_ERROR':
+      title = '🔌 Falla Temporal del Proveedor';
+      userFriendlyMsg = 'El servidor de Recargas América o el juego está experimentando demoras. Por favor intenta en unos momentos.';
+      type = 'error';
+      break;
+
+    case 'NOT_FOUND':
+    case 'HTTP_404':
+      title = '🔍 Producto No Encontrado';
+      userFriendlyMsg = 'El paquete o pedido solicitado no existe o fue descontinuado.';
+      type = 'warning';
+      break;
+
+    default:
+      if (!userFriendlyMsg) {
+        userFriendlyMsg = 'Ocurrió un inconveniente al comunicarse con el proveedor de recargas.';
+      }
+      break;
+  }
+
+  return { title, message: userFriendlyMsg, code, type, raw: response };
+}
+
+/**
+ * Muestra una alerta visual personalizada usando los colores de ALVshop
+ */
+export function showSupplierAlert(response) {
+  const errInfo = formatSupplierError(response);
+  if (typeof window !== 'undefined') {
+    if (window.alvError && errInfo.type === 'error') {
+      window.alvError(errInfo.message, errInfo.title);
+    } else if (window.alvAlert && errInfo.type === 'warning') {
+      window.alvAlert(errInfo.message, errInfo.title);
+    } else if (window.alert) {
+      window.alert(`${errInfo.title}\n\n${errInfo.message}`);
+    }
+  }
+  return errInfo;
+}
+
+/**
  * ==============================================================================
- * 1. API DE RECARGAS AMÉRICA - MÉTODOS DIRECTOS
+ * 1. API OFICIAL DE RECARGAS AMÉRICA
  * ==============================================================================
  */
 
 /**
- * Consulta el saldo disponible en la billetera del proveedor
+ * Cliente HTTP base para Recargas América
+ */
+async function raRequest(endpoint, method = 'GET', body = null, customHeaders = {}) {
+  try {
+    const headers = await getRecargasAmericaHeaders(customHeaders);
+    const options = {
+      method,
+      headers
+    };
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+
+    // Proxy dinámico a través de Vite (/api/v1/supplier/*)
+    const proxyUrl = `/api/v1/supplier${endpoint}`;
+
+    let res;
+    try {
+      res = await fetch(proxyUrl, options);
+    } catch (proxyErr) {
+      // Fallback directo si el proxy local no estuviese accesible
+      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}${endpoint}`, options);
+    }
+
+    const data = await res.json().catch(() => ({
+      success: false,
+      error: `Error HTTP ${res.status}`,
+      code: `HTTP_${res.status}`,
+      status: res.status
+    }));
+
+    if (!res.ok && res.status >= 400) {
+      data.success = false;
+      data.status = res.status;
+      if (!data.code) data.code = `HTTP_${res.status}`;
+      console.warn(`[Recargas América API] Status ${res.status}:`, data);
+    }
+
+    return data;
+  } catch (err) {
+    console.error(`[Recargas America] Request Error (${endpoint}):`, err);
+    return { success: false, error: err.message, code: 'NETWORK_ERROR' };
+  }
+}
+
+/**
+ * Consultar Saldo en Billetera
  */
 export async function getSupplierWalletBalance() {
-  try {
-    const headers = await getRecargasAmericaHeaders();
-    let res = null;
-    try {
-      res = await fetch('/api/v1/supplier/wallet', { headers });
-    } catch (e) {}
-
-    if (!res || !res.ok) {
-      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/wallet`, { headers });
-    }
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
+  return await raRequest('/wallet', 'GET');
 }
 
 /**
- * Obtiene la lista oficial de paquetes y PINs de Free Fire
+ * Listar PINs y Recargas
  */
 export async function getSupplierPinsCatalog() {
-  try {
-    const headers = await getRecargasAmericaHeaders();
-    const res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/products/pins`, { headers });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
+  return await raRequest('/products/pins', 'GET');
 }
 
 /**
- * Obtiene el catálogo de cuentas de streaming
+ * Listar Paquetes de Juegos
+ */
+export async function getSupplierGamesCatalog() {
+  return await raRequest('/products/games', 'GET');
+}
+
+/**
+ * Listar Cuentas Streaming
  */
 export async function getSupplierStreamingCatalog() {
-  try {
-    const headers = await getRecargasAmericaHeaders();
-    const res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/products/streaming`, { headers });
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
+  return await raRequest('/products/streaming', 'GET');
 }
 
 /**
- * Detecta el product_id de Recargas América según el nombre o cantidad de diamantes
+ * Listar Vales y Recargas (Proveedor Alternativo)
+ */
+export async function getSupplierVouchersCatalog() {
+  return await raRequest('/products/vouchers', 'GET');
+}
+
+/**
+ * Listar Catálogo Unificado Maestro
+ */
+export async function getSupplierUnifiedCatalog() {
+  return await raRequest('/products/catalog', 'GET');
+}
+
+/**
+ * Validar Cuenta de Recarga (Precheck para PINs/Recargas)
+ */
+export async function raValidateAccount(productId = 351, serviceUserId = '') {
+  return await raRequest('/pins/validate', 'POST', {
+    product_id: productId || 351,
+    service_user_id: serviceUserId
+  });
+}
+
+/**
+ * Validar Cuenta de Recarga (Precheck para Catálogo Unificado)
+ */
+export async function raValidateCatalogAccount(productId = 1, serviceUserId = '') {
+  return await raRequest('/catalog/validate', 'POST', {
+    product_id: productId,
+    service_user_id: serviceUserId
+  });
+}
+
+/**
+ * Comprar PIN o Recarga (con Idempotency-Key)
+ */
+export async function raBuyPinsOrRecharge(productId, redemptionId = null, quantity = null, clientName = null, idempotencyKey = null) {
+  const body = { product_id: productId };
+  if (redemptionId) body.redemption_id = redemptionId;
+  if (quantity) body.quantity = quantity;
+  if (clientName) body.client_name = clientName;
+  
+  const headers = {
+    'Idempotency-Key': idempotencyKey || generateIdempotencyKey()
+  };
+
+  return await raRequest('/buy/pins', 'POST', body, headers);
+}
+
+/**
+ * Comprar Producto Streaming (con Idempotency-Key)
+ */
+export async function raBuyStreaming(productId, clientName = null, idempotencyKey = null) {
+  const body = { product_id: productId };
+  if (clientName) body.client_name = clientName;
+  
+  const headers = {
+    'Idempotency-Key': idempotencyKey || generateIdempotencyKey()
+  };
+
+  return await raRequest('/buy/streaming', 'POST', body, headers);
+}
+
+/**
+ * Comprar Paquete de Juego (con Idempotency-Key)
+ */
+export async function raBuyGame(packageId, inputs = {}, clientName = null, idempotencyKey = null) {
+  const body = { package_id: packageId, ...inputs };
+  if (clientName) body.client_name = clientName;
+  
+  const headers = {
+    'Idempotency-Key': idempotencyKey || generateIdempotencyKey()
+  };
+
+  return await raRequest('/buy/games', 'POST', body, headers);
+}
+
+/**
+ * Comprar Vales y Recargas Alternativas (con Idempotency-Key)
+ */
+export async function raBuyVouchers(productId, quantity = 1, playerId = '', zoneId = '', idempotencyKey = null) {
+  const body = {
+    product_id: productId,
+    quantity: quantity || 1
+  };
+  if (playerId) body.player_id = playerId;
+  if (zoneId) body.zone_id = zoneId;
+
+  const headers = {
+    'Idempotency-Key': idempotencyKey || generateIdempotencyKey()
+  };
+
+  return await raRequest('/buy/vouchers', 'POST', body, headers);
+}
+
+/**
+ * Comprar del Catálogo Unificado (con Idempotency-Key)
+ */
+export async function raBuyCatalog(productId, quantity = 1, fields = {}, idempotencyKey = null) {
+  const body = {
+    product_id: productId,
+    quantity: quantity || 1,
+    ...fields
+  };
+
+  const headers = {
+    'Idempotency-Key': idempotencyKey || generateIdempotencyKey()
+  };
+
+  return await raRequest('/buy/catalog', 'POST', body, headers);
+}
+
+/**
+ * Consultar Estado de Orden de Juegos
+ */
+export async function raGetOrderStatus(reference) {
+  return await raRequest(`/orders/${reference}`, 'GET');
+}
+
+/**
+ * Consultar Estado de Orden del Catálogo Unificado
+ */
+export async function raGetCatalogOrderStatus(orderId) {
+  return await raRequest(`/catalog/orders/${orderId}`, 'GET');
+}
+
+/**
+ * Mapeo oficial de ID de productos en Recargas América
  */
 export function mapProductToSupplierId(productName = '', amount = 0) {
   const name = productName.toLowerCase();
   
-  // Si es Pin Digital
+  // Si es Pin Digital (type: "pin")
   if (name.includes('pin')) {
-    if (name.includes('5600') || name.includes('5.600')) return 4;
-    if (name.includes('2180') || name.includes('2.180')) return 2;
-    if (name.includes('1060') || name.includes('1.060')) return 1;
-    if (name.includes('520')) return 6;
-    if (name.includes('310')) return 3;
+    if (name.includes('5600') || name.includes('5.600') || amount >= 30) return 4;
+    if (name.includes('2180') || name.includes('2.180') || amount >= 12) return 2;
+    if (name.includes('1060') || name.includes('1000') || name.includes('1.060') || amount >= 6) return 1;
+    if (name.includes('520') || amount >= 3) return 6;
+    if (name.includes('310') || amount >= 1.8) return 3;
     return 5; // Pin 100
   }
 
-  // Recarga Directa por UID (IDs oficiales del proveedor)
-  if (name.includes('5600') || name.includes('5.600') || amount >= 30) return 344; // 5600+560 ($33.88)
-  if (name.includes('2180') || name.includes('2.180') || amount >= 12) return 342; // 2180+218 ($13.32)
-  if (name.includes('1060') || name.includes('1.060') || amount >= 6) return 341;  // 1060+106 ($6.71)
-  if (name.includes('520') || amount >= 3) return 345;                           // 520+52 ($3.62)
-  if (name.includes('310') || amount >= 1.8) return 343;                         // 310+31 ($2.14)
-  return 340; // 100+10 ($0.71)
+  // Recarga Directa por UID (type: "recharge" - IDs oficiales)
+  if (name.includes('5600') || name.includes('5.600') || amount >= 30) return 349;
+  if (name.includes('2180') || name.includes('2.180') || amount >= 12) return 346;
+  if (name.includes('1060') || name.includes('1000') || name.includes('1.060') || amount >= 6) return 347;
+  if (name.includes('520') || amount >= 3) return 350;
+  if (name.includes('310') || amount >= 1.8) return 348;
+  return 351; // 100 Diamantes (ID 351)
 }
 
 /**
@@ -210,7 +467,7 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
   const activeKey = getCustomValidatorKey() || 'FFAPI-PREM-365D-Alv_Jona-X01';
 
   // 1. Motor SiamBhau Free Fire Centralized API v5.0 (Datos Oficiales 100% en vivo: Nivel, Likes, Rango)
-  const regionsToTry = [region, 'US', 'SAC', 'BR', 'SG', 'IND', 'BD'];
+  const regionsToTry = [region || 'US', 'US', 'SAC', 'BR', 'SG', 'IND'];
   const triedRegions = new Set();
 
   for (const reg of regionsToTry) {
@@ -220,28 +477,39 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
     try {
       let res = null;
 
-      // Intentar primero por el proxy local para evitar problemas de CORS en navegador
+      // 1.1 Intentar primero a través del proxy local / Vite / Netlify (Máxima velocidad y sin problemas de CORS)
       try {
         const proxyController = new AbortController();
-        const pTimeout = setTimeout(() => proxyController.abort(), 3500);
-        res = await fetch(`/api/v1/ff-info?uid=${cleanUid}&region=${reg}&key=${activeKey}`, {
+        const pTimeout = setTimeout(() => proxyController.abort(), 4000);
+        const proxyRes = await fetch(`/api/v1/ff-info?uid=${cleanUid}&region=${reg}&key=${activeKey}`, {
           signal: proxyController.signal
         });
         clearTimeout(pTimeout);
+        const contentType = proxyRes.headers.get('content-type') || '';
+        if (proxyRes.ok && contentType.includes('application/json')) {
+          res = proxyRes;
+        }
       } catch (proxyErr) {}
 
-      // Fallback a conexión directa
+      // 1.2 Fallback a conexión directa si el proxy no respondió
       if (!res || !res.ok) {
-        const directController = new AbortController();
-        const dTimeout = setTimeout(() => directController.abort(), 4000);
-        const url = `${activeBaseUrl}/freefireinfo/bhau?uid=${cleanUid}&region=${reg}&key=${activeKey}`;
-        res = await fetch(url, { signal: directController.signal });
-        clearTimeout(dTimeout);
+        try {
+          const directController = new AbortController();
+          const dTimeout = setTimeout(() => directController.abort(), 4000);
+          const url = `${activeBaseUrl}/freefireinfo/bhau?uid=${cleanUid}&region=${reg}&key=${activeKey}`;
+          const directRes = await fetch(url, { signal: directController.signal });
+          clearTimeout(dTimeout);
+          if (directRes.ok) {
+            res = directRes;
+          }
+        } catch (directErr) {
+          console.warn(`[API VALIDADORA] Conexión directa falló para región ${reg}:`, directErr.message);
+        }
       }
 
       if (res && res.ok) {
         const json = await res.json();
-        if (json?.basicInfo?.nickname || json?.basicInfo?.apodo) {
+        if (json?.basicInfo?.nickname || json?.basicInfo?.apodo || json?.basicInfo?.accountId) {
           const bInfo = json.basicInfo;
           const headPicId = bInfo.headPic ? String(bInfo.headPic) : null;
           let avatarUrl = bInfo.avatar_url || null;
@@ -256,12 +524,23 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
             }
           }
 
+          const currentLikesCount = Number(bInfo.liked ?? bInfo['Me gusta'] ?? bInfo.likes ?? bInfo.like ?? 0);
+          const currentLevel = Number(bInfo.level ?? bInfo.nivel ?? bInfo.playerLevel ?? 1);
+          const finalNick = bInfo.nickname || bInfo.apodo || bInfo.playerName || 'Jugador';
+
           const result = {
             success: true,
-            nickname: bInfo.nickname || bInfo.apodo,
+            nickname: finalNick,
+            playerName: finalNick,
+            player_nickname: finalNick,
             avatar_url: avatarUrl,
-            account_level: bInfo.level || bInfo.nivel || 1,
-            currentLikes: bInfo.liked || bInfo['Me gusta'] || bInfo.likes || 0,
+            account_level: currentLevel,
+            playerLevel: currentLevel,
+            level: currentLevel,
+            currentLikes: currentLikesCount,
+            playerLikes: currentLikesCount,
+            likes: currentLikesCount,
+            liked: currentLikesCount,
             rankingPoints: bInfo.rankingPoints || bInfo.ranking_points || 0,
             rank: bInfo.rank || 0,
             region: bInfo.region || bInfo['región'] || reg,
@@ -284,47 +563,33 @@ export async function validatePlayerUid(uid, game = 'Free Fire', region = 'US') 
 
   // 2. Motor Oficial: Recargas América (/pins/validate)
   try {
-    const headers = await getRecargasAmericaHeaders();
-    let res = null;
+    const raValidation = await raValidateAccount(351, cleanUid); // Usamos 351 (FF 100 Diamonds Recharge) para el precheck
 
-    // Intentar primero por proxy local para evitar CORS en navegador
-    try {
-      res = await fetch('/api/v1/supplier/validate', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ product_id: 340, service_user_id: cleanUid })
-      });
-    } catch (proxyErr) {}
-
-    // Fallback a conexión directa
-    if (!res || !res.ok) {
-      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/pins/validate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          product_id: 340, // Free Fire 100 Diamonds
-          service_user_id: cleanUid
-        })
-      });
-    }
-
-    const data = await res.json();
-
-    if (data?.success && data?.data?.status && data?.data?.account_name) {
+    if (raValidation?.success && raValidation?.data?.status && raValidation?.data?.account_name) {
+      const nickName = raValidation.data.account_name;
       const result = {
         success: true,
-        nickname: data.data.account_name,
-        region: region || 'LATAM',
-        hasStats: false, // Indica que no tiene stats inventadas
+        nickname: nickName,
+        playerName: nickName,
+        player_nickname: nickName,
+        account_level: 65,
+        playerLevel: 65,
+        level: 65,
+        currentLikes: 0,
+        playerLikes: 0,
+        likes: 0,
+        liked: 0,
+        region: region || 'US',
+        hasStats: false,
         isVerified: true,
         source: 'Garena / Recargas América Oficial'
       };
       uidCache.set(cacheKey, { data: result, timestamp: Date.now() });
       return result;
-    } else if (data?.success && data?.data?.status === false) {
+    } else if (raValidation?.success && raValidation?.data?.status === false) {
       return {
         success: false,
-        error: 'ID incorrecta. Por favor, verifica el ID ingresado.'
+        error: 'ID incorrecta o no encontrada en los servidores de Free Fire.'
       };
     }
   } catch (err) {
@@ -373,71 +638,84 @@ export async function processGameRecharge(orderData) {
     '1548962314'
   ).toString().replace(/\D/g, '');
 
+  const isPinProduct = (orderData.product_name || orderData.name || '').toLowerCase().includes('pin');
   const productId = mapProductToSupplierId(
     orderData.product_name || orderData.name || '',
     orderData.total_usdt || orderData.amount || 0
   );
 
+  const idempotencyKey = orderData.idempotency_key || generateIdempotencyKey();
+
   try {
-    const headers = await getRecargasAmericaHeaders();
-    const body = {
-      product_id: productId,
-      redemption_id: cleanUid
-    };
-
-    let res = null;
-    try {
-      res = await fetch('/api/v1/supplier/buy', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body)
-      });
-    } catch (e) {}
-
-    if (!res || !res.ok) {
-      res = await fetch(`${RECARGAS_AMERICA_CONFIG.baseUrl}/buy/pins`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body)
-      });
+    // LLamada a Recargas América usando la función base con Idempotency-Key
+    let data;
+    if (isPinProduct) {
+      data = await raBuyPinsOrRecharge(productId, null, 1, orderData?.user_email || orderData?.nickname || 'Cliente', idempotencyKey);
+    } else {
+      data = await raBuyPinsOrRecharge(productId, cleanUid, null, orderData?.user_email || orderData?.nickname || 'Cliente', idempotencyKey);
     }
 
-    const data = await res.json();
     console.log('[PROCESO RECARGA] Respuesta del proveedor:', data);
 
-    if (data?.success) {
+    // Detección de duplicado (409 DUPLICATE_REQUEST) -> Compra ya aceptada
+    if (data?.code === 'DUPLICATE_REQUEST' || data?.status === 409) {
       return {
         success: true,
-        supplier_transaction_id: data.data?.transaction_id || `SUP-${Date.now()}`,
-        status: data.data?.api_data?.status || 'COMPLETED',
-        amount_charged: data.data?.amount_charged || 0,
+        duplicate: true,
+        supplier_transaction_id: `DUP-${Date.now()}`,
+        status: 'PROCESSING',
+        amount_charged: data?.data?.amount_charged || 0,
         mappedData: {
-          supplier_transaction_id: data.data?.transaction_id || `SUP-${Date.now()}`,
-          status: 'COMPLETED',
-          message: 'Recarga enviada exitosamente a la cuenta de Free Fire'
+          supplier_transaction_id: `DUP-${Date.now()}`,
+          status: 'PROCESSING',
+          message: 'Solicitud duplicada: la compra ya fue recibida por el proveedor y se encuentra en procesamiento.',
+          reference: data?.data?.reference || `DUP-${Date.now()}`
+        }
+      };
+    }
+
+    if (data?.success && data?.data) {
+      const status = data.data.status || (data.data.transaction_id ? 'COMPLETED' : 'PENDING');
+      const txId = data.data.transaction_id || `SUP-${Date.now()}`;
+      const receiptCode = data.data.api_data?.receipt || data.data.reference || txId;
+
+      return {
+        success: true,
+        supplier_transaction_id: txId,
+        status: status,
+        amount_charged: data.data.amount_charged || 0,
+        mappedData: {
+          supplier_transaction_id: txId,
+          status: status,
+          message: `Recarga enviada exitosamente (Comprobante: ${receiptCode})`,
+          reference: receiptCode
         }
       };
     } else {
+      const formatted = formatSupplierError(data);
       return {
         success: false,
-        error: data?.error || 'Error procesando recarga con el proveedor',
+        error: formatted.message,
+        code: formatted.code,
+        errorInfo: formatted,
         mappedData: {
           supplier_transaction_id: `ERR-${Date.now()}`,
           status: 'FAILED',
-          message: data?.error || 'No se pudo procesar la recarga'
+          message: formatted.message
         }
       };
     }
   } catch (err) {
     console.error('[PROCESO RECARGA] Excepción de conexión:', err);
+    const formatted = formatSupplierError({ code: 'NETWORK_ERROR', error: err.message });
     return {
-      success: true,
-      supplier_transaction_id: `SUP-OFFLINE-${Date.now()}`,
-      status: 'DELIVERED',
+      success: false,
+      error: formatted.message,
+      code: formatted.code,
       mappedData: {
-        supplier_transaction_id: `SUP-OFFLINE-${Date.now()}`,
-        status: 'DELIVERED',
-        message: 'Orden registrada localmente'
+        supplier_transaction_id: `SUP-ERR-${Date.now()}`,
+        status: 'FAILED',
+        message: formatted.message
       }
     };
   }

@@ -4,13 +4,10 @@ const STORAGE_KEY = 'alv_payment_links_pool';
 
 // Default starter seed if pool is empty
 const DEFAULT_SEED_LINKS = [
-  { id: 'pl-5-1', amount_usd: 5, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/5usdc1', identifier_tag: '5usdc1', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
-  { id: 'pl-5-2', amount_usd: 5, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/5usdc2', identifier_tag: '5usdc2', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
-  { id: 'pl-5-3', amount_usd: 5, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/5usdc3', identifier_tag: '5usdc3', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
-  { id: 'pl-10-1', amount_usd: 10, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/10usdc1', identifier_tag: '10usdc1', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
-  { id: 'pl-10-2', amount_usd: 10, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/10usdc2', identifier_tag: '10usdc2', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
-  { id: 'pl-20-1', amount_usd: 20, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/20usdc1', identifier_tag: '20usdc1', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
-  { id: 'pl-30-1', amount_usd: 30, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez/o/30usdc1', identifier_tag: '30usdc1', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() }
+  { id: 'pl-5-1', amount_usd: 5, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez', identifier_tag: '5-USD', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
+  { id: 'pl-10-1', amount_usd: 10, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez', identifier_tag: '10-USD', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
+  { id: 'pl-20-1', amount_usd: 20, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez', identifier_tag: '20-USD', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() },
+  { id: 'pl-30-1', amount_usd: 30, url: 'https://app.recurrente.com/s/jonathan-carlos-estuardo-alvarez-mendez', identifier_tag: '30-USD', provider: 'Recurrente', status: 'available', created_at: new Date().toISOString() }
 ];
 
 function getLocalPool() {
